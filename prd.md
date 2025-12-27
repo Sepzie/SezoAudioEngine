@@ -2,7 +2,7 @@
 
 ## 1. Project Overview
 
-**Project Name:** expo-audio-engine (or react-native-audio-engine)
+**Project Name:** Sezo Audio Engine
 
 **Description:** A high-performance, open-source Expo Module providing synchronized multi-track audio playback with real-time pitch shifting, speed adjustment, and simultaneous recording capabilities. Designed for music practice apps, karaoke applications, podcast editors, and any mobile application requiring advanced audio manipulation.
 
@@ -30,7 +30,7 @@
 - Progress tracking and seeking
 
 **File Format Support:**
-- Input: MP3, WAV, FLAC (via dr_libs)
+- Input: MP3, WAV, M4A
 - Output:
   - MP3 (via LAME encoder or Android MediaCodec)
   - AAC/M4A (via Android MediaCodec) - Recommended
@@ -109,7 +109,6 @@
 - Record microphone input while tracks are playing
 - Synchronized recording (recording timestamps match playback)
 - Configurable sample rate and bit depth
-- Optional input monitoring (hear yourself with configurable latency)
 - Input level metering for UI feedback
 - Support for stereo or mono input
 - Basic audio processing: noise gate, volume normalization
@@ -265,7 +264,7 @@ quality: 'high'   // 192 kbps AAC (~4.3 MB / 3 min)
 AudioEngine
 |-- PlaybackPipeline
 |  |-- MultiTrackMixer
-|  |-- AudioDecoder (dr_libs: dr_mp3, dr_wav, dr_flac)
+|  |-- AudioDecoder (dr_libs: dr_mp3, dr_wav)
 |  `-- TrackSynchronizer
 |-- RecordingPipeline
 |  |-- MicrophoneCapture
@@ -315,7 +314,6 @@ AudioEngineService (Foreground Service)
 - **dr_libs** (Public Domain/Unlicense): Audio decoding
   - dr_mp3.h - MP3 decoding
   - dr_wav.h - WAV encoding/decoding (optional, for lossless)
-  - dr_flac.h - FLAC decoding
 - **Android MediaCodec**: Built-in AAC/MP3 encoding (Recommended)
   - Zero additional dependencies
   - Hardware-accelerated on most devices
@@ -337,61 +335,60 @@ AudioEngineService (Foreground Service)
 
 ### 4.3 Cross-Repository Development and Compatibility
 
-**Separate Repository Structure:** This module is designed to be developed in a **separate repository** from consuming applications. This approach provides:
+**Single Repository Structure:** This module is designed as a single repository containing two packages: the Android engine (C++/Kotlin) and the Expo module (Android wrapper + iOS implementation). This approach provides:
 - Clean separation of concerns
 - Independent versioning and release cycles
 - Easier open-source contribution
 - Reusability across multiple projects
 - Proper module encapsulation
 
-**Android Core Publishing:** The Android audio engine should be published as a standalone Maven artifact. The Expo module wraps this artifact rather than embedding all Android-native sources.
+**Internal Package Boundaries:** The Android engine package is shared by the Expo module through internal dependencies rather than a published Maven artifact.
 
 **Recommended Repository Structure:**
 
 ```
-expo-audio-engine/                    # Separate repository
-|-- android/                           # Android native implementation
-|  |-- src/
-|  |  |-- main/
-|  |  |  |-- java/expo/modules/audioengine/
-|  |  |  |  |-- ExpoAudioEngineModule.kt
-|  |  |  |  |-- AudioEngineService.kt
-|  |  |  |  `-- MediaSessionController.kt
-|  |  |  `-- cpp/
-|  |  |     |-- AudioEngine.cpp
-|  |  |     |-- AudioEngine.h
-|  |  |     |-- dr_mp3.h               # Single header include
-|  |  |     |-- dr_wav.h               # Single header include
-|  |  |     |-- dr_flac.h              # Single header include
-|  |  |     |-- OboePlayer.cpp
-|  |  |     |-- SignalsmithStretchProcessor.cpp
-|  |  |     `-- CMakeLists.txt
-|  |-- androidTest/                    # Android instrumentation tests
-|  `-- build.gradle
-|-- ios/                               # iOS native implementation
-|-- src/
-|  |-- index.ts                        # Main TypeScript exports
-|  |-- AudioEngineModule.ts            # Native module wrapper
-|  `-- AudioEngineModule.types.ts      # TypeScript types
-|-- example/                           # Example Expo app
-|  |-- app.json
-|  |-- package.json
-|  `-- App.tsx
-|-- docs/
-|  |-- API.md
-|  |-- SETUP.md
-|  `-- TROUBLESHOOTING.md
-|-- __tests__/
-|-- expo-module.config.json            # Expo module configuration
-|-- package.json
-|-- tsconfig.json
-|-- README.md
-|-- CHANGELOG.md
-`-- LICENSE
-
-android-audio-engine/                 # Standalone Android engine (Maven artifact)
-|-- engine/                            # Core C++/JNI/Kotlin engine
-|-- build.gradle
+sezo-audio-engine/                    # Single repository
+|-- packages/
+|  |-- android-engine/                 # Android engine (C++/Kotlin)
+|  |  |-- engine/
+|  |  |-- build.gradle
+|  |  `-- README.md
+|  `-- expo-module/                    # Expo module (Android wrapper + iOS)
+|     |-- android/
+|     |  |-- src/
+|     |  |  |-- main/
+|     |  |  |  `-- java/expo/modules/audioengine/
+|     |  |  |     |-- ExpoAudioEngineModule.kt
+|     |  |  |     |-- AudioEngineService.kt
+|     |  |  |     `-- MediaSessionController.kt
+|     |  `-- cpp/
+|     |     |-- AudioEngine.cpp
+|     |     |-- AudioEngine.h
+|     |     |-- dr_mp3.h               # Single header include
+|     |     |-- dr_wav.h               # Single header include
+|     |     |-- OboePlayer.cpp
+|     |     |-- SignalsmithStretchProcessor.cpp
+|     |     `-- CMakeLists.txt
+|     |-- ios/                          # iOS native implementation
+|     |-- src/
+|     |  |-- index.ts                   # Main TypeScript exports
+|     |  |-- AudioEngineModule.ts       # Native module wrapper
+|     |  `-- AudioEngineModule.types.ts # TypeScript types
+|     |-- example/                      # Example Expo app
+|     |  |-- app.json
+|     |  |-- package.json
+|     |  `-- App.tsx
+|     |-- docs/
+|     |  |-- API.md
+|     |  |-- SETUP.md
+|     |  `-- TROUBLESHOOTING.md
+|     |-- __tests__/
+|     |-- expo-module.config.json       # Expo module configuration
+|     |-- package.json
+|     |-- tsconfig.json
+|     |-- README.md
+|     `-- CHANGELOG.md
+|-- LICENSE
 `-- README.md
 ```
 
@@ -400,7 +397,7 @@ android-audio-engine/                 # Standalone Android engine (Maven artifac
 **1. Expo SDK Version Compatibility:**
 
 ```json
-// expo-audio-engine/package.json
+// sezo-audio-engine/package.json
 {
   "peerDependencies": {
     "expo": ">=51.0.0 <54.0.0",
@@ -484,7 +481,7 @@ android: {
 // consuming-app/package.json
 {
   "dependencies": {
-    "expo-audio-engine": "file:../expo-audio-engine"
+    "sezo-audio-engine": "file:../sezo-audio-engine"
   }
 }
 ```
@@ -494,7 +491,7 @@ android: {
 ```json
 {
   "dependencies": {
-    "expo-audio-engine": "github:yourusername/expo-audio-engine#v1.0.0"
+    "sezo-audio-engine": "github:yourusername/sezo-audio-engine#v1.0.0"
   }
 }
 ```
@@ -504,7 +501,7 @@ android: {
 ```json
 {
   "dependencies": {
-    "expo-audio-engine": "^1.0.0"
+    "sezo-audio-engine": "^1.0.0"
   }
 }
 ```
@@ -513,7 +510,7 @@ android: {
 
 ```bash
 # Install the module
-npm install expo-audio-engine
+npm install sezo-audio-engine
 
 # iOS only: Install pods
 npx pod-install
@@ -532,7 +529,7 @@ npx expo prebuild --clean
 export default {
   plugins: [
     [
-      'expo-audio-engine',
+      'sezo-audio-engine',
       {
         enableBackgroundAudio: true,
         enableLowLatency: true,
@@ -656,8 +653,6 @@ interface AudioEngine {
   stopRecording(): Promise<RecordingResult>;
   isRecording(): boolean;
   setRecordingVolume(volume: number): void;
-  setInputMonitoring(enabled: boolean): void;
-
   // Extraction
   extractTrack(trackId: string, config?: ExtractionConfig): Promise<ExtractionResult>;
   extractAllTracks(config?: ExtractionConfig): Promise<ExtractionResult[]>;
@@ -775,7 +770,7 @@ interface AudioEngineError {
 **Week 2:**
 - Implement multi-track mixer (2-4 tracks)
 - Add synchronization engine
-- Integrate dr_libs (dr_mp3, dr_wav, dr_flac) for audio decoding
+- Integrate dr_libs (dr_mp3, dr_wav) for audio decoding
 - Test multi-track playback
 - Basic error handling
 
@@ -808,7 +803,6 @@ interface AudioEngineError {
 - Add quality/bitrate configuration
 - Optional: Integrate LAME for MP3 encoding
 - Add basic DSP (noise gate, normalization)
-- Implement input monitoring
 - Test compressed output quality
 
 **Deliverable:** Can record microphone while playing tracks, save as AAC/MP3
@@ -1019,13 +1013,10 @@ interface AudioEngineError {
 **Repository Structure:**
 
 ```
-expo-audio-engine/
-|-- android/              # Android implementation
-|-- ios/                  # iOS implementation
-|-- src/                  # TypeScript API
-|-- example/              # Example application
-|-- docs/                 # Documentation
-|-- __tests__/            # Tests
+sezo-audio-engine/
+|-- packages/
+|  |-- android-engine/    # Android engine (C++/Kotlin)
+|  `-- expo-module/       # Expo module (Android wrapper + iOS)
 |-- LICENSE               # MIT or Apache 2.0
 |-- README.md             # Getting started
 |-- CONTRIBUTING.md       # Contribution guidelines
@@ -1096,10 +1087,8 @@ expo-audio-engine/
 
 ## 15. Conclusion
 
-This module aims to fill a significant gap in the React Native/Expo ecosystem by providing professional-grade audio processing capabilities that are currently only available through expensive commercial SDKs. By focusing on a clean, generic API and robust implementation, expo-audio-engine can become the de facto standard for advanced audio applications on mobile. The modular architecture ensures maintainability, the comprehensive testing strategy ensures reliability, and the open-source approach ensures accessibility for developers worldwide. With Android as the primary implementation target and iOS following the same API contract, developers can build sophisticated audio applications with confidence.
+This module aims to fill a significant gap in the React Native/Expo ecosystem by providing professional-grade audio processing capabilities that are currently only available through expensive commercial SDKs. By focusing on a clean, generic API and robust implementation, sezo-audio-engine can become the de facto standard for advanced audio applications on mobile. The modular architecture ensures maintainability, the comprehensive testing strategy ensures reliability, and the open-source approach ensures accessibility for developers worldwide. With Android as the primary implementation target and iOS following the same API contract, developers can build sophisticated audio applications with confidence.
 
 ## 16. Open Questions
 
-- Should the Android core and the Expo package live in the same repository or be separated into different repositories?
-- Are there examples of similar projects that made this decision well?
-- What Maven coordinates and release process should be used for the standalone Android engine artifact?
+- How should internal versioning and releases be coordinated between the Android engine and Expo module packages?
