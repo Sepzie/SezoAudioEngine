@@ -1,0 +1,3 @@
+rootProject.name = "sezo-android-engine"
+include(":engine")
+project(":engine").projectDir = file("engine")

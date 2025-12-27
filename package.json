@@ -1,0 +1,17 @@
+{
+  "name": "sezo-audio-engine",
+  "private": true,
+  "version": "0.0.1",
+  "workspaces": [
+    "packages/android-engine",
+    "packages/expo-module"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "lint": "echo \"TODO: add lint\"",
+    "test": "echo \"TODO: add tests\"",
+    "build": "echo \"TODO: add build\""
+  }
+}

@@ -1,0 +1,25 @@
+plugins {
+  id "com.android.library"
+  id "org.jetbrains.kotlin.android"
+}
+
+android {
+  namespace "expo.modules.audioengine"
+  compileSdk 34
+
+  defaultConfig {
+    minSdk 24
+    targetSdk 34
+  }
+
+  buildTypes {
+    release {
+      minifyEnabled false
+    }
+  }
+}
+
+dependencies {
+  implementation "org.jetbrains.kotlin:kotlin-stdlib"
+  implementation "expo.modules:core:1.12.0"
+}
