@@ -22,6 +22,7 @@
 - Real-time speed adjustment (0.5x to 2.0x)
 - Independent tempo and pitch control
 - Simultaneous audio recording during playback
+- Offline track extraction (single track or all tracks with effects applied)
 - Per-track volume control, mute, and solo
 - Low-latency audio I/O (target: <20ms round-trip)
 - Background playback support with media controls
@@ -42,7 +43,7 @@
 - Proper error handling and recovery
 
 **Platform-Specific Implementation:**
-- Android: Oboe + SoundTouch + custom mixing
+- Android: Oboe + Signalsmith Stretch + custom mixing
 - iOS: AVAudioEngine with native effects units
 
 **Developer Experience:**
@@ -120,7 +121,18 @@
 - Metadata: sample rate, bit depth, duration, bitrate
 - Configurable quality/bitrate (64-320 kbps)
 
-### 3.4 Recording Encoding Strategies
+### 3.4 Track Extraction
+
+**Description:** Export a single track or all tracks with current effects applied.
+
+**Requirements:**
+- Extract one track or all tracks to new audio files
+- Apply current pitch/speed and per-track settings during extraction
+- Support the same output formats as recording
+- Provide progress updates and completion callbacks
+- No circular buffer required for extraction (offline processing)
+
+### 3.5 Recording Encoding Strategies
 
 **File Size Comparison (3-minute recording, 44.1kHz):**
 
@@ -156,7 +168,7 @@
   - Fine-grained quality control
   - Predictable output across devices
 - **Cons:**
-  - LGPL license (requires dynamic linking, same as SoundTouch)
+  - LGPL license (requires dynamic linking)
   - Additional 500KB to app size
   - Slightly slower than hardware AAC
   - CPU encoding only
@@ -195,7 +207,7 @@ quality: 'medium' // 128 kbps AAC (~2.8 MB / 3 min) [Default]
 quality: 'high'   // 192 kbps AAC (~4.3 MB / 3 min)
 ```
 
-### 3.5 Track Management
+### 3.6 Track Management
 
 **Per-Track Controls:**
 - Volume: 0.0 (silent) to 1.0 (full) with overdrive support to 2.0
@@ -208,7 +220,7 @@ quality: 'high'   // 192 kbps AAC (~4.3 MB / 3 min)
 - Master mute (pause without stopping transport)
 - Output level metering
 
-### 3.6 Transport Controls
+### 3.7 Transport Controls
 
 **Playback States:**
 - Stopped: Ready to play, position at 0 or last seek position
@@ -222,7 +234,7 @@ quality: 'high'   // 192 kbps AAC (~4.3 MB / 3 min)
 - Get current position and total duration
 - Set loop points (optional for V1, useful for practice apps)
 
-### 3.7 Background Playback and Media Controls
+### 3.8 Background Playback and Media Controls
 
 **Android:**
 - Foreground service with notification
@@ -251,51 +263,55 @@ quality: 'high'   // 192 kbps AAC (~4.3 MB / 3 min)
 
 ```
 AudioEngine
-├─ PlaybackPipeline
-│  ├─ MultiTrackMixer
-│  ├─ AudioDecoder (dr_libs: dr_mp3, dr_wav, dr_flac)
-│  └─ TrackSynchronizer
-├─ RecordingPipeline
-│  ├─ MicrophoneCapture
-│  ├─ RecordingBuffer
-│  └─ FileEncoder
-│     ├─ MediaCodecEncoder (AAC/MP3) - Primary
-│     ├─ LAMEEncoder (MP3) - Optional
-│     └─ WAVWriter (dr_wav) - Optional
-├─ ProcessingPipeline
-│  ├─ SoundTouchProcessor (pitch/speed)
-│  ├─ VolumeControl
-│  └─ BasicDSP (noise gate, normalization)
-└─ SyncEngine
-   ├─ MasterClock
-   ├─ TransportController
-   └─ TimingManager
+|-- PlaybackPipeline
+|  |-- MultiTrackMixer
+|  |-- AudioDecoder (dr_libs: dr_mp3, dr_wav, dr_flac)
+|  `-- TrackSynchronizer
+|-- RecordingPipeline
+|  |-- MicrophoneCapture
+|  |-- RecordingBuffer
+|  `-- FileEncoder
+|     |-- MediaCodecEncoder (AAC/MP3) - Primary
+|     |-- LAMEEncoder (MP3) - Optional
+|     `-- WAVWriter (dr_wav) - Optional
+|-- ProcessingPipeline
+|  |-- SignalsmithStretchProcessor (pitch/speed)
+|  |-- VolumeControl
+|  `-- BasicDSP (noise gate, normalization)
+|-- ExtractionPipeline
+|  |-- TrackExporter
+|  |-- EffectsRenderer (offline)
+|  `-- FileEncoder
+`-- SyncEngine
+   |-- MasterClock
+   |-- TransportController
+   `-- TimingManager
 ```
 
 **Native Bridge (Kotlin):**
 
 ```
 AudioEngineModule (Expo Module API)
-├─ JNI Bridge to C++
-├─ Lifecycle Management
-├─ Error Handling
-└─ Event Emission
+|-- JNI Bridge to C++
+|-- Lifecycle Management
+|-- Error Handling
+`-- Event Emission
 ```
 
 **Service Layer (Kotlin):**
 
 ```
 AudioEngineService (Foreground Service)
-├─ MediaSession Management
-├─ Notification Controller
-└─ Audio Focus Handling
+|-- MediaSession Management
+|-- Notification Controller
+`-- Audio Focus Handling
 ```
 
 ### 4.2 Technology Stack
 
 **Android:**
 - **Oboe 1.8+** (Apache 2.0): Low-latency audio I/O
-- **SoundTouch 2.3+** (LGPL 2.1): Pitch and tempo processing
+- **Signalsmith Stretch**: Pitch and tempo processing
 - **dr_libs** (Public Domain/Unlicense): Audio decoding
   - dr_mp3.h - MP3 decoding
   - dr_wav.h - WAV encoding/decoding (optional, for lossless)
@@ -306,7 +322,7 @@ AudioEngineService (Foreground Service)
   - AAC encoder for recordings
 - **LAME MP3 Encoder** (LGPL 2.1, Optional): Alternative MP3 encoding
   - Better quality control than MediaCodec
-  - Requires dynamic linking (same as SoundTouch)
+  - Requires dynamic linking for LGPL compliance
 - **NDK r25+**: Native C++ compilation
 - **CMake 3.18+**: Build system
 - **Kotlin**: Native module bridge
@@ -328,48 +344,55 @@ AudioEngineService (Foreground Service)
 - Reusability across multiple projects
 - Proper module encapsulation
 
+**Android Core Publishing:** The Android audio engine should be published as a standalone Maven artifact. The Expo module wraps this artifact rather than embedding all Android-native sources.
+
 **Recommended Repository Structure:**
 
 ```
 expo-audio-engine/                    # Separate repository
-├─ android/                           # Android native implementation
-│  ├─ src/
-│  │  ├─ main/
-│  │  │  ├─ java/expo/modules/audioengine/
-│  │  │  │  ├─ ExpoAudioEngineModule.kt
-│  │  │  │  ├─ AudioEngineService.kt
-│  │  │  │  └─ MediaSessionController.kt
-│  │  │  └─ cpp/
-│  │  │     ├─ AudioEngine.cpp
-│  │  │     ├─ AudioEngine.h
-│  │  │     ├─ dr_mp3.h               # Single header include
-│  │  │     ├─ dr_wav.h               # Single header include
-│  │  │     ├─ dr_flac.h              # Single header include
-│  │  │     ├─ OboePlayer.cpp
-│  │  │     ├─ SoundTouchProcessor.cpp
-│  │  │     └─ CMakeLists.txt
-│  ├─ androidTest/                    # Android instrumentation tests
-│  └─ build.gradle
-├─ ios/                               # iOS native implementation
-├─ src/
-│  ├─ index.ts                        # Main TypeScript exports
-│  ├─ AudioEngineModule.ts            # Native module wrapper
-│  └─ AudioEngineModule.types.ts      # TypeScript types
-├─ example/                           # Example Expo app
-│  ├─ app.json
-│  ├─ package.json
-│  └─ App.tsx
-├─ docs/
-│  ├─ API.md
-│  ├─ SETUP.md
-│  └─ TROUBLESHOOTING.md
-├─ __tests__/
-├─ expo-module.config.json            # Expo module configuration
-├─ package.json
-├─ tsconfig.json
-├─ README.md
-├─ CHANGELOG.md
-└─ LICENSE
+|-- android/                           # Android native implementation
+|  |-- src/
+|  |  |-- main/
+|  |  |  |-- java/expo/modules/audioengine/
+|  |  |  |  |-- ExpoAudioEngineModule.kt
+|  |  |  |  |-- AudioEngineService.kt
+|  |  |  |  `-- MediaSessionController.kt
+|  |  |  `-- cpp/
+|  |  |     |-- AudioEngine.cpp
+|  |  |     |-- AudioEngine.h
+|  |  |     |-- dr_mp3.h               # Single header include
+|  |  |     |-- dr_wav.h               # Single header include
+|  |  |     |-- dr_flac.h              # Single header include
+|  |  |     |-- OboePlayer.cpp
+|  |  |     |-- SignalsmithStretchProcessor.cpp
+|  |  |     `-- CMakeLists.txt
+|  |-- androidTest/                    # Android instrumentation tests
+|  `-- build.gradle
+|-- ios/                               # iOS native implementation
+|-- src/
+|  |-- index.ts                        # Main TypeScript exports
+|  |-- AudioEngineModule.ts            # Native module wrapper
+|  `-- AudioEngineModule.types.ts      # TypeScript types
+|-- example/                           # Example Expo app
+|  |-- app.json
+|  |-- package.json
+|  `-- App.tsx
+|-- docs/
+|  |-- API.md
+|  |-- SETUP.md
+|  `-- TROUBLESHOOTING.md
+|-- __tests__/
+|-- expo-module.config.json            # Expo module configuration
+|-- package.json
+|-- tsconfig.json
+|-- README.md
+|-- CHANGELOG.md
+`-- LICENSE
+
+android-audio-engine/                 # Standalone Android engine (Maven artifact)
+|-- engine/                            # Core C++/JNI/Kotlin engine
+|-- build.gradle
+`-- README.md
 ```
 
 **Compatibility Requirements for Cross-Repo Usage:**
@@ -579,6 +602,7 @@ strategy:
 - Use circular buffers for file I/O
 - Typical buffer: 4096-8192 samples per track
 - Pre-buffer 2-3 buffers ahead of playback position
+- Offline extraction does not require circular buffers
 
 **Memory Limits:**
 - Target: <50MB RAM for 4 tracks at 44.1kHz
@@ -634,6 +658,10 @@ interface AudioEngine {
   setRecordingVolume(volume: number): void;
   setInputMonitoring(enabled: boolean): void;
 
+  // Extraction
+  extractTrack(trackId: string, config?: ExtractionConfig): Promise<ExtractionResult>;
+  extractAllTracks(config?: ExtractionConfig): Promise<ExtractionResult[]>;
+
   // Metering
   getInputLevel(): number;
   getOutputLevel(): number;
@@ -688,6 +716,22 @@ interface RecordingResult {
   fileSize: number;              // File size in bytes
 }
 
+interface ExtractionConfig {
+  format?: 'aac' | 'mp3' | 'wav'; // Default: 'aac'
+  bitrate?: number;              // For compressed formats: 64-320 kbps, default: 128
+  includeEffects?: boolean;      // Default: true
+  outputDir?: string;            // Optional output directory
+}
+
+interface ExtractionResult {
+  trackId?: string;              // Present for single-track extraction
+  uri: string;                   // Path to saved file
+  duration: number;              // Duration in milliseconds
+  format: 'aac' | 'mp3' | 'wav';
+  bitrate?: number;              // For compressed formats
+  fileSize: number;              // File size in bytes
+}
+
 interface MediaMetadata {
   title: string;
   artist?: string;
@@ -703,6 +747,8 @@ type AudioEngineEvent =
   | 'trackUnloaded'              // (trackId: string) => void
   | 'recordingStarted'           // () => void
   | 'recordingStopped'           // (result: RecordingResult) => void
+  | 'extractionProgress'         // (trackId: string | null, progress: number) => void
+  | 'extractionComplete'         // (results: ExtractionResult[]) => void
   | 'error';                     // (error: AudioEngineError) => void
 
 type PlaybackState = 'stopped' | 'playing' | 'paused' | 'recording';
@@ -738,7 +784,7 @@ interface AudioEngineError {
 ### Phase 2: Real-Time Effects (1.5 weeks)
 
 **Tasks:**
-- Integrate SoundTouch library
+- Integrate Signalsmith Stretch library
 - Implement pitch shifting (-12 to +12 semitones)
 - Implement speed adjustment (0.5x to 2.0x)
 - Add smooth parameter transitions
@@ -830,7 +876,7 @@ interface AudioEngineError {
 - Test edge cases (buffer underruns, file errors, etc.)
 
 ### Integration Tests (Kotlin/TypeScript)
-- Test full workflows (load + play + record + save)
+- Test full workflows (load + play + record + extract + save)
 - Test state transitions
 - Test error recovery
 - Test memory management
@@ -974,16 +1020,16 @@ interface AudioEngineError {
 
 ```
 expo-audio-engine/
-├─ android/              # Android implementation
-├─ ios/                  # iOS implementation
-├─ src/                  # TypeScript API
-├─ example/              # Example application
-├─ docs/                 # Documentation
-├─ __tests__/            # Tests
-├─ LICENSE               # MIT or Apache 2.0
-├─ README.md             # Getting started
-├─ CONTRIBUTING.md       # Contribution guidelines
-└─ package.json          # npm package config
+|-- android/              # Android implementation
+|-- ios/                  # iOS implementation
+|-- src/                  # TypeScript API
+|-- example/              # Example application
+|-- docs/                 # Documentation
+|-- __tests__/            # Tests
+|-- LICENSE               # MIT or Apache 2.0
+|-- README.md             # Getting started
+|-- CONTRIBUTING.md       # Contribution guidelines
+`-- package.json          # npm package config
 ```
 
 **Versioning:**
@@ -1034,6 +1080,7 @@ expo-audio-engine/
 
 **V1.2:**
 - Waveform data extraction
+- Offline track extraction improvements
 - BPM detection
 - Audio analysis utilities
 
@@ -1055,4 +1102,4 @@ This module aims to fill a significant gap in the React Native/Expo ecosystem by
 
 - Should the Android core and the Expo package live in the same repository or be separated into different repositories?
 - Are there examples of similar projects that made this decision well?
-on target and iOS following the same API contract, developers can build sophisticated audio applications with confidence. Now what I need to decide is wether to keep the android core and the expo pacakge in the same repo, or should I separate them into different repos. What do you think? Are there any examples of similar projects?
+- What Maven coordinates and release process should be used for the standalone Android engine artifact?
