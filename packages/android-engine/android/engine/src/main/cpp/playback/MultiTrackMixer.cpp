@@ -1,0 +1,125 @@
+#include "MultiTrackMixer.h"
+
+#include <algorithm>
+#include <cstring>
+
+namespace sezo {
+namespace playback {
+
+MultiTrackMixer::MultiTrackMixer() = default;
+
+MultiTrackMixer::~MultiTrackMixer() = default;
+
+void MultiTrackMixer::AddTrack(std::shared_ptr<Track> track) {
+  std::lock_guard<std::mutex> lock(tracks_mutex_);
+  tracks_.push_back(track);
+}
+
+bool MultiTrackMixer::RemoveTrack(const std::string& track_id) {
+  std::lock_guard<std::mutex> lock(tracks_mutex_);
+  auto it = std::find_if(tracks_.begin(), tracks_.end(),
+                         [&track_id](const std::shared_ptr<Track>& t) {
+                           return t->GetId() == track_id;
+                         });
+  if (it != tracks_.end()) {
+    tracks_.erase(it);
+    return true;
+  }
+  return false;
+}
+
+void MultiTrackMixer::ClearTracks() {
+  std::lock_guard<std::mutex> lock(tracks_mutex_);
+  tracks_.clear();
+}
+
+std::shared_ptr<Track> MultiTrackMixer::GetTrack(const std::string& track_id) {
+  std::lock_guard<std::mutex> lock(tracks_mutex_);
+  auto it = std::find_if(tracks_.begin(), tracks_.end(),
+                         [&track_id](const std::shared_ptr<Track>& t) {
+                           return t->GetId() == track_id;
+                         });
+  return (it != tracks_.end()) ? *it : nullptr;
+}
+
+std::vector<std::shared_ptr<Track>> MultiTrackMixer::GetTracks() {
+  std::lock_guard<std::mutex> lock(tracks_mutex_);
+  return tracks_;
+}
+
+void MultiTrackMixer::Mix(float* output, size_t frames) {
+  // Clear output buffer
+  std::memset(output, 0, frames * 2 * sizeof(float));  // Assume stereo
+
+  if (tracks_.empty()) {
+    return;
+  }
+
+  // Check if any track is soloed
+  bool has_solo = false;
+  {
+    std::lock_guard<std::mutex> lock(tracks_mutex_);
+    for (const auto& track : tracks_) {
+      if (track->IsSolo()) {
+        has_solo = true;
+        break;
+      }
+    }
+  }
+
+  // Mix tracks
+  std::lock_guard<std::mutex> lock(tracks_mutex_);
+  for (const auto& track : tracks_) {
+    if (!track->IsLoaded()) {
+      continue;
+    }
+
+    // Solo logic: if any track is soloed, only play soloed tracks
+    if (has_solo && !track->IsSolo()) {
+      continue;
+    }
+
+    // Skip muted tracks
+    if (track->IsMuted()) {
+      continue;
+    }
+
+    // Ensure mix buffer is large enough
+    const size_t samples_needed = frames * 2;  // Stereo
+    if (mix_buffer_.size() < samples_needed) {
+      mix_buffer_.resize(samples_needed);
+    }
+
+    // Read track samples
+    const size_t frames_read = track->ReadSamples(mix_buffer_.data(), frames);
+
+    // Mix into output
+    for (size_t i = 0; i < frames_read * 2; ++i) {
+      output[i] += mix_buffer_[i];
+    }
+  }
+
+  // Apply master volume
+  const float master_vol = master_volume_.load(std::memory_order_acquire);
+  if (master_vol != 1.0f) {
+    for (size_t i = 0; i < frames * 2; ++i) {
+      output[i] *= master_vol;
+    }
+  }
+
+  // Clip prevention (soft limiting)
+  for (size_t i = 0; i < frames * 2; ++i) {
+    output[i] = std::clamp(output[i], -1.0f, 1.0f);
+  }
+}
+
+void MultiTrackMixer::SetMasterVolume(float volume) {
+  master_volume_.store(std::clamp(volume, 0.0f, 2.0f), std::memory_order_release);
+}
+
+float MultiTrackMixer::GetMasterVolume() const {
+  return master_volume_.load(std::memory_order_acquire);
+}
+
+}  // namespace playback
+}  // namespace sezo

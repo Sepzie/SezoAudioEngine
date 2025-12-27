@@ -1,0 +1,6 @@
+[submodule "packages/android-engine/android/engine/src/main/cpp/packages/android-engine/android/engine/src/main/cpp/third_party/oboe"]
+	path = packages/android-engine/android/engine/src/main/cpp/packages/android-engine/android/engine/src/main/cpp/third_party/oboe
+	url = https://github.com/google/oboe.git
+[submodule "packages/android-engine/android/engine/src/main/cpp/third_party/oboe"]
+	path = packages/android-engine/android/engine/src/main/cpp/third_party/oboe
+	url = https://github.com/google/oboe.git

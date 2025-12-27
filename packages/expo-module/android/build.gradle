@@ -6,20 +6,47 @@ plugins {
 android {
   namespace "expo.modules.audioengine"
   compileSdk 34
+  ndkVersion "26.1.10909125"
 
   defaultConfig {
     minSdk 24
     targetSdk 34
+
+    ndk {
+      abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
+    }
+  }
+
+  externalNativeBuild {
+    cmake {
+      path "cpp/CMakeLists.txt"
+      version "3.22.1"
+    }
   }
 
   buildTypes {
     release {
       minifyEnabled false
     }
+    debug {
+      minifyEnabled false
+    }
+  }
+
+  compileOptions {
+    sourceCompatibility JavaVersion.VERSION_1_8
+    targetCompatibility JavaVersion.VERSION_1_8
+  }
+
+  kotlinOptions {
+    jvmTarget = "1.8"
   }
 }
 
 dependencies {
-  implementation "org.jetbrains.kotlin:kotlin-stdlib"
+  implementation "org.jetbrains.kotlin:kotlin-stdlib:1.9.0"
   implementation "expo.modules:core:1.12.0"
+
+  // Link to the android-engine package
+  implementation project(':android-engine')
 }
