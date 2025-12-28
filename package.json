@@ -19,6 +19,7 @@
     "build:example:android": "npm --prefix packages/expo-module/example run android",
     "apk:example": "cd packages/expo-module/example/android && ./gradlew app:assembleDebug",
     "example:run": "cd packages/expo-module/example && npx expo run:android",
-    "install:example:android": "cd packages/expo-module/example/android && ./gradlew app:installDebug"
+    "install:example:android": "cd packages/expo-module/example/android && ./gradlew app:installDebug",
+    "example:android": "npm run build:android-engine && npm run example:run"
   }
 }
