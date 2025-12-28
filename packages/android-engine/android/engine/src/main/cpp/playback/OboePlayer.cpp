@@ -14,7 +14,7 @@ OboePlayer::OboePlayer(std::shared_ptr<MultiTrackMixer> mixer,
     : mixer_(mixer), clock_(clock), transport_(transport) {}
 
 OboePlayer::~OboePlayer() {
-  Stop();
+  Close();
 }
 
 bool OboePlayer::Initialize(int32_t sample_rate) {
@@ -63,16 +63,32 @@ bool OboePlayer::Stop() {
   }
 
   oboe::Result result = stream_->stop();
-  if (result != oboe::Result::OK) {
+  if (result != oboe::Result::OK && result != oboe::Result::ErrorInvalidState) {
     LOGE("Failed to stop stream: %s", oboe::convertToText(result));
     return false;
   }
 
-  stream_->close();
-  stream_.reset();
-
   LOGD("Stream stopped");
   return true;
+}
+
+void OboePlayer::Close() {
+  if (!stream_) {
+    return;
+  }
+
+  oboe::Result stop_result = stream_->stop();
+  if (stop_result != oboe::Result::OK && stop_result != oboe::Result::ErrorInvalidState) {
+    LOGE("Failed to stop stream during close: %s", oboe::convertToText(stop_result));
+  }
+
+  oboe::Result close_result = stream_->close();
+  if (close_result != oboe::Result::OK) {
+    LOGE("Failed to close stream: %s", oboe::convertToText(close_result));
+  }
+
+  stream_.reset();
+  LOGD("Stream closed");
 }
 
 bool OboePlayer::IsRunning() const {

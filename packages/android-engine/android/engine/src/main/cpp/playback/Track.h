@@ -54,7 +54,7 @@ class Track {
 
   // Getters
   const std::string& GetId() const { return id_; }
-  bool IsLoaded() const { return is_loaded_; }
+  bool IsLoaded() const { return is_loaded_.load(std::memory_order_acquire); }
   int64_t GetDuration() const;
   int32_t GetSampleRate() const;
   int32_t GetChannels() const;
@@ -76,13 +76,14 @@ class Track {
   std::string file_path_;
   std::unique_ptr<audio::AudioDecoder> decoder_;
   std::unique_ptr<core::CircularBuffer> buffer_;
-  bool is_loaded_ = false;
+  std::atomic<bool> is_loaded_{false};
 
   // Streaming thread
   std::unique_ptr<std::thread> streaming_thread_;
   std::atomic<bool> streaming_active_{false};
   std::mutex streaming_mutex_;
   std::condition_variable streaming_cv_;
+  std::mutex decoder_mutex_;
 
   // Per-track controls (atomic for thread safety)
   std::atomic<float> volume_{1.0f};

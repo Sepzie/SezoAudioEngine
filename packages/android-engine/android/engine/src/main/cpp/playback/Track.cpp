@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 #include <android/log.h>
 
 #define LOG_TAG "Track"
@@ -25,7 +26,7 @@ Track::~Track() {
 }
 
 bool Track::Load() {
-  if (is_loaded_) {
+  if (is_loaded_.load(std::memory_order_acquire)) {
     return true;
   }
 
@@ -51,13 +52,13 @@ bool Track::Load() {
   streaming_active_.store(true, std::memory_order_release);
   streaming_thread_ = std::make_unique<std::thread>(&Track::StreamingThreadFunc, this);
 
-  is_loaded_ = true;
+  is_loaded_.store(true, std::memory_order_release);
   LOGD("Track loaded: %s", id_.c_str());
   return true;
 }
 
 void Track::Unload() {
-  if (is_loaded_) {
+  if (is_loaded_.load(std::memory_order_acquire)) {
     // Stop streaming thread
     streaming_active_.store(false, std::memory_order_release);
     streaming_cv_.notify_all();
@@ -67,18 +68,22 @@ void Track::Unload() {
     }
     streaming_thread_.reset();
 
-    decoder_->Close();
-    decoder_.reset();
+    {
+      std::lock_guard<std::mutex> lock(decoder_mutex_);
+      decoder_->Close();
+      decoder_.reset();
+    }
     buffer_.reset();
-    is_loaded_ = false;
+    is_loaded_.store(false, std::memory_order_release);
     LOGD("Track unloaded: %s", id_.c_str());
   }
 }
 
 size_t Track::ReadSamples(float* output, size_t frames) {
-  if (!is_loaded_ || muted_.load(std::memory_order_acquire)) {
+  if (!is_loaded_.load(std::memory_order_acquire) || muted_.load(std::memory_order_acquire)) {
     // If muted, fill with silence
-    std::fill_n(output, frames * decoder_->GetFormat().channels, 0.0f);
+    const int32_t channels = decoder_ ? decoder_->GetFormat().channels : 2;
+    std::fill_n(output, frames * channels, 0.0f);
     return frames;
   }
 
@@ -119,12 +124,23 @@ size_t Track::ReadSamples(float* output, size_t frames) {
 }
 
 bool Track::Seek(int64_t frame) {
-  if (!is_loaded_) {
+  if (!is_loaded_.load(std::memory_order_acquire) || !decoder_) {
     return false;
   }
 
+  std::lock_guard<std::mutex> lock(decoder_mutex_);
+  const int64_t total_frames = decoder_->GetFormat().total_frames;
+  int64_t clamped_frame = frame;
+  if (total_frames > 0) {
+    clamped_frame = std::clamp(frame, int64_t{0}, total_frames);
+  } else if (frame < 0) {
+    clamped_frame = 0;
+  }
+
   buffer_->Reset();
-  return decoder_->Seek(frame);
+  const bool result = decoder_->Seek(clamped_frame);
+  streaming_cv_.notify_all();
+  return result;
 }
 
 int64_t Track::GetDuration() const {
@@ -186,7 +202,13 @@ void Track::StreamingThreadFunc() {
 
     if (free_space >= samples_per_chunk) {
       // Read from decoder
-      const size_t frames_read = decoder_->Read(temp_buffer.data(), chunk_frames);
+      size_t frames_read = 0;
+      {
+        std::lock_guard<std::mutex> lock(decoder_mutex_);
+        if (decoder_) {
+          frames_read = decoder_->Read(temp_buffer.data(), chunk_frames);
+        }
+      }
 
       if (frames_read > 0) {
         // Write to circular buffer

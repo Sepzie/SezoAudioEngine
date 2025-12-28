@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/ErrorCodes.h"
 #include "core/MasterClock.h"
 #include "core/TimingManager.h"
 #include "core/TransportController.h"
@@ -9,6 +10,8 @@
 
 #include <map>
 #include <memory>
+#include <mutex>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -35,6 +38,12 @@ class AudioEngine {
    * Release all resources.
    */
   void Release();
+
+  using ErrorCallback = std::function<void(core::ErrorCode, const std::string&)>;
+
+  void SetErrorCallback(ErrorCallback callback);
+  core::ErrorCode GetLastErrorCode() const;
+  std::string GetLastErrorMessage() const;
 
   // Track management
   bool LoadTrack(const std::string& track_id, const std::string& file_path);
@@ -68,8 +77,11 @@ class AudioEngine {
   float GetSpeed() const;
 
  private:
+  void ReportError(core::ErrorCode code, const std::string& message);
+
   bool initialized_ = false;
   int32_t sample_rate_ = 44100;
+  int32_t max_tracks_ = 8;
 
   // Core components
   std::shared_ptr<core::MasterClock> clock_;
@@ -86,6 +98,11 @@ class AudioEngine {
   // Effects state (for Phase 2)
   float pitch_ = 0.0f;
   float speed_ = 1.0f;
+
+  mutable std::mutex error_mutex_;
+  ErrorCallback error_callback_;
+  core::ErrorCode last_error_ = core::ErrorCode::kOk;
+  std::string last_error_message_;
 };
 
 }  // namespace sezo

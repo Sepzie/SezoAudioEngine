@@ -1,5 +1,6 @@
 #include "AudioEngine.h"
 #include <android/log.h>
+#include <utility>
 
 #define LOG_TAG "AudioEngine"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
@@ -13,13 +14,38 @@ AudioEngine::~AudioEngine() {
   Release();
 }
 
+void AudioEngine::SetErrorCallback(ErrorCallback callback) {
+  std::lock_guard<std::mutex> lock(error_mutex_);
+  error_callback_ = std::move(callback);
+}
+
+core::ErrorCode AudioEngine::GetLastErrorCode() const {
+  std::lock_guard<std::mutex> lock(error_mutex_);
+  return last_error_;
+}
+
+std::string AudioEngine::GetLastErrorMessage() const {
+  std::lock_guard<std::mutex> lock(error_mutex_);
+  return last_error_message_;
+}
+
 bool AudioEngine::Initialize(int32_t sample_rate, int32_t max_tracks) {
   if (initialized_) {
     LOGD("AudioEngine already initialized");
     return true;
   }
 
+  if (sample_rate <= 0) {
+    ReportError(core::ErrorCode::kInvalidArgument, "Invalid sample rate");
+    return false;
+  }
+  if (max_tracks <= 0) {
+    ReportError(core::ErrorCode::kInvalidArgument, "Invalid max tracks");
+    return false;
+  }
+
   sample_rate_ = sample_rate;
+  max_tracks_ = max_tracks;
 
   // Create core components
   clock_ = std::make_shared<core::MasterClock>();
@@ -33,6 +59,7 @@ bool AudioEngine::Initialize(int32_t sample_rate, int32_t max_tracks) {
   // Initialize Oboe player
   if (!player_->Initialize(sample_rate)) {
     LOGE("Failed to initialize Oboe player");
+    ReportError(core::ErrorCode::kStreamError, "Failed to initialize audio stream");
     Release();
     return false;
   }
@@ -49,6 +76,9 @@ void AudioEngine::Release() {
 
   Stop();
   UnloadAllTracks();
+  if (player_) {
+    player_->Close();
+  }
 
   player_.reset();
   mixer_.reset();
@@ -62,7 +92,26 @@ void AudioEngine::Release() {
 
 bool AudioEngine::LoadTrack(const std::string& track_id, const std::string& file_path) {
   if (!initialized_) {
-    LOGE("AudioEngine not initialized");
+    ReportError(core::ErrorCode::kNotInitialized, "AudioEngine not initialized");
+    return false;
+  }
+  if (track_id.empty()) {
+    ReportError(core::ErrorCode::kInvalidArgument, "Track id is empty");
+    return false;
+  }
+  if (file_path.empty()) {
+    ReportError(core::ErrorCode::kInvalidArgument, "File path is empty");
+    return false;
+  }
+  if (tracks_.size() >= static_cast<size_t>(max_tracks_)) {
+    ReportError(core::ErrorCode::kTrackLimitReached, "Max track limit reached");
+    return false;
+  }
+
+  const bool is_mp3 = file_path.find(".mp3") != std::string::npos;
+  const bool is_wav = file_path.find(".wav") != std::string::npos;
+  if (!is_mp3 && !is_wav) {
+    ReportError(core::ErrorCode::kUnsupportedFormat, "Unsupported audio format: " + file_path);
     return false;
   }
 
@@ -76,6 +125,7 @@ bool AudioEngine::LoadTrack(const std::string& track_id, const std::string& file
   auto track = std::make_shared<playback::Track>(track_id, file_path);
   if (!track->Load()) {
     LOGE("Failed to load track: %s", file_path.c_str());
+    ReportError(core::ErrorCode::kDecoderOpenFailed, "Failed to load track: " + file_path);
     return false;
   }
 
@@ -97,6 +147,7 @@ bool AudioEngine::LoadTrack(const std::string& track_id, const std::string& file
 bool AudioEngine::UnloadTrack(const std::string& track_id) {
   auto it = tracks_.find(track_id);
   if (it == tracks_.end()) {
+    ReportError(core::ErrorCode::kTrackNotFound, "Track not found: " + track_id);
     return false;
   }
 
@@ -129,7 +180,11 @@ void AudioEngine::Play() {
   }
 
   transport_->Play();
-  player_->Start();
+  if (!player_->Start()) {
+    transport_->Stop();
+    ReportError(core::ErrorCode::kStreamError, "Failed to start audio stream");
+    return;
+  }
   LOGD("Playback started");
 }
 
@@ -148,8 +203,10 @@ void AudioEngine::Stop() {
   }
 
   transport_->Stop();
-  player_->Stop();
-  clock_->Reset();
+  if (!player_->Stop()) {
+    ReportError(core::ErrorCode::kStreamError, "Failed to stop audio stream");
+  }
+  Seek(0.0);
   LOGD("Playback stopped");
 }
 
@@ -158,15 +215,32 @@ void AudioEngine::Seek(double position_ms) {
     return;
   }
 
-  const int64_t frame = timing_->MsToSamples(position_ms);
+  const double duration_ms = timing_->GetDurationMs();
+  double clamped_ms = position_ms;
+  if (clamped_ms < 0.0) {
+    clamped_ms = 0.0;
+  } else if (duration_ms > 0.0 && clamped_ms > duration_ms) {
+    clamped_ms = duration_ms;
+  }
+  if (clamped_ms != position_ms) {
+    ReportError(core::ErrorCode::kInvalidArgument, "Seek position out of range");
+  }
+
+  const int64_t frame = timing_->MsToSamples(clamped_ms);
   clock_->SetPosition(frame);
 
   // Seek all tracks
+  bool seek_ok = true;
   for (auto& pair : tracks_) {
-    pair.second->Seek(frame);
+    if (!pair.second->Seek(frame)) {
+      seek_ok = false;
+    }
+  }
+  if (!seek_ok) {
+    ReportError(core::ErrorCode::kSeekFailed, "One or more tracks failed to seek");
   }
 
-  LOGD("Seeked to %.2f ms (%lld frames)", position_ms, static_cast<long long>(frame));
+  LOGD("Seeked to %.2f ms (%lld frames)", clamped_ms, static_cast<long long>(frame));
 }
 
 bool AudioEngine::IsPlaying() const {
@@ -191,6 +265,8 @@ void AudioEngine::SetTrackVolume(const std::string& track_id, float volume) {
   auto track = mixer_->GetTrack(track_id);
   if (track) {
     track->SetVolume(volume);
+  } else {
+    ReportError(core::ErrorCode::kTrackNotFound, "Track not found: " + track_id);
   }
 }
 
@@ -198,6 +274,8 @@ void AudioEngine::SetTrackMuted(const std::string& track_id, bool muted) {
   auto track = mixer_->GetTrack(track_id);
   if (track) {
     track->SetMuted(muted);
+  } else {
+    ReportError(core::ErrorCode::kTrackNotFound, "Track not found: " + track_id);
   }
 }
 
@@ -205,6 +283,8 @@ void AudioEngine::SetTrackSolo(const std::string& track_id, bool solo) {
   auto track = mixer_->GetTrack(track_id);
   if (track) {
     track->SetSolo(solo);
+  } else {
+    ReportError(core::ErrorCode::kTrackNotFound, "Track not found: " + track_id);
   }
 }
 
@@ -212,6 +292,8 @@ void AudioEngine::SetTrackPan(const std::string& track_id, float pan) {
   auto track = mixer_->GetTrack(track_id);
   if (track) {
     track->SetPan(pan);
+  } else {
+    ReportError(core::ErrorCode::kTrackNotFound, "Track not found: " + track_id);
   }
 }
 
@@ -241,6 +323,21 @@ void AudioEngine::SetSpeed(float rate) {
 
 float AudioEngine::GetSpeed() const {
   return speed_;
+}
+
+void AudioEngine::ReportError(core::ErrorCode code, const std::string& message) {
+  ErrorCallback callback;
+  {
+    std::lock_guard<std::mutex> lock(error_mutex_);
+    last_error_ = code;
+    last_error_message_ = message;
+    callback = error_callback_;
+  }
+
+  if (callback) {
+    callback(code, message);
+  }
+  LOGE("%s", message.c_str());
 }
 
 }  // namespace sezo

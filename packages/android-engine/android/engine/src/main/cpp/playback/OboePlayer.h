@@ -47,6 +47,11 @@ class OboePlayer : public oboe::AudioStreamDataCallback {
   bool Stop();
 
   /**
+   * Close the audio stream and release resources.
+   */
+  void Close();
+
+  /**
    * Check if the stream is running.
    * @return true if running
    */
