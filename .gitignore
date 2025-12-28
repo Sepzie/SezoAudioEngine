@@ -33,3 +33,12 @@ android/.idea/
 # Backup files
 *.bak
 *_clean.cpp
+
+# Expo example app (generated/native + build outputs)
+packages/expo-module/example/android/
+packages/expo-module/example/ios/
+packages/expo-module/example/.expo/
+packages/expo-module/example/.expo-shared/
+packages/expo-module/example/dist/
+packages/expo-module/example/web-build/
+packages/expo-module/example/coverage/

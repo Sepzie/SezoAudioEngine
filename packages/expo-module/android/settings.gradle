@@ -1,3 +1,12 @@
 // Include the android-engine module
+// This path works whether we're building standalone or as part of an Expo app
 include ':android-engine'
-project(':android-engine').projectDir = new File(rootProject.projectDir, '../../../android-engine/android/engine')
+
+// Try to find android-engine relative to this settings.gradle file
+def androidEnginePath = new File(settingsDir, '../../android-engine/android/engine')
+if (!androidEnginePath.exists()) {
+  // If not found, we might be in node_modules of an example app - go up more levels
+  androidEnginePath = new File(settingsDir, '../../../../android-engine/android/engine')
+}
+
+project(':android-engine').projectDir = androidEnginePath
