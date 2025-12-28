@@ -86,6 +86,7 @@ oboe::DataCallbackResult OboePlayer::onAudioReady(
     oboe::AudioStream* audio_stream,
     void* audio_data,
     int32_t num_frames) {
+  (void)audio_stream;
   auto* output_buffer = static_cast<float*>(audio_data);
 
   // Check if we should be playing

@@ -40,20 +40,25 @@ using namespace sezo::jni;
 extern "C" {
 
 JNIEXPORT jlong JNICALL
-Java_com_sezo_audioengine_AudioEngine_nativeCreate(JNIEnv* env, jobject thiz) {
+Java_com_sezo_audioengine_AudioEngine_nativeCreate(JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]]) {
+  (void)env;
+  (void)thiz;
   auto* engine = new AudioEngine();
   return reinterpret_cast<jlong>(engine);
 }
 
 JNIEXPORT void JNICALL
-Java_com_sezo_audioengine_AudioEngine_nativeDestroy(JNIEnv* env, jobject thiz, jlong handle) {
+Java_com_sezo_audioengine_AudioEngine_nativeDestroy(JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]], jlong handle) {
+  (void)env;
+  (void)thiz;
   auto* engine = reinterpret_cast<AudioEngine*>(handle);
   delete engine;
 }
 
 JNIEXPORT jboolean JNICALL
 Java_com_sezo_audioengine_AudioEngine_nativeInitialize(
-    JNIEnv* env, jobject thiz, jlong handle, jint sample_rate, jint max_tracks) {
+    JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]], jlong handle, jint sample_rate, jint max_tracks) {
+  (void)thiz;
   auto* engine = reinterpret_cast<AudioEngine*>(handle);
   if (!engine) {
     JNIHelper::ThrowException(env, "Engine not initialized");
@@ -63,16 +68,21 @@ Java_com_sezo_audioengine_AudioEngine_nativeInitialize(
 }
 
 JNIEXPORT void JNICALL
-Java_com_sezo_audioengine_AudioEngine_nativeRelease(JNIEnv* env, jobject thiz, jlong handle) {
+Java_com_sezo_audioengine_AudioEngine_nativeRelease(JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]], jlong handle) {
+  (void)env;
+  (void)thiz;
   auto* engine = reinterpret_cast<AudioEngine*>(handle);
   if (engine) {
+  (void)env;
+  (void)thiz;
     engine->Release();
   }
 }
 
 JNIEXPORT jboolean JNICALL
 Java_com_sezo_audioengine_AudioEngine_nativeLoadTrack(
-    JNIEnv* env, jobject thiz, jlong handle, jstring track_id, jstring file_path) {
+    JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]], jlong handle, jstring track_id, jstring file_path) {
+  (void)thiz;
   auto* engine = reinterpret_cast<AudioEngine*>(handle);
   if (!engine) {
     return JNI_FALSE;
@@ -86,7 +96,8 @@ Java_com_sezo_audioengine_AudioEngine_nativeLoadTrack(
 
 JNIEXPORT jboolean JNICALL
 Java_com_sezo_audioengine_AudioEngine_nativeUnloadTrack(
-    JNIEnv* env, jobject thiz, jlong handle, jstring track_id) {
+    JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]], jlong handle, jstring track_id) {
+  (void)thiz;
   auto* engine = reinterpret_cast<AudioEngine*>(handle);
   if (!engine) {
     return JNI_FALSE;
@@ -98,7 +109,9 @@ Java_com_sezo_audioengine_AudioEngine_nativeUnloadTrack(
 
 JNIEXPORT void JNICALL
 Java_com_sezo_audioengine_AudioEngine_nativeUnloadAllTracks(
-    JNIEnv* env, jobject thiz, jlong handle) {
+    JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]], jlong handle) {
+  (void)env;
+  (void)thiz;
   auto* engine = reinterpret_cast<AudioEngine*>(handle);
   if (engine) {
     engine->UnloadAllTracks();
@@ -106,32 +119,40 @@ Java_com_sezo_audioengine_AudioEngine_nativeUnloadAllTracks(
 }
 
 JNIEXPORT void JNICALL
-Java_com_sezo_audioengine_AudioEngine_nativePlay(JNIEnv* env, jobject thiz, jlong handle) {
+Java_com_sezo_audioengine_AudioEngine_nativePlay(JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]], jlong handle) {
+  (void)env;
+  (void)thiz;
   auto* engine = reinterpret_cast<AudioEngine*>(handle);
   if (engine) {
+  (void)env;
+  (void)thiz;
     engine->Play();
   }
 }
 
 JNIEXPORT void JNICALL
-Java_com_sezo_audioengine_AudioEngine_nativePause(JNIEnv* env, jobject thiz, jlong handle) {
+Java_com_sezo_audioengine_AudioEngine_nativePause(JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]], jlong handle) {
   auto* engine = reinterpret_cast<AudioEngine*>(handle);
   if (engine) {
+  (void)env;
+  (void)thiz;
     engine->Pause();
   }
 }
 
 JNIEXPORT void JNICALL
-Java_com_sezo_audioengine_AudioEngine_nativeStop(JNIEnv* env, jobject thiz, jlong handle) {
+Java_com_sezo_audioengine_AudioEngine_nativeStop(JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]], jlong handle) {
   auto* engine = reinterpret_cast<AudioEngine*>(handle);
   if (engine) {
+  (void)env;
+  (void)thiz;
     engine->Stop();
   }
 }
 
 JNIEXPORT void JNICALL
 Java_com_sezo_audioengine_AudioEngine_nativeSeek(
-    JNIEnv* env, jobject thiz, jlong handle, jdouble position_ms) {
+    JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]], jlong handle, jdouble position_ms) {
   auto* engine = reinterpret_cast<AudioEngine*>(handle);
   if (engine) {
     engine->Seek(position_ms);
@@ -139,9 +160,11 @@ Java_com_sezo_audioengine_AudioEngine_nativeSeek(
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_sezo_audioengine_AudioEngine_nativeIsPlaying(JNIEnv* env, jobject thiz, jlong handle) {
+Java_com_sezo_audioengine_AudioEngine_nativeIsPlaying(JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]], jlong handle) {
   auto* engine = reinterpret_cast<AudioEngine*>(handle);
   if (!engine) {
+  (void)env;
+  (void)thiz;
     return JNI_FALSE;
   }
   return engine->IsPlaying() ? JNI_TRUE : JNI_FALSE;
@@ -149,7 +172,7 @@ Java_com_sezo_audioengine_AudioEngine_nativeIsPlaying(JNIEnv* env, jobject thiz,
 
 JNIEXPORT jdouble JNICALL
 Java_com_sezo_audioengine_AudioEngine_nativeGetCurrentPosition(
-    JNIEnv* env, jobject thiz, jlong handle) {
+    JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]], jlong handle) {
   auto* engine = reinterpret_cast<AudioEngine*>(handle);
   if (!engine) {
     return 0.0;
@@ -158,9 +181,11 @@ Java_com_sezo_audioengine_AudioEngine_nativeGetCurrentPosition(
 }
 
 JNIEXPORT jdouble JNICALL
-Java_com_sezo_audioengine_AudioEngine_nativeGetDuration(JNIEnv* env, jobject thiz, jlong handle) {
+Java_com_sezo_audioengine_AudioEngine_nativeGetDuration(JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]], jlong handle) {
   auto* engine = reinterpret_cast<AudioEngine*>(handle);
   if (!engine) {
+  (void)env;
+  (void)thiz;
     return 0.0;
   }
   return engine->GetDuration();
@@ -168,7 +193,7 @@ Java_com_sezo_audioengine_AudioEngine_nativeGetDuration(JNIEnv* env, jobject thi
 
 JNIEXPORT void JNICALL
 Java_com_sezo_audioengine_AudioEngine_nativeSetTrackVolume(
-    JNIEnv* env, jobject thiz, jlong handle, jstring track_id, jfloat volume) {
+    JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]], jlong handle, jstring track_id, jfloat volume) {
   auto* engine = reinterpret_cast<AudioEngine*>(handle);
   if (engine) {
     std::string id = JNIHelper::JStringToString(env, track_id);
@@ -178,7 +203,7 @@ Java_com_sezo_audioengine_AudioEngine_nativeSetTrackVolume(
 
 JNIEXPORT void JNICALL
 Java_com_sezo_audioengine_AudioEngine_nativeSetTrackMuted(
-    JNIEnv* env, jobject thiz, jlong handle, jstring track_id, jboolean muted) {
+    JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]], jlong handle, jstring track_id, jboolean muted) {
   auto* engine = reinterpret_cast<AudioEngine*>(handle);
   if (engine) {
     std::string id = JNIHelper::JStringToString(env, track_id);
@@ -188,7 +213,7 @@ Java_com_sezo_audioengine_AudioEngine_nativeSetTrackMuted(
 
 JNIEXPORT void JNICALL
 Java_com_sezo_audioengine_AudioEngine_nativeSetTrackSolo(
-    JNIEnv* env, jobject thiz, jlong handle, jstring track_id, jboolean solo) {
+    JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]], jlong handle, jstring track_id, jboolean solo) {
   auto* engine = reinterpret_cast<AudioEngine*>(handle);
   if (engine) {
     std::string id = JNIHelper::JStringToString(env, track_id);
@@ -198,7 +223,7 @@ Java_com_sezo_audioengine_AudioEngine_nativeSetTrackSolo(
 
 JNIEXPORT void JNICALL
 Java_com_sezo_audioengine_AudioEngine_nativeSetTrackPan(
-    JNIEnv* env, jobject thiz, jlong handle, jstring track_id, jfloat pan) {
+    JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]], jlong handle, jstring track_id, jfloat pan) {
   auto* engine = reinterpret_cast<AudioEngine*>(handle);
   if (engine) {
     std::string id = JNIHelper::JStringToString(env, track_id);
@@ -208,7 +233,7 @@ Java_com_sezo_audioengine_AudioEngine_nativeSetTrackPan(
 
 JNIEXPORT void JNICALL
 Java_com_sezo_audioengine_AudioEngine_nativeSetMasterVolume(
-    JNIEnv* env, jobject thiz, jlong handle, jfloat volume) {
+    JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]], jlong handle, jfloat volume) {
   auto* engine = reinterpret_cast<AudioEngine*>(handle);
   if (engine) {
     engine->SetMasterVolume(volume);
@@ -217,7 +242,7 @@ Java_com_sezo_audioengine_AudioEngine_nativeSetMasterVolume(
 
 JNIEXPORT jfloat JNICALL
 Java_com_sezo_audioengine_AudioEngine_nativeGetMasterVolume(
-    JNIEnv* env, jobject thiz, jlong handle) {
+    JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]], jlong handle) {
   auto* engine = reinterpret_cast<AudioEngine*>(handle);
   if (!engine) {
     return 1.0f;
@@ -227,7 +252,7 @@ Java_com_sezo_audioengine_AudioEngine_nativeGetMasterVolume(
 
 JNIEXPORT void JNICALL
 Java_com_sezo_audioengine_AudioEngine_nativeSetPitch(
-    JNIEnv* env, jobject thiz, jlong handle, jfloat semitones) {
+    JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]], jlong handle, jfloat semitones) {
   auto* engine = reinterpret_cast<AudioEngine*>(handle);
   if (engine) {
     engine->SetPitch(semitones);
@@ -235,9 +260,11 @@ Java_com_sezo_audioengine_AudioEngine_nativeSetPitch(
 }
 
 JNIEXPORT jfloat JNICALL
-Java_com_sezo_audioengine_AudioEngine_nativeGetPitch(JNIEnv* env, jobject thiz, jlong handle) {
+Java_com_sezo_audioengine_AudioEngine_nativeGetPitch(JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]], jlong handle) {
   auto* engine = reinterpret_cast<AudioEngine*>(handle);
   if (!engine) {
+  (void)env;
+  (void)thiz;
     return 0.0f;
   }
   return engine->GetPitch();
@@ -245,7 +272,7 @@ Java_com_sezo_audioengine_AudioEngine_nativeGetPitch(JNIEnv* env, jobject thiz, 
 
 JNIEXPORT void JNICALL
 Java_com_sezo_audioengine_AudioEngine_nativeSetSpeed(
-    JNIEnv* env, jobject thiz, jlong handle, jfloat rate) {
+    JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]], jlong handle, jfloat rate) {
   auto* engine = reinterpret_cast<AudioEngine*>(handle);
   if (engine) {
     engine->SetSpeed(rate);
@@ -253,9 +280,11 @@ Java_com_sezo_audioengine_AudioEngine_nativeSetSpeed(
 }
 
 JNIEXPORT jfloat JNICALL
-Java_com_sezo_audioengine_AudioEngine_nativeGetSpeed(JNIEnv* env, jobject thiz, jlong handle) {
+Java_com_sezo_audioengine_AudioEngine_nativeGetSpeed(JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]], jlong handle) {
   auto* engine = reinterpret_cast<AudioEngine*>(handle);
   if (!engine) {
+  (void)env;
+  (void)thiz;
     return 1.0f;
   }
   return engine->GetSpeed();

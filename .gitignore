@@ -1,10 +1,35 @@
 node_modules/
 .DS_Store
 *.log
+
+# Android build outputs
 build/
-android/.gradle/
-android/local.properties
-android/.idea/
+**/build/
 *.iml
+.gradle/
+**/gradle-wrapper.jar
+
+# Android local config
+local.properties
+**/local.properties
+
+# IDE
 .idea/
 .vscode/
+android/.idea/
+
+# Native build artifacts
+.cxx/
+**/.cxx/
+.externalNativeBuild/
+**/.externalNativeBuild/
+
+# Generated files
+*.aar
+*.so
+*.o
+*.a
+
+# Backup files
+*.bak
+*_clean.cpp

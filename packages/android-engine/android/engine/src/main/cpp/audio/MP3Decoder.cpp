@@ -1,3 +1,4 @@
+#define DR_MP3_IMPLEMENTATION
 #include "MP3Decoder.h"
 #include <cstring>
 

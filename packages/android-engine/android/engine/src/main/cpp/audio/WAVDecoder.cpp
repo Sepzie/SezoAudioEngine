@@ -1,3 +1,4 @@
+#define DR_WAV_IMPLEMENTATION
 #include "WAVDecoder.h"
 #include <cstring>
 
