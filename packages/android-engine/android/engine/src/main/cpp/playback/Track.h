@@ -6,6 +6,9 @@
 #include <atomic>
 #include <memory>
 #include <string>
+#include <thread>
+#include <condition_variable>
+#include <mutex>
 
 namespace sezo {
 namespace playback {
@@ -67,11 +70,19 @@ class Track {
   float GetPan() const;
 
  private:
+  void StreamingThreadFunc();
+
   std::string id_;
   std::string file_path_;
   std::unique_ptr<audio::AudioDecoder> decoder_;
   std::unique_ptr<core::CircularBuffer> buffer_;
   bool is_loaded_ = false;
+
+  // Streaming thread
+  std::unique_ptr<std::thread> streaming_thread_;
+  std::atomic<bool> streaming_active_{false};
+  std::mutex streaming_mutex_;
+  std::condition_variable streaming_cv_;
 
   // Per-track controls (atomic for thread safety)
   std::atomic<float> volume_{1.0f};
