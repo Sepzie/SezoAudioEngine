@@ -250,8 +250,8 @@ export default function App() {
           pan: 0.0,
           muted: false,
           solo: false,
-          pitch: 0.0,
-          speed: 1.0,
+          pitch: supportsTrackPitch ? 0.0 : track.pitch,
+          speed: supportsTrackSpeed ? 1.0 : track.speed,
         }))
       );
       setIsPlaying(false);
@@ -261,6 +261,26 @@ export default function App() {
       console.error('Reset error:', error);
     }
   }, [engineAny, supportsTrackPitch, supportsTrackSpeed, tracks]);
+
+  const handleMasterReset = useCallback(() => {
+    try {
+      AudioEngineModule.setMasterVolume(1.0);
+      AudioEngineModule.setPitch(0.0);
+      AudioEngineModule.setSpeed(1.0);
+      setMasterVolume(1.0);
+      setMasterPitch(0.0);
+      setMasterSpeed(1.0);
+      setTracks((prev) =>
+        prev.map((track) => ({
+          ...track,
+          pitch: supportsTrackPitch ? 0.0 : track.pitch,
+          speed: supportsTrackSpeed ? 1.0 : track.speed,
+        }))
+      );
+    } catch (error) {
+      console.error('Master reset error:', error);
+    }
+  }, [supportsTrackPitch, supportsTrackSpeed]);
 
   const handleSeek = useCallback((value: number) => {
     try {
@@ -346,11 +366,12 @@ export default function App() {
   const handleMasterSpeedChange = useCallback((value: number) => {
     try {
       AudioEngineModule.setSpeed(value);
+      AudioEngineModule.setPitch(masterPitch);
       setMasterSpeed(value);
     } catch (error) {
       console.error('Master speed error:', error);
     }
-  }, []);
+  }, [masterPitch]);
 
   const handleTrackPitchChange = useCallback((trackId: string, value: number) => {
     try {
@@ -372,13 +393,18 @@ export default function App() {
         return;
       }
       engineAny.setTrackSpeed(trackId, value);
+      if (supportsTrackPitch) {
+        const currentPitch =
+          tracks.find((track) => track.id === trackId)?.pitch ?? 0.0;
+        engineAny.setTrackPitch(trackId, currentPitch);
+      }
       setTracks((prev) =>
         prev.map((t) => (t.id === trackId ? { ...t, speed: value } : t))
       );
     } catch (error) {
       console.error('Track speed error:', error);
     }
-  }, [engineAny, supportsTrackSpeed]);
+  }, [engineAny, supportsTrackPitch, supportsTrackSpeed, tracks]);
 
   const formatTime = (ms: number) => {
     const totalSeconds = Math.floor(ms / 1000);
@@ -509,13 +535,31 @@ export default function App() {
             <Animated.View style={[styles.card, controlsStyle]}>
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>Master</Text>
-                <Text style={styles.sectionHint}>Global mix controls</Text>
+                <View style={styles.sectionHeaderActions}>
+                  <Text style={styles.sectionHint}>Global mix controls</Text>
+                  <TouchableOpacity
+                    style={styles.iconResetButton}
+                    onPress={handleMasterReset}
+                  >
+                    <Text style={styles.iconResetText}>↺</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
 
               <View style={styles.controlGroup}>
                 <View style={styles.labelRow}>
                   <Text style={styles.label}>Master Volume</Text>
-                  <Text style={styles.valuePill}>{(masterVolume * 100).toFixed(0)}%</Text>
+                  <View style={styles.valueRow}>
+                    <Text style={styles.valuePill}>
+                      {(masterVolume * 100).toFixed(0)}%
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.iconResetButton}
+                      onPress={() => handleMasterVolumeChange(1.0)}
+                    >
+                      <Text style={styles.iconResetText}>↺</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
                 <Slider
                   style={styles.slider}
@@ -532,10 +576,18 @@ export default function App() {
               <View style={styles.controlGroup}>
                 <View style={styles.labelRow}>
                   <Text style={styles.label}>Master Pitch</Text>
-                  <Text style={styles.valuePill}>
-                    {masterPitch > 0 ? '+' : ''}
-                    {masterPitch.toFixed(1)} st
-                  </Text>
+                  <View style={styles.valueRow}>
+                    <Text style={styles.valuePill}>
+                      {masterPitch > 0 ? '+' : ''}
+                      {masterPitch.toFixed(1)} st
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.iconResetButton}
+                      onPress={() => handleMasterPitchChange(0.0)}
+                    >
+                      <Text style={styles.iconResetText}>↺</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
                 <Slider
                   style={styles.slider}
@@ -552,7 +604,17 @@ export default function App() {
               <View style={styles.controlGroup}>
                 <View style={styles.labelRow}>
                   <Text style={styles.label}>Master Speed</Text>
-                  <Text style={styles.valuePill}>{(masterSpeed * 100).toFixed(0)}%</Text>
+                  <View style={styles.valueRow}>
+                    <Text style={styles.valuePill}>
+                      {(masterSpeed * 100).toFixed(0)}%
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.iconResetButton}
+                      onPress={() => handleMasterSpeedChange(1.0)}
+                    >
+                      <Text style={styles.iconResetText}>↺</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
                 <Slider
                   style={styles.slider}
@@ -601,7 +663,17 @@ export default function App() {
                 <View style={styles.controlGroup}>
                   <View style={styles.labelRow}>
                     <Text style={styles.label}>Volume</Text>
-                    <Text style={styles.valuePill}>{(track.volume * 100).toFixed(0)}%</Text>
+                    <View style={styles.valueRow}>
+                      <Text style={styles.valuePill}>
+                        {(track.volume * 100).toFixed(0)}%
+                      </Text>
+                      <TouchableOpacity
+                        style={styles.iconResetButton}
+                        onPress={() => handleTrackVolumeChange(track.id, 1.0)}
+                      >
+                        <Text style={styles.iconResetText}>↺</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                   <Slider
                     style={styles.slider}
@@ -620,10 +692,18 @@ export default function App() {
                 <View style={styles.controlGroup}>
                   <View style={styles.labelRow}>
                     <Text style={styles.label}>Pan</Text>
-                    <Text style={styles.valuePill}>
-                      {track.pan > 0 ? 'R' : track.pan < 0 ? 'L' : 'C'}{' '}
-                      {Math.abs(track.pan * 100).toFixed(0)}
-                    </Text>
+                    <View style={styles.valueRow}>
+                      <Text style={styles.valuePill}>
+                        {track.pan > 0 ? 'R' : track.pan < 0 ? 'L' : 'C'}{' '}
+                        {Math.abs(track.pan * 100).toFixed(0)}
+                      </Text>
+                      <TouchableOpacity
+                        style={styles.iconResetButton}
+                        onPress={() => handleTrackPanChange(track.id, 0.0)}
+                      >
+                        <Text style={styles.iconResetText}>↺</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                   <Slider
                     style={styles.slider}
@@ -640,10 +720,22 @@ export default function App() {
                 <View style={styles.controlGroup}>
                   <View style={styles.labelRow}>
                     <Text style={styles.label}>Pitch</Text>
-                    <Text style={styles.valuePill}>
-                      {track.pitch > 0 ? '+' : ''}
-                      {track.pitch.toFixed(1)} st
-                    </Text>
+                    <View style={styles.valueRow}>
+                      <Text style={styles.valuePill}>
+                        {track.pitch > 0 ? '+' : ''}
+                        {track.pitch.toFixed(1)} st
+                      </Text>
+                      <TouchableOpacity
+                        style={[
+                          styles.iconResetButton,
+                          !supportsTrackPitch && styles.iconResetButtonDisabled,
+                        ]}
+                        onPress={() => handleTrackPitchChange(track.id, 0.0)}
+                        disabled={!supportsTrackPitch}
+                      >
+                        <Text style={styles.iconResetText}>↺</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                   <Slider
                     style={styles.slider}
@@ -665,7 +757,21 @@ export default function App() {
                 <View style={styles.controlGroup}>
                   <View style={styles.labelRow}>
                     <Text style={styles.label}>Speed</Text>
-                    <Text style={styles.valuePill}>{(track.speed * 100).toFixed(0)}%</Text>
+                    <View style={styles.valueRow}>
+                      <Text style={styles.valuePill}>
+                        {(track.speed * 100).toFixed(0)}%
+                      </Text>
+                      <TouchableOpacity
+                        style={[
+                          styles.iconResetButton,
+                          !supportsTrackSpeed && styles.iconResetButtonDisabled,
+                        ]}
+                        onPress={() => handleTrackSpeedChange(track.id, 1.0)}
+                        disabled={!supportsTrackSpeed}
+                      >
+                        <Text style={styles.iconResetText}>↺</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                   <Slider
                     style={styles.slider}
@@ -816,6 +922,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
   },
+  sectionHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   sectionTitle: {
     color: theme.colors.text,
     fontSize: 18,
@@ -890,6 +1001,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 6,
   },
+  valueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   label: {
     color: theme.colors.text,
     fontSize: 14,
@@ -903,6 +1019,24 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.pill,
     backgroundColor: theme.colors.surfaceAlt,
     overflow: 'hidden',
+  },
+  iconResetButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.surfaceStrong,
+  },
+  iconResetButtonDisabled: {
+    opacity: 0.4,
+  },
+  iconResetText: {
+    color: theme.colors.text,
+    fontSize: 14,
+    fontWeight: '600',
   },
   slider: {
     width: '100%',
