@@ -46,8 +46,19 @@ Rule: After each feature is added, update this checklist to reflect progress.
 [x] Implemented JNI bridge:
   - AudioEngineJNI.h/cpp with all native methods
   - Kotlin AudioEngine wrapper with native method calls
-[ ] Test that project builds successfully on Android (READY TO TEST)
-[ ] Create example app basic structure
+[x] Wire ExpoAudioEngineModule.kt to android-engine AudioEngine
+  - Import and instantiate AudioEngine
+  - Implement all core playback methods (initialize, play, pause, stop, seek, etc.)
+  - Add URI to filepath conversion (file:// and absolute paths)
+  - Add error handling and logging
+  - Type conversions (Double → Float for audio parameters)
+[x] Fix expo-module build configuration
+  - Removed externalNativeBuild (native lib comes from android-engine dependency)
+[x] Test that project builds successfully on Android
+  - android-engine builds: ✅
+  - expo-module TypeScript builds: ✅
+  - Example app dependencies installed: ✅
+[x] Create example app basic structure (already exists with minimal UI)
 
 ## Phase 1: Core Playback Foundation (Week 1-2)
 

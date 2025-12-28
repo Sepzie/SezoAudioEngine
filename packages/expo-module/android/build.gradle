@@ -11,18 +11,10 @@ android {
   defaultConfig {
     minSdk 24
     targetSdk 34
-
-    ndk {
-      abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
-    }
   }
 
-  externalNativeBuild {
-    cmake {
-      path "cpp/CMakeLists.txt"
-      version "3.22.1"
-    }
-  }
+  // Note: No native build needed here - we use the android-engine library
+  // which provides libsezo_audio_engine.so through the Gradle dependency
 
   buildTypes {
     release {
