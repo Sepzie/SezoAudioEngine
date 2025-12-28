@@ -167,6 +167,24 @@ class ExpoAudioEngineModule : Module() {
       engine.setPitch(pitch.toFloat())
     }
 
+    Function("setTrackPitch") { trackId: String, semitones: Double ->
+      val engine = audioEngine ?: throw Exception("Engine not initialized")
+      engine.setTrackPitch(trackId, semitones.toFloat())
+    }
+
+    Function("getTrackPitch") { trackId: String ->
+      audioEngine?.getTrackPitch(trackId)?.toDouble() ?: 0.0
+    }
+
+    Function("setTrackSpeed") { trackId: String, rate: Double ->
+      val engine = audioEngine ?: throw Exception("Engine not initialized")
+      engine.setTrackSpeed(trackId, rate.toFloat())
+    }
+
+    Function("getTrackSpeed") { trackId: String ->
+      audioEngine?.getTrackSpeed(trackId)?.toDouble() ?: 1.0
+    }
+
     AsyncFunction("startRecording") { _config: Map<String, Any?>? -> }
     AsyncFunction("stopRecording") {
       mapOf(

@@ -91,7 +91,7 @@ class AudioEngine {
     return nativeGetMasterVolume(nativeHandle)
   }
 
-  // Effects (Phase 2)
+  // Effects (Phase 2) - Master controls
   fun setPitch(semitones: Float) {
     nativeSetPitch(nativeHandle, semitones)
   }
@@ -106,6 +106,23 @@ class AudioEngine {
 
   fun getSpeed(): Float {
     return nativeGetSpeed(nativeHandle)
+  }
+
+  // Effects (Phase 2) - Per-track controls
+  fun setTrackPitch(trackId: String, semitones: Float) {
+    nativeSetTrackPitch(nativeHandle, trackId, semitones)
+  }
+
+  fun getTrackPitch(trackId: String): Float {
+    return nativeGetTrackPitch(nativeHandle, trackId)
+  }
+
+  fun setTrackSpeed(trackId: String, rate: Float) {
+    nativeSetTrackSpeed(nativeHandle, trackId, rate)
+  }
+
+  fun getTrackSpeed(trackId: String): Float {
+    return nativeGetTrackSpeed(nativeHandle, trackId)
   }
 
   // Native method declarations
@@ -138,4 +155,9 @@ class AudioEngine {
   private external fun nativeGetPitch(handle: Long): Float
   private external fun nativeSetSpeed(handle: Long, rate: Float)
   private external fun nativeGetSpeed(handle: Long): Float
+
+  private external fun nativeSetTrackPitch(handle: Long, trackId: String, semitones: Float)
+  private external fun nativeGetTrackPitch(handle: Long, trackId: String): Float
+  private external fun nativeSetTrackSpeed(handle: Long, trackId: String, rate: Float)
+  private external fun nativeGetTrackSpeed(handle: Long, trackId: String): Float
 }

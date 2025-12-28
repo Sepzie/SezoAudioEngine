@@ -98,6 +98,10 @@ export interface AudioEngine {
   setTrackMuted(trackId: string, muted: boolean): void;
   setTrackSolo(trackId: string, solo: boolean): void;
   setTrackPan(trackId: string, pan: number): void;
+  setTrackPitch(trackId: string, semitones: number): void;
+  getTrackPitch(trackId: string): number;
+  setTrackSpeed(trackId: string, rate: number): void;
+  getTrackSpeed(trackId: string): number;
 
   setMasterVolume(volume: number): void;
   getMasterVolume(): number;

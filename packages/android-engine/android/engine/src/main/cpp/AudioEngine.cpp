@@ -309,9 +309,48 @@ float AudioEngine::GetMasterVolume() const {
   return mixer_ ? mixer_->GetMasterVolume() : 1.0f;
 }
 
+// Phase 2: Per-track effects
+void AudioEngine::SetTrackPitch(const std::string& track_id, float semitones) {
+  auto it = tracks_.find(track_id);
+  if (it != tracks_.end()) {
+    it->second->SetPitchSemitones(semitones);
+  } else {
+    ReportError(core::ErrorCode::kTrackNotFound, "Track not found: " + track_id);
+  }
+}
+
+float AudioEngine::GetTrackPitch(const std::string& track_id) const {
+  auto it = tracks_.find(track_id);
+  if (it != tracks_.end()) {
+    return it->second->GetPitchSemitones();
+  }
+  return 0.0f;
+}
+
+void AudioEngine::SetTrackSpeed(const std::string& track_id, float rate) {
+  auto it = tracks_.find(track_id);
+  if (it != tracks_.end()) {
+    it->second->SetStretchFactor(rate);
+  } else {
+    ReportError(core::ErrorCode::kTrackNotFound, "Track not found: " + track_id);
+  }
+}
+
+float AudioEngine::GetTrackSpeed(const std::string& track_id) const {
+  auto it = tracks_.find(track_id);
+  if (it != tracks_.end()) {
+    return it->second->GetStretchFactor();
+  }
+  return 1.0f;
+}
+
+// Phase 2: Master effects (apply to all tracks)
 void AudioEngine::SetPitch(float semitones) {
   pitch_ = semitones;
-  // TODO: Apply to processing pipeline (Phase 2)
+  // Apply to all loaded tracks
+  for (auto& pair : tracks_) {
+    pair.second->SetPitchSemitones(semitones);
+  }
 }
 
 float AudioEngine::GetPitch() const {
@@ -320,7 +359,10 @@ float AudioEngine::GetPitch() const {
 
 void AudioEngine::SetSpeed(float rate) {
   speed_ = rate;
-  // TODO: Apply to processing pipeline (Phase 2)
+  // Apply to all loaded tracks
+  for (auto& pair : tracks_) {
+    pair.second->SetStretchFactor(rate);
+  }
 }
 
 float AudioEngine::GetSpeed() const {

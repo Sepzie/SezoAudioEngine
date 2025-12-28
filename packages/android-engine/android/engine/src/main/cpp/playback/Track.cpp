@@ -48,6 +48,11 @@ bool Track::Load() {
   const size_t buffer_size = decoder_->GetFormat().sample_rate * decoder_->GetFormat().channels;
   buffer_ = std::make_unique<core::CircularBuffer>(buffer_size);
 
+  // Phase 2: Create time-stretcher
+  time_stretcher_ = std::make_unique<TimeStretch>(
+      decoder_->GetFormat().sample_rate,
+      decoder_->GetFormat().channels);
+
   // Start streaming thread
   streaming_active_.store(true, std::memory_order_release);
   streaming_thread_ = std::make_unique<std::thread>(&Track::StreamingThreadFunc, this);
@@ -74,6 +79,7 @@ void Track::Unload() {
       decoder_.reset();
     }
     buffer_.reset();
+    time_stretcher_.reset();
     is_loaded_.store(false, std::memory_order_release);
     LOGD("Track unloaded: %s", id_.c_str());
   }
@@ -99,6 +105,12 @@ size_t Track::ReadSamples(float* output, size_t frames) {
   const int32_t channels = decoder_->GetFormat().channels;
   const float vol = volume_.load(std::memory_order_acquire);
   const float pan_value = pan_.load(std::memory_order_acquire);
+
+  // Phase 2: Apply time-stretch/pitch-shift effects BEFORE volume/pan
+  if (time_stretcher_ && time_stretcher_->IsActive()) {
+    // Process in-place (input and output can be the same buffer)
+    time_stretcher_->Process(output, output, samples_read / channels);
+  }
 
   // Apply volume and pan (for stereo)
   if (channels == 2) {
@@ -138,6 +150,12 @@ bool Track::Seek(int64_t frame) {
   }
 
   buffer_->Reset();
+
+  // Phase 2: Reset time-stretcher after seek to avoid artifacts
+  if (time_stretcher_) {
+    time_stretcher_->Reset();
+  }
+
   const bool result = decoder_->Seek(clamped_frame);
   streaming_cv_.notify_all();
   return result;
@@ -185,6 +203,27 @@ void Track::SetPan(float pan) {
 
 float Track::GetPan() const {
   return pan_.load(std::memory_order_acquire);
+}
+
+// Phase 2: Real-time effects methods
+void Track::SetPitchSemitones(float semitones) {
+  if (time_stretcher_) {
+    time_stretcher_->SetPitchSemitones(semitones);
+  }
+}
+
+float Track::GetPitchSemitones() const {
+  return time_stretcher_ ? time_stretcher_->GetPitchSemitones() : 0.0f;
+}
+
+void Track::SetStretchFactor(float factor) {
+  if (time_stretcher_) {
+    time_stretcher_->SetStretchFactor(factor);
+  }
+}
+
+float Track::GetStretchFactor() const {
+  return time_stretcher_ ? time_stretcher_->GetStretchFactor() : 1.0f;
 }
 
 void Track::StreamingThreadFunc() {

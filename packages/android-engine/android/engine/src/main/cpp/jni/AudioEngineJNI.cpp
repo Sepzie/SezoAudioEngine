@@ -290,4 +290,55 @@ Java_com_sezo_audioengine_AudioEngine_nativeGetSpeed(JNIEnv* env [[maybe_unused]
   return engine->GetSpeed();
 }
 
+// Phase 2: Per-track effects
+JNIEXPORT void JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeSetTrackPitch(
+    JNIEnv* env, jobject thiz [[maybe_unused]], jlong handle, jstring track_id, jfloat semitones) {
+  auto* engine = reinterpret_cast<AudioEngine*>(handle);
+  if (engine && track_id) {
+    const char* id_chars = env->GetStringUTFChars(track_id, nullptr);
+    std::string id_str(id_chars);
+    env->ReleaseStringUTFChars(track_id, id_chars);
+    engine->SetTrackPitch(id_str, semitones);
+  }
+}
+
+JNIEXPORT jfloat JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeGetTrackPitch(
+    JNIEnv* env, jobject thiz [[maybe_unused]], jlong handle, jstring track_id) {
+  auto* engine = reinterpret_cast<AudioEngine*>(handle);
+  if (engine && track_id) {
+    const char* id_chars = env->GetStringUTFChars(track_id, nullptr);
+    std::string id_str(id_chars);
+    env->ReleaseStringUTFChars(track_id, id_chars);
+    return engine->GetTrackPitch(id_str);
+  }
+  return 0.0f;
+}
+
+JNIEXPORT void JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeSetTrackSpeed(
+    JNIEnv* env, jobject thiz [[maybe_unused]], jlong handle, jstring track_id, jfloat rate) {
+  auto* engine = reinterpret_cast<AudioEngine*>(handle);
+  if (engine && track_id) {
+    const char* id_chars = env->GetStringUTFChars(track_id, nullptr);
+    std::string id_str(id_chars);
+    env->ReleaseStringUTFChars(track_id, id_chars);
+    engine->SetTrackSpeed(id_str, rate);
+  }
+}
+
+JNIEXPORT jfloat JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeGetTrackSpeed(
+    JNIEnv* env, jobject thiz [[maybe_unused]], jlong handle, jstring track_id) {
+  auto* engine = reinterpret_cast<AudioEngine*>(handle);
+  if (engine && track_id) {
+    const char* id_chars = env->GetStringUTFChars(track_id, nullptr);
+    std::string id_str(id_chars);
+    env->ReleaseStringUTFChars(track_id, id_chars);
+    return engine->GetTrackSpeed(id_str);
+  }
+  return 1.0f;
+}
+
 }  // extern "C"

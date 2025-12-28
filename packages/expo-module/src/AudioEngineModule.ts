@@ -24,6 +24,10 @@ export const AudioEngineModule: AudioEngine = {
   setTrackMuted: (trackId, muted) => NativeAudioEngineModule.setTrackMuted(trackId, muted),
   setTrackSolo: (trackId, solo) => NativeAudioEngineModule.setTrackSolo(trackId, solo),
   setTrackPan: (trackId, pan) => NativeAudioEngineModule.setTrackPan(trackId, pan),
+  setTrackPitch: (trackId, semitones) => NativeAudioEngineModule.setTrackPitch(trackId, semitones),
+  getTrackPitch: (trackId) => NativeAudioEngineModule.getTrackPitch(trackId),
+  setTrackSpeed: (trackId, rate) => NativeAudioEngineModule.setTrackSpeed(trackId, rate),
+  getTrackSpeed: (trackId) => NativeAudioEngineModule.getTrackSpeed(trackId),
 
   setMasterVolume: (volume) => NativeAudioEngineModule.setMasterVolume(volume),
   getMasterVolume: () => NativeAudioEngineModule.getMasterVolume(),

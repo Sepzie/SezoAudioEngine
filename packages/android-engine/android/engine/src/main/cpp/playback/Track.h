@@ -2,6 +2,7 @@
 
 #include "audio/AudioDecoder.h"
 #include "core/CircularBuffer.h"
+#include "playback/TimeStretch.h"
 
 #include <atomic>
 #include <memory>
@@ -69,6 +70,12 @@ class Track {
   void SetPan(float pan);
   float GetPan() const;
 
+  // Phase 2: Real-time effects
+  void SetPitchSemitones(float semitones);
+  float GetPitchSemitones() const;
+  void SetStretchFactor(float factor);
+  float GetStretchFactor() const;
+
  private:
   void StreamingThreadFunc();
 
@@ -90,6 +97,9 @@ class Track {
   std::atomic<bool> muted_{false};
   std::atomic<bool> solo_{false};
   std::atomic<float> pan_{0.0f};
+
+  // Phase 2: Real-time effects
+  std::unique_ptr<TimeStretch> time_stretcher_;
 };
 
 }  // namespace playback

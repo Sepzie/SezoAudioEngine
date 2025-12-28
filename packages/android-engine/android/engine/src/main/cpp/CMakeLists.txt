@@ -24,6 +24,8 @@ add_library(sezo_audio_engine SHARED
   playback/Track.cpp
   playback/MultiTrackMixer.cpp
   playback/OboePlayer.cpp
+  # Phase 2: Real-time effects
+  playback/TimeStretch.cpp
   # JNI bridge
   jni/AudioEngineJNI.cpp
 )
@@ -32,6 +34,8 @@ add_library(sezo_audio_engine SHARED
 target_include_directories(sezo_audio_engine PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/third_party/dr_libs
+  ${CMAKE_CURRENT_SOURCE_DIR}/third_party/signalsmith-stretch
+  ${CMAKE_CURRENT_SOURCE_DIR}/third_party/signalsmith-linear/include
 )
 
 # Link libraries

@@ -19,6 +19,8 @@ interface Track {
   pan: number;
   muted: boolean;
   solo: boolean;
+  pitch: number;
+  speed: number;
 }
 
 export default function App() {
@@ -27,6 +29,8 @@ export default function App() {
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
   const [masterVolume, setMasterVolume] = useState(1.0);
+  const [masterPitch, setMasterPitch] = useState(0.0);
+  const [masterSpeed, setMasterSpeed] = useState(1.0);
   const [tracks, setTracks] = useState<Track[]>([]);
 
   // Initialize engine
@@ -98,6 +102,8 @@ export default function App() {
           pan: 0.0,
           muted: false,
           solo: false,
+          pitch: 0.0,
+          speed: 1.0,
         },
         {
           id: 'track2',
@@ -107,6 +113,8 @@ export default function App() {
           pan: 0.0,
           muted: false,
           solo: false,
+          pitch: 0.0,
+          speed: 1.0,
         },
       ];
 
@@ -234,6 +242,46 @@ export default function App() {
     });
   }, []);
 
+  const handleMasterPitchChange = useCallback((value: number) => {
+    try {
+      AudioEngineModule.setPitch(value);
+      setMasterPitch(value);
+    } catch (error) {
+      console.error('Master pitch error:', error);
+    }
+  }, []);
+
+  const handleMasterSpeedChange = useCallback((value: number) => {
+    try {
+      AudioEngineModule.setSpeed(value);
+      setMasterSpeed(value);
+    } catch (error) {
+      console.error('Master speed error:', error);
+    }
+  }, []);
+
+  const handleTrackPitchChange = useCallback((trackId: string, value: number) => {
+    try {
+      AudioEngineModule.setTrackPitch(trackId, value);
+      setTracks((prev) =>
+        prev.map((t) => (t.id === trackId ? { ...t, pitch: value } : t))
+      );
+    } catch (error) {
+      console.error('Track pitch error:', error);
+    }
+  }, []);
+
+  const handleTrackSpeedChange = useCallback((trackId: string, value: number) => {
+    try {
+      AudioEngineModule.setTrackSpeed(trackId, value);
+      setTracks((prev) =>
+        prev.map((t) => (t.id === trackId ? { ...t, speed: value } : t))
+      );
+    } catch (error) {
+      console.error('Track speed error:', error);
+    }
+  }, []);
+
   const formatTime = (ms: number) => {
     const totalSeconds = Math.floor(ms / 1000);
     const minutes = Math.floor(totalSeconds / 60);
@@ -315,6 +363,40 @@ export default function App() {
             />
           </View>
 
+          {/* Master Pitch */}
+          <View style={styles.controlGroup}>
+            <Text style={styles.label}>
+              Master Pitch: {masterPitch > 0 ? '+' : ''}{masterPitch.toFixed(1)} semitones
+            </Text>
+            <Slider
+              style={styles.slider}
+              minimumValue={-12.0}
+              maximumValue={12.0}
+              value={masterPitch}
+              onValueChange={handleMasterPitchChange}
+              minimumTrackTintColor="#1DB954"
+              maximumTrackTintColor="#404040"
+              thumbTintColor="#1DB954"
+            />
+          </View>
+
+          {/* Master Speed */}
+          <View style={styles.controlGroup}>
+            <Text style={styles.label}>
+              Master Speed: {(masterSpeed * 100).toFixed(0)}%
+            </Text>
+            <Slider
+              style={styles.slider}
+              minimumValue={0.5}
+              maximumValue={2.0}
+              value={masterSpeed}
+              onValueChange={handleMasterSpeedChange}
+              minimumTrackTintColor="#1DB954"
+              maximumTrackTintColor="#404040"
+              thumbTintColor="#1DB954"
+            />
+          </View>
+
           {/* Track Controls */}
           {tracks.map((track) => (
             <View key={track.id} style={styles.trackContainer}>
@@ -371,6 +453,38 @@ export default function App() {
                   maximumValue={1.0}
                   value={track.pan}
                   onValueChange={(value: number) => handleTrackPanChange(track.id, value)}
+                  minimumTrackTintColor="#1DB954"
+                  maximumTrackTintColor="#404040"
+                  thumbTintColor="#1DB954"
+                />
+              </View>
+
+              <View style={styles.controlGroup}>
+                <Text style={styles.trackLabel}>
+                  Pitch: {track.pitch > 0 ? '+' : ''}{track.pitch.toFixed(1)} semitones
+                </Text>
+                <Slider
+                  style={styles.slider}
+                  minimumValue={-12.0}
+                  maximumValue={12.0}
+                  value={track.pitch}
+                  onValueChange={(value: number) => handleTrackPitchChange(track.id, value)}
+                  minimumTrackTintColor="#1DB954"
+                  maximumTrackTintColor="#404040"
+                  thumbTintColor="#1DB954"
+                />
+              </View>
+
+              <View style={styles.controlGroup}>
+                <Text style={styles.trackLabel}>
+                  Speed: {(track.speed * 100).toFixed(0)}%
+                </Text>
+                <Slider
+                  style={styles.slider}
+                  minimumValue={0.5}
+                  maximumValue={2.0}
+                  value={track.speed}
+                  onValueChange={(value: number) => handleTrackSpeedChange(track.id, value)}
                   minimumTrackTintColor="#1DB954"
                   maximumTrackTintColor="#404040"
                   thumbTintColor="#1DB954"

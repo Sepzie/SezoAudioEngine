@@ -105,6 +105,24 @@ JNIEXPORT jfloat JNICALL
 Java_com_sezo_audioengine_AudioEngine_nativeGetMasterVolume(
     JNIEnv* env, jobject thiz, jlong handle);
 
+// Phase 2: Per-track effects
+JNIEXPORT void JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeSetTrackPitch(
+    JNIEnv* env, jobject thiz, jlong handle, jstring track_id, jfloat semitones);
+
+JNIEXPORT jfloat JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeGetTrackPitch(
+    JNIEnv* env, jobject thiz, jlong handle, jstring track_id);
+
+JNIEXPORT void JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeSetTrackSpeed(
+    JNIEnv* env, jobject thiz, jlong handle, jstring track_id, jfloat rate);
+
+JNIEXPORT jfloat JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeGetTrackSpeed(
+    JNIEnv* env, jobject thiz, jlong handle, jstring track_id);
+
+// Phase 2: Master effects
 JNIEXPORT void JNICALL
 Java_com_sezo_audioengine_AudioEngine_nativeSetPitch(
     JNIEnv* env, jobject thiz, jlong handle, jfloat semitones);

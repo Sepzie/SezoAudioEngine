@@ -70,7 +70,13 @@ class AudioEngine {
   void SetMasterVolume(float volume);
   float GetMasterVolume() const;
 
-  // TODO: Effects (Phase 2)
+  // Phase 2: Effects (per-track and master)
+  void SetTrackPitch(const std::string& track_id, float semitones);
+  float GetTrackPitch(const std::string& track_id) const;
+  void SetTrackSpeed(const std::string& track_id, float rate);
+  float GetTrackSpeed(const std::string& track_id) const;
+
+  // Master effects (apply to all tracks)
   void SetPitch(float semitones);
   float GetPitch() const;
   void SetSpeed(float rate);
