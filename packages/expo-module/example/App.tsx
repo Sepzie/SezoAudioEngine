@@ -55,6 +55,9 @@ export default function App() {
   const [masterPitch, setMasterPitch] = useState(0.0);
   const [masterSpeed, setMasterSpeed] = useState(1.0);
   const [tracks, setTracks] = useState<Track[]>([]);
+  const engineAny = AudioEngineModule as Record<string, any>;
+  const supportsTrackPitch = typeof engineAny.setTrackPitch === 'function';
+  const supportsTrackSpeed = typeof engineAny.setTrackSpeed === 'function';
   const introAnim = useState(() => new Animated.Value(0))[0];
   const controlsAnim = useState(() => new Animated.Value(0))[0];
   const tracksAnim = useState(() => new Animated.Value(0))[0];
@@ -229,8 +232,12 @@ export default function App() {
         AudioEngineModule.setTrackPan(track.id, 0.0);
         AudioEngineModule.setTrackMuted(track.id, false);
         AudioEngineModule.setTrackSolo(track.id, false);
-        AudioEngineModule.setTrackPitch(track.id, 0.0);
-        AudioEngineModule.setTrackSpeed(track.id, 1.0);
+        if (supportsTrackPitch) {
+          engineAny.setTrackPitch(track.id, 0.0);
+        }
+        if (supportsTrackSpeed) {
+          engineAny.setTrackSpeed(track.id, 1.0);
+        }
       });
 
       setMasterVolume(1.0);
@@ -253,7 +260,7 @@ export default function App() {
     } catch (error) {
       console.error('Reset error:', error);
     }
-  }, [tracks]);
+  }, [engineAny, supportsTrackPitch, supportsTrackSpeed, tracks]);
 
   const handleSeek = useCallback((value: number) => {
     try {
@@ -347,25 +354,31 @@ export default function App() {
 
   const handleTrackPitchChange = useCallback((trackId: string, value: number) => {
     try {
-      AudioEngineModule.setTrackPitch(trackId, value);
+      if (!supportsTrackPitch) {
+        return;
+      }
+      engineAny.setTrackPitch(trackId, value);
       setTracks((prev) =>
         prev.map((t) => (t.id === trackId ? { ...t, pitch: value } : t))
       );
     } catch (error) {
       console.error('Track pitch error:', error);
     }
-  }, []);
+  }, [engineAny, supportsTrackPitch]);
 
   const handleTrackSpeedChange = useCallback((trackId: string, value: number) => {
     try {
-      AudioEngineModule.setTrackSpeed(trackId, value);
+      if (!supportsTrackSpeed) {
+        return;
+      }
+      engineAny.setTrackSpeed(trackId, value);
       setTracks((prev) =>
         prev.map((t) => (t.id === trackId ? { ...t, speed: value } : t))
       );
     } catch (error) {
       console.error('Track speed error:', error);
     }
-  }, []);
+  }, [engineAny, supportsTrackSpeed]);
 
   const formatTime = (ms: number) => {
     const totalSeconds = Math.floor(ms / 1000);
@@ -637,10 +650,15 @@ export default function App() {
                     minimumValue={-12.0}
                     maximumValue={12.0}
                     value={track.pitch}
+                    disabled={!supportsTrackPitch}
                     onValueChange={(value: number) => handleTrackPitchChange(track.id, value)}
-                    minimumTrackTintColor={theme.colors.accent}
+                    minimumTrackTintColor={
+                      supportsTrackPitch ? theme.colors.accent : theme.colors.track
+                    }
                     maximumTrackTintColor={theme.colors.track}
-                    thumbTintColor={theme.colors.accentStrong}
+                    thumbTintColor={
+                      supportsTrackPitch ? theme.colors.accentStrong : theme.colors.border
+                    }
                   />
                 </View>
 
@@ -654,10 +672,15 @@ export default function App() {
                     minimumValue={0.5}
                     maximumValue={2.0}
                     value={track.speed}
+                    disabled={!supportsTrackSpeed}
                     onValueChange={(value: number) => handleTrackSpeedChange(track.id, value)}
-                    minimumTrackTintColor={theme.colors.accent}
+                    minimumTrackTintColor={
+                      supportsTrackSpeed ? theme.colors.accent : theme.colors.track
+                    }
                     maximumTrackTintColor={theme.colors.track}
-                    thumbTintColor={theme.colors.accentStrong}
+                    thumbTintColor={
+                      supportsTrackSpeed ? theme.colors.accentStrong : theme.colors.border
+                    }
                   />
                 </View>
               </Animated.View>
