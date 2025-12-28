@@ -12,6 +12,13 @@
   "scripts": {
     "lint": "echo \"TODO: add lint\"",
     "test": "echo \"TODO: add tests\"",
-    "build": "echo \"TODO: add build\""
+    "build": "echo \"TODO: add build\"",
+    "build:expo-module": "npm --prefix packages/expo-module run build",
+    "build:android-engine": "cd packages/android-engine/android && ./gradlew :engine:build",
+    "install:example": "npm --prefix packages/expo-module/example install",
+    "build:example:android": "npm --prefix packages/expo-module/example run android",
+    "apk:example": "cd packages/expo-module/example/android && ./gradlew app:assembleDebug",
+    "example:run": "cd packages/expo-module/example && npx expo run:android",
+    "install:example:android": "cd packages/expo-module/example/android && ./gradlew app:installDebug"
   }
 }

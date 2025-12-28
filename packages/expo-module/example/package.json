@@ -13,5 +13,8 @@
     "react": "18.2.0",
     "react-native": "0.76.0",
     "sezo-audio-engine": ".."
+  },
+  "devDependencies": {
+    "@types/react": "~18.3.12"
   }
 }
