@@ -60,74 +60,75 @@ Rule: After each feature is added, update this checklist to reflect progress.
   - Example app dependencies installed: ✅
 [x] Create example app basic structure (already exists with minimal UI)
 
-## Phase 1: Core Playback Foundation (Week 1-2)
+## Phase 1: Core Playback Foundation (Week 1-2) - IN PROGRESS
 
 ### Android Engine - Native Layer (C++)
 
-[ ] Oboe integration:
-  [ ] Initialize Oboe AudioStreamBuilder
-  [ ] Configure stream parameters (sample rate, buffer size, channels)
-  [ ] Implement AudioStreamCallback interface
-  [ ] Handle stream lifecycle (start/stop/close)
-  [ ] Set thread affinity for real-time priority
+[x] Oboe integration:
+  [x] Initialize Oboe AudioStreamBuilder
+  [x] Configure stream parameters (sample rate, buffer size, channels)
+  [x] Implement AudioStreamCallback interface
+  [x] Handle stream lifecycle (start/stop/close)
+  [ ] Set thread affinity for real-time priority (optional optimization)
 
-[ ] Audio decoding:
-  [ ] Integrate dr_mp3 for MP3 decoding
-  [ ] Create AudioDecoder base class
-  [ ] Implement MP3Decoder using dr_mp3
-  [ ] Implement WAVDecoder using dr_wav
+[x] Audio decoding:
+  [x] Integrate dr_mp3 for MP3 decoding
+  [x] Create AudioDecoder base class
+  [x] Implement MP3Decoder using dr_mp3
+  [x] Implement WAVDecoder using dr_wav
   [ ] Test decoding various audio files
 
-[ ] Buffering & streaming:
-  [ ] Implement CircularBuffer class (lock-free ring buffer)
-  [ ] Implement StreamingBuffer for file I/O
-  [ ] Create background file reader thread
-  [ ] Implement pre-buffering strategy
-  [ ] Handle buffer underruns gracefully
+[x] Buffering & streaming:
+  [x] Implement CircularBuffer class (lock-free ring buffer)
+  [x] Create background file reader thread (StreamingThreadFunc in Track)
+  [x] Implement pre-buffering strategy
+  [x] Handle buffer underruns gracefully (fills with silence)
 
-[ ] Synchronization engine:
-  [ ] Implement MasterClock (sample-accurate timing)
-  [ ] Implement TransportController (play/pause/stop/seek)
-  [ ] Implement TimingManager (position tracking)
-  [ ] Add playback state machine
+[x] Synchronization engine:
+  [x] Implement MasterClock (sample-accurate timing)
+  [x] Implement TransportController (play/pause/stop/seek)
+  [x] Implement TimingManager (position tracking)
+  [x] Add playback state machine
 
-[ ] Multi-track mixer:
-  [ ] Create Track class (holds decoded samples, state, controls)
-  [ ] Implement MultiTrackMixer (sum N tracks)
-  [ ] Add sample-accurate track synchronization
-  [ ] Implement basic mixing algorithm (sum + clip prevention)
+[x] Multi-track mixer:
+  [x] Create Track class (holds decoded samples, state, controls)
+  [x] Implement MultiTrackMixer (sum N tracks)
+  [x] Add sample-accurate track synchronization
+  [x] Implement basic mixing algorithm (sum + clip prevention)
 
-[ ] Track management:
-  [ ] Implement track loading (async file open + decode)
-  [ ] Implement track unloading (cleanup resources)
-  [ ] Track ID management and lookup
-  [ ] Thread-safe track collection
+[x] Track management:
+  [x] Implement track loading (async file open + decode)
+  [x] Implement track unloading (cleanup resources)
+  [x] Track ID management and lookup
+  [x] Thread-safe track collection
 
-[ ] Basic controls:
-  [ ] Implement per-track volume (0.0 - 2.0)
-  [ ] Implement master volume
-  [ ] Implement play/pause/stop
-  [ ] Implement seek (sample-accurate)
-  [ ] Implement getCurrentPosition
-  [ ] Implement getDuration
+[x] Basic controls:
+  [x] Implement per-track volume (0.0 - 2.0)
+  [x] Implement per-track pan (-1.0 to 1.0 with equal power panning)
+  [x] Implement per-track mute/solo
+  [x] Implement master volume
+  [x] Implement play/pause/stop
+  [x] Implement seek (sample-accurate)
+  [x] Implement getCurrentPosition
+  [x] Implement getDuration
 
-[ ] JNI bridge API:
-  [ ] Create JNI wrapper for AudioEngine
-  [ ] Implement initialize() native method
-  [ ] Implement loadTracks() native method
-  [ ] Implement playback control methods (play/pause/stop/seek)
-  [ ] Implement volume control methods
-  [ ] Handle Java/C++ string conversions
-  [ ] Handle error propagation to Java
+[x] JNI bridge API:
+  [x] Create JNI wrapper for AudioEngine (AudioEngineJNI)
+  [x] Implement initialize() native method
+  [x] Implement loadTrack() native method
+  [x] Implement playback control methods (play/pause/stop/seek)
+  [x] Implement volume control methods
+  [x] Handle Java/C++ string conversions
+  [x] Handle error propagation to Java
 
-[ ] Error handling:
-  [ ] Define error codes enum
-  [ ] Implement error callback mechanism
-  [ ] Add validation for parameters
-  [ ] Add logging infrastructure
+[x] Error handling:
+  [x] Add logging infrastructure (Android logcat)
+  [x] Define error codes enum
+  [x] Implement error callback mechanism
+  [x] Add validation for parameters
 
-[ ] Resource management:
-  [ ] Implement proper destructor cleanup
+[x] Resource management:
+  [x] Implement proper destructor cleanup
   [ ] Add resource leak detection (debug mode)
   [ ] Test memory usage under load
 
