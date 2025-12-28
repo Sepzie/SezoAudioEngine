@@ -233,13 +233,32 @@ Rule: After each feature is added, update this checklist to reflect progress.
 [ ] Test background playback across Android versions
 [ ] Test media control integration
 
-## Phase 6: Offline Extraction
+## Phase 6: Offline Extraction ✅ COMPLETED (WAV format only)
 
-[ ] Android engine: implement offline extraction pipeline
-[ ] Android engine: implement effects rendering for extraction
-[ ] Add extractTrack() method
-[ ] Add extractAllTracks() method
-[ ] Test extraction quality and performance
+[x] Android engine: implement offline extraction pipeline
+  - Created ExtractionPipeline class with offline rendering
+  - Supports single track and multi-track (mixed) extraction
+  - Progress callback support ready for future use
+[x] Android engine: implement effects rendering for extraction
+  - Effects (pitch/speed/volume/pan) automatically applied during extraction
+  - Uses existing Track rendering pipeline with effects
+[x] Add extractTrack() method
+  - C++ AudioEngine::ExtractTrack() implemented
+  - JNI bridge completed
+  - Kotlin AudioEngine wrapper completed
+  - ExpoAudioEngineModule integration completed
+[x] Add extractAllTracks() method
+  - C++ AudioEngine::ExtractAllTracks() implemented
+  - Mixes all loaded tracks together before extraction
+  - JNI bridge completed
+  - Kotlin AudioEngine wrapper completed
+  - ExpoAudioEngineModule integration completed
+[x] Audio encoding infrastructure
+  - AudioEncoder base class created
+  - WAVEncoder implemented using dr_wav
+  - AAC encoder (Android MediaCodec) - NOT YET IMPLEMENTED (pending)
+  - MP3 encoder (LAME) - NOT YET IMPLEMENTED (pending)
+[ ] Test extraction quality and performance - Ready for device testing
 
 ## Phase 7: iOS Implementation (Future)
 
@@ -270,14 +289,14 @@ Rule: After each feature is added, update this checklist to reflect progress.
 
 ## Example App
 
-[ ] Example app: add track loader UI
-[ ] Example app: add playback controls
-[ ] Example app: add pitch/speed sliders
-[ ] Example app: add per-track controls UI
+[x] Example app: add track loader UI
+[x] Example app: add playback controls
+[x] Example app: add pitch/speed sliders
+[x] Example app: add per-track controls UI
 [ ] Example app: add recording controls UI
 [ ] Example app: add extraction UI + progress
 [ ] Example app: add background playback demo
-[ ] Example app: add error handling UI
+[x] Example app: add error handling UI
 
 ## Documentation
 
