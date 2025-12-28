@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
+  Animated,
   StyleSheet,
   Text,
   View,
@@ -23,6 +24,28 @@ interface Track {
   speed: number;
 }
 
+const theme = {
+  colors: {
+    background: '#0b0f10',
+    surface: '#141b1f',
+    surfaceAlt: '#1b252a',
+    surfaceStrong: '#1f2b31',
+    text: '#f5f7f9',
+    textMuted: '#8a949c',
+    accent: '#ffb454',
+    accentStrong: '#ff8a3d',
+    success: '#23d18b',
+    danger: '#ff5d5d',
+    border: '#253038',
+    track: '#2a343a',
+  },
+  radius: {
+    card: 18,
+    pill: 999,
+    button: 12,
+  },
+};
+
 export default function App() {
   const [status, setStatus] = useState('Idle');
   const [isPlaying, setIsPlaying] = useState(false);
@@ -32,6 +55,9 @@ export default function App() {
   const [masterPitch, setMasterPitch] = useState(0.0);
   const [masterSpeed, setMasterSpeed] = useState(1.0);
   const [tracks, setTracks] = useState<Track[]>([]);
+  const introAnim = useState(() => new Animated.Value(0))[0];
+  const controlsAnim = useState(() => new Animated.Value(0))[0];
+  const tracksAnim = useState(() => new Animated.Value(0))[0];
 
   // Initialize engine
   useEffect(() => {
@@ -56,6 +82,26 @@ export default function App() {
       AudioEngineModule.release().catch(() => {});
     };
   }, []);
+
+  useEffect(() => {
+    Animated.stagger(120, [
+      Animated.timing(introAnim, {
+        toValue: 1,
+        duration: 420,
+        useNativeDriver: true,
+      }),
+      Animated.timing(controlsAnim, {
+        toValue: 1,
+        duration: 420,
+        useNativeDriver: true,
+      }),
+      Animated.timing(tracksAnim, {
+        toValue: 1,
+        duration: 420,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [introAnim, controlsAnim, tracksAnim]);
 
   // Position update loop
   useEffect(() => {
@@ -169,6 +215,45 @@ export default function App() {
       console.error('Stop error:', error);
     }
   }, []);
+
+  const handleReset = useCallback(() => {
+    try {
+      AudioEngineModule.stop();
+      AudioEngineModule.seek(0);
+      AudioEngineModule.setMasterVolume(1.0);
+      AudioEngineModule.setPitch(0.0);
+      AudioEngineModule.setSpeed(1.0);
+
+      tracks.forEach((track) => {
+        AudioEngineModule.setTrackVolume(track.id, 1.0);
+        AudioEngineModule.setTrackPan(track.id, 0.0);
+        AudioEngineModule.setTrackMuted(track.id, false);
+        AudioEngineModule.setTrackSolo(track.id, false);
+        AudioEngineModule.setTrackPitch(track.id, 0.0);
+        AudioEngineModule.setTrackSpeed(track.id, 1.0);
+      });
+
+      setMasterVolume(1.0);
+      setMasterPitch(0.0);
+      setMasterSpeed(1.0);
+      setTracks((prev) =>
+        prev.map((track) => ({
+          ...track,
+          volume: 1.0,
+          pan: 0.0,
+          muted: false,
+          solo: false,
+          pitch: 0.0,
+          speed: 1.0,
+        }))
+      );
+      setIsPlaying(false);
+      setPosition(0);
+      setStatus('Reset');
+    } catch (error) {
+      console.error('Reset error:', error);
+    }
+  }, [tracks]);
 
   const handleSeek = useCallback((value: number) => {
     try {
@@ -289,294 +374,524 @@ export default function App() {
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
+  const heroStyle = {
+    opacity: introAnim,
+    transform: [
+      {
+        translateY: introAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [16, 0],
+        }),
+      },
+    ],
+  };
+  const controlsStyle = {
+    opacity: controlsAnim,
+    transform: [
+      {
+        translateY: controlsAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [18, 0],
+        }),
+      },
+    ],
+  };
+  const tracksStyle = {
+    opacity: tracksAnim,
+    transform: [
+      {
+        translateY: tracksAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [20, 0],
+        }),
+      },
+    ],
+  };
+
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Sezo Audio Engine</Text>
-        <Text style={styles.status}>Status: {status}</Text>
+    <View style={styles.root}>
+      <View style={styles.background}>
+        <View style={styles.glowTop} />
+        <View style={styles.glowBottom} />
       </View>
-
-      {/* Load Tracks Button */}
-      {tracks.length === 0 && (
-        <TouchableOpacity style={styles.loadButton} onPress={loadTracks}>
-          <Text style={styles.buttonText}>Load Tracks</Text>
-        </TouchableOpacity>
-      )}
-
-      {/* Transport Controls */}
-      {tracks.length > 0 && (
-        <>
-          <View style={styles.transportControls}>
-            <TouchableOpacity
-              style={[styles.controlButton, isPlaying && styles.controlButtonDisabled]}
-              onPress={handlePlay}
-              disabled={isPlaying}
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <Animated.View style={[styles.heroCard, heroStyle]}>
+          <View style={styles.heroTopRow}>
+            <View>
+              <Text style={styles.eyebrow}>Sezo Audio Engine</Text>
+              <Text style={styles.title}>Phase 2 Playground</Text>
+            </View>
+            <View
+              style={[
+                styles.statusPill,
+                status === 'Ready' && styles.statusPillReady,
+                status === 'Playing' && styles.statusPillActive,
+                status === 'Init failed' && styles.statusPillDanger,
+              ]}
             >
-              <Text style={styles.controlButtonText}>▶ Play</Text>
+              <Text style={styles.statusText}>{status}</Text>
+            </View>
+          </View>
+          <Text style={styles.subtitle}>
+            Real-time pitch, time stretch, and multi-track mixing in one place.
+          </Text>
+
+          {tracks.length === 0 && (
+            <TouchableOpacity style={styles.primaryButton} onPress={loadTracks}>
+              <Text style={styles.primaryButtonText}>Load Tracks</Text>
             </TouchableOpacity>
+          )}
+        </Animated.View>
 
-            <TouchableOpacity
-              style={[styles.controlButton, !isPlaying && styles.controlButtonDisabled]}
-              onPress={handlePause}
-              disabled={!isPlaying}
-            >
-              <Text style={styles.controlButtonText}>⏸ Pause</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.controlButton} onPress={handleStop}>
-              <Text style={styles.controlButtonText}>⏹ Stop</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Position Display */}
-          <View style={styles.positionContainer}>
-            <Text style={styles.timeText}>{formatTime(position)}</Text>
-            <Text style={styles.timeText}>{formatTime(duration)}</Text>
-          </View>
-
-          {/* Seek Bar */}
-          <Slider
-            style={styles.slider}
-            minimumValue={0}
-            maximumValue={duration}
-            value={position}
-            onSlidingComplete={handleSeek}
-            minimumTrackTintColor="#1DB954"
-            maximumTrackTintColor="#404040"
-            thumbTintColor="#1DB954"
-          />
-
-          {/* Master Volume */}
-          <View style={styles.controlGroup}>
-            <Text style={styles.label}>
-              Master Volume: {(masterVolume * 100).toFixed(0)}%
-            </Text>
-            <Slider
-              style={styles.slider}
-              minimumValue={0}
-              maximumValue={2.0}
-              value={masterVolume}
-              onValueChange={handleMasterVolumeChange}
-              minimumTrackTintColor="#1DB954"
-              maximumTrackTintColor="#404040"
-              thumbTintColor="#1DB954"
-            />
-          </View>
-
-          {/* Master Pitch */}
-          <View style={styles.controlGroup}>
-            <Text style={styles.label}>
-              Master Pitch: {masterPitch > 0 ? '+' : ''}{masterPitch.toFixed(1)} semitones
-            </Text>
-            <Slider
-              style={styles.slider}
-              minimumValue={-12.0}
-              maximumValue={12.0}
-              value={masterPitch}
-              onValueChange={handleMasterPitchChange}
-              minimumTrackTintColor="#1DB954"
-              maximumTrackTintColor="#404040"
-              thumbTintColor="#1DB954"
-            />
-          </View>
-
-          {/* Master Speed */}
-          <View style={styles.controlGroup}>
-            <Text style={styles.label}>
-              Master Speed: {(masterSpeed * 100).toFixed(0)}%
-            </Text>
-            <Slider
-              style={styles.slider}
-              minimumValue={0.5}
-              maximumValue={2.0}
-              value={masterSpeed}
-              onValueChange={handleMasterSpeedChange}
-              minimumTrackTintColor="#1DB954"
-              maximumTrackTintColor="#404040"
-              thumbTintColor="#1DB954"
-            />
-          </View>
-
-          {/* Track Controls */}
-          {tracks.map((track) => (
-            <View key={track.id} style={styles.trackContainer}>
-              <View style={styles.trackHeader}>
-                <Text style={styles.trackName}>{track.name}</Text>
-                <View style={styles.trackButtons}>
-                  <TouchableOpacity
-                    style={[
-                      styles.trackButton,
-                      track.muted && styles.trackButtonActive,
-                    ]}
-                    onPress={() => handleTrackMuteToggle(track.id)}
-                  >
-                    <Text style={styles.trackButtonText}>M</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.trackButton,
-                      track.solo && styles.trackButtonActive,
-                    ]}
-                    onPress={() => handleTrackSoloToggle(track.id)}
-                  >
-                    <Text style={styles.trackButtonText}>S</Text>
-                  </TouchableOpacity>
+        {tracks.length > 0 && (
+          <>
+            <Animated.View style={[styles.card, controlsStyle]}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Transport</Text>
+                <View style={styles.timePill}>
+                  <Text style={styles.timeText}>
+                    {formatTime(position)} / {formatTime(duration)}
+                  </Text>
                 </View>
               </View>
 
+              <View style={styles.transportRow}>
+                <TouchableOpacity
+                  style={[styles.controlButton, isPlaying && styles.controlButtonDisabled]}
+                  onPress={handlePlay}
+                  disabled={isPlaying}
+                >
+                  <Text style={styles.controlButtonText}>▶ Play</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.controlButton, !isPlaying && styles.controlButtonDisabled]}
+                  onPress={handlePause}
+                  disabled={!isPlaying}
+                >
+                  <Text style={styles.controlButtonText}>⏸ Pause</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.controlButton} onPress={handleStop}>
+                  <Text style={styles.controlButtonText}>⏹ Stop</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.resetButton} onPress={handleReset}>
+                  <Text style={styles.resetButtonText}>Reset</Text>
+                </TouchableOpacity>
+              </View>
+
+              <Slider
+                style={styles.slider}
+                minimumValue={0}
+                maximumValue={duration}
+                value={position}
+                onSlidingComplete={handleSeek}
+                minimumTrackTintColor={theme.colors.accent}
+                maximumTrackTintColor={theme.colors.track}
+                thumbTintColor={theme.colors.accentStrong}
+              />
+            </Animated.View>
+
+            <Animated.View style={[styles.card, controlsStyle]}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Master</Text>
+                <Text style={styles.sectionHint}>Global mix controls</Text>
+              </View>
+
               <View style={styles.controlGroup}>
-                <Text style={styles.trackLabel}>
-                  Volume: {(track.volume * 100).toFixed(0)}%
-                </Text>
+                <View style={styles.labelRow}>
+                  <Text style={styles.label}>Master Volume</Text>
+                  <Text style={styles.valuePill}>{(masterVolume * 100).toFixed(0)}%</Text>
+                </View>
                 <Slider
                   style={styles.slider}
                   minimumValue={0}
                   maximumValue={2.0}
-                  value={track.volume}
-                  onValueChange={(value: number) =>
-                    handleTrackVolumeChange(track.id, value)
-                  }
-                  minimumTrackTintColor="#1DB954"
-                  maximumTrackTintColor="#404040"
-                  thumbTintColor="#1DB954"
+                  value={masterVolume}
+                  onValueChange={handleMasterVolumeChange}
+                  minimumTrackTintColor={theme.colors.accent}
+                  maximumTrackTintColor={theme.colors.track}
+                  thumbTintColor={theme.colors.accentStrong}
                 />
               </View>
 
               <View style={styles.controlGroup}>
-                <Text style={styles.trackLabel}>
-                  Pan: {track.pan > 0 ? 'R' : track.pan < 0 ? 'L' : 'C'}{' '}
-                  {Math.abs(track.pan * 100).toFixed(0)}
-                </Text>
-                <Slider
-                  style={styles.slider}
-                  minimumValue={-1.0}
-                  maximumValue={1.0}
-                  value={track.pan}
-                  onValueChange={(value: number) => handleTrackPanChange(track.id, value)}
-                  minimumTrackTintColor="#1DB954"
-                  maximumTrackTintColor="#404040"
-                  thumbTintColor="#1DB954"
-                />
-              </View>
-
-              <View style={styles.controlGroup}>
-                <Text style={styles.trackLabel}>
-                  Pitch: {track.pitch > 0 ? '+' : ''}{track.pitch.toFixed(1)} semitones
-                </Text>
+                <View style={styles.labelRow}>
+                  <Text style={styles.label}>Master Pitch</Text>
+                  <Text style={styles.valuePill}>
+                    {masterPitch > 0 ? '+' : ''}
+                    {masterPitch.toFixed(1)} st
+                  </Text>
+                </View>
                 <Slider
                   style={styles.slider}
                   minimumValue={-12.0}
                   maximumValue={12.0}
-                  value={track.pitch}
-                  onValueChange={(value: number) => handleTrackPitchChange(track.id, value)}
-                  minimumTrackTintColor="#1DB954"
-                  maximumTrackTintColor="#404040"
-                  thumbTintColor="#1DB954"
+                  value={masterPitch}
+                  onValueChange={handleMasterPitchChange}
+                  minimumTrackTintColor={theme.colors.accent}
+                  maximumTrackTintColor={theme.colors.track}
+                  thumbTintColor={theme.colors.accentStrong}
                 />
               </View>
 
               <View style={styles.controlGroup}>
-                <Text style={styles.trackLabel}>
-                  Speed: {(track.speed * 100).toFixed(0)}%
-                </Text>
+                <View style={styles.labelRow}>
+                  <Text style={styles.label}>Master Speed</Text>
+                  <Text style={styles.valuePill}>{(masterSpeed * 100).toFixed(0)}%</Text>
+                </View>
                 <Slider
                   style={styles.slider}
                   minimumValue={0.5}
                   maximumValue={2.0}
-                  value={track.speed}
-                  onValueChange={(value: number) => handleTrackSpeedChange(track.id, value)}
-                  minimumTrackTintColor="#1DB954"
-                  maximumTrackTintColor="#404040"
-                  thumbTintColor="#1DB954"
+                  value={masterSpeed}
+                  onValueChange={handleMasterSpeedChange}
+                  minimumTrackTintColor={theme.colors.accent}
+                  maximumTrackTintColor={theme.colors.track}
+                  thumbTintColor={theme.colors.accentStrong}
                 />
               </View>
-            </View>
-          ))}
-        </>
-      )}
-    </ScrollView>
+            </Animated.View>
+
+            <Animated.View style={[styles.sectionTitleRow, tracksStyle]}>
+              <Text style={styles.sectionTitle}>Tracks</Text>
+              <Text style={styles.sectionHint}>{tracks.length} loaded</Text>
+            </Animated.View>
+
+            {tracks.map((track) => (
+              <Animated.View key={track.id} style={[styles.trackCard, tracksStyle]}>
+                <View style={styles.trackHeader}>
+                  <View>
+                    <Text style={styles.trackName}>{track.name}</Text>
+                    <Text style={styles.trackMeta}>
+                      Pitch {track.pitch > 0 ? '+' : ''}
+                      {track.pitch.toFixed(1)} st | Speed {(track.speed * 100).toFixed(0)}%
+                    </Text>
+                  </View>
+                  <View style={styles.trackButtons}>
+                    <TouchableOpacity
+                      style={[styles.trackButton, track.muted && styles.trackButtonMuted]}
+                      onPress={() => handleTrackMuteToggle(track.id)}
+                    >
+                      <Text style={styles.trackButtonText}>M</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.trackButton, track.solo && styles.trackButtonSolo]}
+                      onPress={() => handleTrackSoloToggle(track.id)}
+                    >
+                      <Text style={styles.trackButtonText}>S</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <View style={styles.controlGroup}>
+                  <View style={styles.labelRow}>
+                    <Text style={styles.label}>Volume</Text>
+                    <Text style={styles.valuePill}>{(track.volume * 100).toFixed(0)}%</Text>
+                  </View>
+                  <Slider
+                    style={styles.slider}
+                    minimumValue={0}
+                    maximumValue={2.0}
+                    value={track.volume}
+                    onValueChange={(value: number) =>
+                      handleTrackVolumeChange(track.id, value)
+                    }
+                    minimumTrackTintColor={theme.colors.accent}
+                    maximumTrackTintColor={theme.colors.track}
+                    thumbTintColor={theme.colors.accentStrong}
+                  />
+                </View>
+
+                <View style={styles.controlGroup}>
+                  <View style={styles.labelRow}>
+                    <Text style={styles.label}>Pan</Text>
+                    <Text style={styles.valuePill}>
+                      {track.pan > 0 ? 'R' : track.pan < 0 ? 'L' : 'C'}{' '}
+                      {Math.abs(track.pan * 100).toFixed(0)}
+                    </Text>
+                  </View>
+                  <Slider
+                    style={styles.slider}
+                    minimumValue={-1.0}
+                    maximumValue={1.0}
+                    value={track.pan}
+                    onValueChange={(value: number) => handleTrackPanChange(track.id, value)}
+                    minimumTrackTintColor={theme.colors.accent}
+                    maximumTrackTintColor={theme.colors.track}
+                    thumbTintColor={theme.colors.accentStrong}
+                  />
+                </View>
+
+                <View style={styles.controlGroup}>
+                  <View style={styles.labelRow}>
+                    <Text style={styles.label}>Pitch</Text>
+                    <Text style={styles.valuePill}>
+                      {track.pitch > 0 ? '+' : ''}
+                      {track.pitch.toFixed(1)} st
+                    </Text>
+                  </View>
+                  <Slider
+                    style={styles.slider}
+                    minimumValue={-12.0}
+                    maximumValue={12.0}
+                    value={track.pitch}
+                    onValueChange={(value: number) => handleTrackPitchChange(track.id, value)}
+                    minimumTrackTintColor={theme.colors.accent}
+                    maximumTrackTintColor={theme.colors.track}
+                    thumbTintColor={theme.colors.accentStrong}
+                  />
+                </View>
+
+                <View style={styles.controlGroup}>
+                  <View style={styles.labelRow}>
+                    <Text style={styles.label}>Speed</Text>
+                    <Text style={styles.valuePill}>{(track.speed * 100).toFixed(0)}%</Text>
+                  </View>
+                  <Slider
+                    style={styles.slider}
+                    minimumValue={0.5}
+                    maximumValue={2.0}
+                    value={track.speed}
+                    onValueChange={(value: number) => handleTrackSpeedChange(track.id, value)}
+                    minimumTrackTintColor={theme.colors.accent}
+                    maximumTrackTintColor={theme.colors.track}
+                    thumbTintColor={theme.colors.accentStrong}
+                  />
+                </View>
+              </Animated.View>
+            ))}
+          </>
+        )}
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
-    backgroundColor: '#0b0b0b',
-    padding: 20,
+    backgroundColor: theme.colors.background,
   },
-  header: {
+  background: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  glowTop: {
+    position: 'absolute',
+    width: 320,
+    height: 320,
+    borderRadius: 160,
+    backgroundColor: 'rgba(255, 180, 84, 0.22)',
+    top: -140,
+    right: -80,
+  },
+  glowBottom: {
+    position: 'absolute',
+    width: 360,
+    height: 360,
+    borderRadius: 180,
+    backgroundColor: 'rgba(35, 209, 139, 0.18)',
+    bottom: -160,
+    left: -120,
+  },
+  content: {
+    padding: 20,
+    paddingTop: 56,
+    paddingBottom: 80,
+  },
+  heroCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.card,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 4,
+  },
+  heroTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 40,
-    marginBottom: 20,
+    gap: 12,
+  },
+  eyebrow: {
+    color: theme.colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 2,
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 6,
   },
   title: {
     fontSize: 28,
-    fontWeight: 'bold',
-    color: '#f5f5f5',
-    marginBottom: 8,
+    fontWeight: '700',
+    color: theme.colors.text,
+    fontFamily: 'serif',
   },
-  status: {
-    fontSize: 16,
-    color: '#9aa0a6',
+  subtitle: {
+    color: theme.colors.textMuted,
+    fontSize: 14,
+    marginTop: 12,
+    marginBottom: 16,
   },
-  loadButton: {
-    backgroundColor: '#1DB954',
-    padding: 16,
-    borderRadius: 8,
+  statusPill: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  statusPillReady: {
+    borderColor: 'rgba(35, 209, 139, 0.6)',
+  },
+  statusPillActive: {
+    backgroundColor: 'rgba(35, 209, 139, 0.2)',
+    borderColor: 'rgba(35, 209, 139, 0.7)',
+  },
+  statusPillDanger: {
+    backgroundColor: 'rgba(255, 93, 93, 0.18)',
+    borderColor: 'rgba(255, 93, 93, 0.7)',
+  },
+  statusText: {
+    color: theme.colors.text,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  primaryButton: {
+    backgroundColor: theme.colors.accent,
+    paddingVertical: 14,
+    borderRadius: theme.radius.button,
     alignItems: 'center',
-    marginVertical: 20,
   },
-  buttonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
+  primaryButtonText: {
+    color: '#1b1206',
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
-  transportControls: {
+  card: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.card,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    marginTop: 18,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 3,
+  },
+  sectionHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginVertical: 20,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  sectionTitle: {
+    color: theme.colors.text,
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 26,
+  },
+  sectionHint: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
+  },
+  timePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.surfaceAlt,
+  },
+  timeText: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
+    fontFamily: 'monospace',
+  },
+  transportRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 12,
   },
   controlButton: {
-    backgroundColor: '#1DB954',
-    padding: 12,
-    borderRadius: 8,
-    minWidth: 100,
+    backgroundColor: theme.colors.surfaceStrong,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: theme.radius.button,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    minWidth: 96,
     alignItems: 'center',
   },
   controlButtonDisabled: {
-    backgroundColor: '#404040',
+    opacity: 0.5,
   },
   controlButtonText: {
-    color: '#fff',
-    fontSize: 16,
+    color: theme.colors.text,
+    fontSize: 14,
     fontWeight: '600',
   },
-  positionContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
+  resetButton: {
+    backgroundColor: 'rgba(255, 180, 84, 0.15)',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: theme.radius.button,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 180, 84, 0.6)',
+    minWidth: 96,
+    alignItems: 'center',
   },
-  timeText: {
-    color: '#9aa0a6',
+  resetButtonText: {
+    color: theme.colors.accent,
     fontSize: 14,
+    fontWeight: '600',
   },
   controlGroup: {
-    marginVertical: 12,
+    marginVertical: 10,
+  },
+  labelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
   },
   label: {
-    color: '#f5f5f5',
-    fontSize: 16,
-    marginBottom: 8,
+    color: theme.colors.text,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  valuePill: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.surfaceAlt,
+    overflow: 'hidden',
   },
   slider: {
     width: '100%',
     height: 40,
   },
-  trackContainer: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 8,
+  trackCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.card,
     padding: 16,
-    marginVertical: 8,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    marginTop: 14,
   },
   trackHeader: {
     flexDirection: 'row',
@@ -585,33 +900,40 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   trackName: {
-    color: '#f5f5f5',
-    fontSize: 18,
-    fontWeight: 'bold',
+    color: theme.colors.text,
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  trackMeta: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
+    marginTop: 4,
   },
   trackButtons: {
     flexDirection: 'row',
     gap: 8,
   },
   trackButton: {
-    backgroundColor: '#2a2a2a',
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    backgroundColor: theme.colors.surfaceStrong,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
   },
-  trackButtonActive: {
-    backgroundColor: '#1DB954',
+  trackButtonMuted: {
+    backgroundColor: 'rgba(255, 93, 93, 0.2)',
+    borderColor: 'rgba(255, 93, 93, 0.8)',
+  },
+  trackButtonSolo: {
+    backgroundColor: 'rgba(35, 209, 139, 0.2)',
+    borderColor: 'rgba(35, 209, 139, 0.8)',
   },
   trackButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  trackLabel: {
-    color: '#9aa0a6',
-    fontSize: 14,
-    marginBottom: 4,
+    color: theme.colors.text,
+    fontSize: 13,
+    fontWeight: '700',
   },
 });
