@@ -12,7 +12,8 @@ enum class ErrorCode {
   kUnsupportedFormat,
   kDecoderOpenFailed,
   kSeekFailed,
-  kStreamError
+  kStreamError,
+  kExtractionFailed
 };
 
 }  // namespace core

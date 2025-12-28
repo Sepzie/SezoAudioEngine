@@ -82,6 +82,51 @@ class AudioEngine {
   void SetSpeed(float rate);
   float GetSpeed() const;
 
+  // Phase 6: Extraction
+  struct ExtractionOptions {
+    std::string format = "wav";  // "wav", "aac", "mp3"
+    int32_t bitrate = 128000;
+    int32_t bits_per_sample = 16;
+    bool include_effects = true;
+  };
+
+  using ExtractionProgressCallback = std::function<void(float progress)>;
+
+  struct ExtractionResult {
+    bool success = false;
+    std::string track_id;
+    std::string output_path;
+    int64_t duration_samples = 0;
+    int64_t file_size = 0;
+    std::string error_message;
+  };
+
+  /**
+   * Extract a single track to an audio file with effects applied.
+   * @param track_id ID of track to extract
+   * @param output_path Path to output file
+   * @param options Extraction options
+   * @param progress_callback Optional progress callback
+   * @return Extraction result
+   */
+  ExtractionResult ExtractTrack(
+      const std::string& track_id,
+      const std::string& output_path,
+      const ExtractionOptions& options,
+      ExtractionProgressCallback progress_callback = nullptr);
+
+  /**
+   * Extract all loaded tracks mixed together to an audio file.
+   * @param output_path Path to output file
+   * @param options Extraction options
+   * @param progress_callback Optional progress callback
+   * @return Extraction result
+   */
+  ExtractionResult ExtractAllTracks(
+      const std::string& output_path,
+      const ExtractionOptions& options,
+      ExtractionProgressCallback progress_callback = nullptr);
+
  private:
   void ReportError(core::ErrorCode code, const std::string& message);
 

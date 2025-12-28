@@ -341,4 +341,128 @@ Java_com_sezo_audioengine_AudioEngine_nativeGetTrackSpeed(
   return 1.0f;
 }
 
+// Phase 6: Extraction
+JNIEXPORT jobject JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeExtractTrack(
+    JNIEnv* env, jobject thiz [[maybe_unused]], jlong handle, jstring track_id, jstring output_path,
+    jstring format, jint bitrate, jint bits_per_sample, jboolean include_effects) {
+
+  auto* engine = reinterpret_cast<AudioEngine*>(handle);
+  if (!engine) {
+    return nullptr;
+  }
+
+  // Convert Java strings to C++ strings
+  std::string track_id_str = JNIHelper::JStringToString(env, track_id);
+  std::string output_path_str = JNIHelper::JStringToString(env, output_path);
+  std::string format_str = JNIHelper::JStringToString(env, format);
+
+  // Setup extraction options
+  AudioEngine::ExtractionOptions options;
+  options.format = format_str;
+  options.bitrate = static_cast<int32_t>(bitrate);
+  options.bits_per_sample = static_cast<int32_t>(bits_per_sample);
+  options.include_effects = (include_effects == JNI_TRUE);
+
+  // Perform extraction
+  auto result = engine->ExtractTrack(track_id_str, output_path_str, options);
+
+  // Create Java result object (HashMap)
+  jclass hashMapClass = env->FindClass("java/util/HashMap");
+  jmethodID hashMapInit = env->GetMethodID(hashMapClass, "<init>", "()V");
+  jmethodID hashMapPut = env->GetMethodID(hashMapClass, "put",
+      "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
+
+  jobject resultMap = env->NewObject(hashMapClass, hashMapInit);
+
+  // Add success
+  jclass booleanClass = env->FindClass("java/lang/Boolean");
+  jmethodID booleanInit = env->GetMethodID(booleanClass, "<init>", "(Z)V");
+  jobject successObj = env->NewObject(booleanClass, booleanInit, result.success ? JNI_TRUE : JNI_FALSE);
+  env->CallObjectMethod(resultMap, hashMapPut, env->NewStringUTF("success"), successObj);
+
+  // Add track_id
+  env->CallObjectMethod(resultMap, hashMapPut, env->NewStringUTF("trackId"),
+      JNIHelper::StringToJString(env, result.track_id));
+
+  // Add output_path
+  env->CallObjectMethod(resultMap, hashMapPut, env->NewStringUTF("outputPath"),
+      JNIHelper::StringToJString(env, result.output_path));
+
+  // Add duration_samples
+  jclass longClass = env->FindClass("java/lang/Long");
+  jmethodID longInit = env->GetMethodID(longClass, "<init>", "(J)V");
+  jobject durationObj = env->NewObject(longClass, longInit, result.duration_samples);
+  env->CallObjectMethod(resultMap, hashMapPut, env->NewStringUTF("durationSamples"), durationObj);
+
+  // Add file_size
+  jobject fileSizeObj = env->NewObject(longClass, longInit, result.file_size);
+  env->CallObjectMethod(resultMap, hashMapPut, env->NewStringUTF("fileSize"), fileSizeObj);
+
+  // Add error_message
+  env->CallObjectMethod(resultMap, hashMapPut, env->NewStringUTF("errorMessage"),
+      JNIHelper::StringToJString(env, result.error_message));
+
+  return resultMap;
+}
+
+JNIEXPORT jobject JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeExtractAllTracks(
+    JNIEnv* env, jobject thiz [[maybe_unused]], jlong handle, jstring output_path,
+    jstring format, jint bitrate, jint bits_per_sample, jboolean include_effects) {
+
+  auto* engine = reinterpret_cast<AudioEngine*>(handle);
+  if (!engine) {
+    return nullptr;
+  }
+
+  // Convert Java strings to C++ strings
+  std::string output_path_str = JNIHelper::JStringToString(env, output_path);
+  std::string format_str = JNIHelper::JStringToString(env, format);
+
+  // Setup extraction options
+  AudioEngine::ExtractionOptions options;
+  options.format = format_str;
+  options.bitrate = static_cast<int32_t>(bitrate);
+  options.bits_per_sample = static_cast<int32_t>(bits_per_sample);
+  options.include_effects = (include_effects == JNI_TRUE);
+
+  // Perform extraction
+  auto result = engine->ExtractAllTracks(output_path_str, options);
+
+  // Create Java result object (HashMap)
+  jclass hashMapClass = env->FindClass("java/util/HashMap");
+  jmethodID hashMapInit = env->GetMethodID(hashMapClass, "<init>", "()V");
+  jmethodID hashMapPut = env->GetMethodID(hashMapClass, "put",
+      "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
+
+  jobject resultMap = env->NewObject(hashMapClass, hashMapInit);
+
+  // Add success
+  jclass booleanClass = env->FindClass("java/lang/Boolean");
+  jmethodID booleanInit = env->GetMethodID(booleanClass, "<init>", "(Z)V");
+  jobject successObj = env->NewObject(booleanClass, booleanInit, result.success ? JNI_TRUE : JNI_FALSE);
+  env->CallObjectMethod(resultMap, hashMapPut, env->NewStringUTF("success"), successObj);
+
+  // Add output_path
+  env->CallObjectMethod(resultMap, hashMapPut, env->NewStringUTF("outputPath"),
+      JNIHelper::StringToJString(env, result.output_path));
+
+  // Add duration_samples
+  jclass longClass = env->FindClass("java/lang/Long");
+  jmethodID longInit = env->GetMethodID(longClass, "<init>", "(J)V");
+  jobject durationObj = env->NewObject(longClass, longInit, result.duration_samples);
+  env->CallObjectMethod(resultMap, hashMapPut, env->NewStringUTF("durationSamples"), durationObj);
+
+  // Add file_size
+  jobject fileSizeObj = env->NewObject(longClass, longInit, result.file_size);
+  env->CallObjectMethod(resultMap, hashMapPut, env->NewStringUTF("fileSize"), fileSizeObj);
+
+  // Add error_message
+  env->CallObjectMethod(resultMap, hashMapPut, env->NewStringUTF("errorMessage"),
+      JNIHelper::StringToJString(env, result.error_message));
+
+  return resultMap;
+}
+
 }  // extern "C"

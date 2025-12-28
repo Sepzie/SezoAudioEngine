@@ -199,18 +199,86 @@ class ExpoAudioEngineModule : Module() {
     Function("isRecording") { false }
     Function("setRecordingVolume") { _volume: Double -> }
 
-    AsyncFunction("extractTrack") { _trackId: String, _config: Map<String, Any?>? ->
+    AsyncFunction("extractTrack") { trackId: String, config: Map<String, Any?>? ->
+      val engine = audioEngine ?: throw Exception("Engine not initialized")
+
+      val format = (config?.get("format") as? String) ?: "wav"
+      val bitrate = (config?.get("bitrate") as? Number)?.toInt() ?: 128000
+      val bitsPerSample = (config?.get("bitsPerSample") as? Number)?.toInt() ?: 16
+      val includeEffects = (config?.get("includeEffects") as? Boolean) ?: true
+      val outputDir = (config?.get("outputDir") as? String) ?: getCacheDir()
+
+      // Generate output path
+      val fileName = "track_${trackId}_${System.currentTimeMillis()}.$format"
+      val outputPath = "$outputDir/$fileName"
+
+      Log.d(TAG, "Extracting track: $trackId to $outputPath (format=$format, bitrate=$bitrate)")
+
+      val result = engine.extractTrack(
+        trackId = trackId,
+        outputPath = outputPath,
+        format = format,
+        bitrate = bitrate,
+        bitsPerSample = bitsPerSample,
+        includeEffects = includeEffects
+      )
+
+      if (!result.success) {
+        Log.e(TAG, "Extraction failed: ${result.errorMessage}")
+        throw Exception("Extraction failed: ${result.errorMessage}")
+      }
+
+      Log.d(TAG, "Extraction successful: ${result.fileSize} bytes, ${result.durationSamples} samples")
+
       mapOf(
-        "trackId" to _trackId,
-        "uri" to "",
-        "duration" to 0,
-        "format" to "aac",
-        "fileSize" to 0
+        "trackId" to result.trackId,
+        "uri" to "file://${result.outputPath}",
+        "duration" to (result.durationSamples / 44.1).toInt(), // Convert to milliseconds
+        "format" to format,
+        "fileSize" to result.fileSize,
+        "bitrate" to bitrate
       )
     }
 
-    AsyncFunction("extractAllTracks") { _config: Map<String, Any?>? ->
-      emptyList<Map<String, Any?>>()
+    AsyncFunction("extractAllTracks") { config: Map<String, Any?>? ->
+      val engine = audioEngine ?: throw Exception("Engine not initialized")
+
+      val format = (config?.get("format") as? String) ?: "wav"
+      val bitrate = (config?.get("bitrate") as? Number)?.toInt() ?: 128000
+      val bitsPerSample = (config?.get("bitsPerSample") as? Number)?.toInt() ?: 16
+      val includeEffects = (config?.get("includeEffects") as? Boolean) ?: true
+      val outputDir = (config?.get("outputDir") as? String) ?: getCacheDir()
+
+      // Generate output path
+      val fileName = "mixed_tracks_${System.currentTimeMillis()}.$format"
+      val outputPath = "$outputDir/$fileName"
+
+      Log.d(TAG, "Extracting all tracks mixed to $outputPath (format=$format, bitrate=$bitrate)")
+
+      val result = engine.extractAllTracks(
+        outputPath = outputPath,
+        format = format,
+        bitrate = bitrate,
+        bitsPerSample = bitsPerSample,
+        includeEffects = includeEffects
+      )
+
+      if (!result.success) {
+        Log.e(TAG, "Extraction failed: ${result.errorMessage}")
+        throw Exception("Extraction failed: ${result.errorMessage}")
+      }
+
+      Log.d(TAG, "Extraction successful: ${result.fileSize} bytes, ${result.durationSamples} samples")
+
+      listOf(
+        mapOf(
+          "uri" to "file://${result.outputPath}",
+          "duration" to (result.durationSamples / 44.1).toInt(), // Convert to milliseconds
+          "format" to format,
+          "fileSize" to result.fileSize,
+          "bitrate" to bitrate
+        )
+      )
     }
 
     Function("getInputLevel") { 0.0 }
@@ -233,6 +301,10 @@ class ExpoAudioEngineModule : Module() {
       "extractionComplete",
       "error"
     )
+  }
+
+  private fun getCacheDir(): String {
+    return appContext.reactContext?.cacheDir?.absolutePath ?: "/tmp"
   }
 
   private fun convertUriToPath(uri: String): String {

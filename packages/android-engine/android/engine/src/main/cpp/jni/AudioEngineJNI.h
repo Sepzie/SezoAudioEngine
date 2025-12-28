@@ -137,4 +137,15 @@ Java_com_sezo_audioengine_AudioEngine_nativeSetSpeed(
 JNIEXPORT jfloat JNICALL
 Java_com_sezo_audioengine_AudioEngine_nativeGetSpeed(JNIEnv* env, jobject thiz, jlong handle);
 
+// Phase 6: Extraction
+JNIEXPORT jobject JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeExtractTrack(
+    JNIEnv* env, jobject thiz, jlong handle, jstring track_id, jstring output_path,
+    jstring format, jint bitrate, jint bits_per_sample, jboolean include_effects);
+
+JNIEXPORT jobject JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeExtractAllTracks(
+    JNIEnv* env, jobject thiz, jlong handle, jstring output_path,
+    jstring format, jint bitrate, jint bits_per_sample, jboolean include_effects);
+
 }  // extern "C"

@@ -20,12 +20,16 @@ add_library(sezo_audio_engine SHARED
   audio/AudioDecoder.cpp
   audio/MP3Decoder.cpp
   audio/WAVDecoder.cpp
+  # Audio encoding
+  audio/WAVEncoder.cpp
   # Playback
   playback/Track.cpp
   playback/MultiTrackMixer.cpp
   playback/OboePlayer.cpp
   # Phase 2: Real-time effects
   playback/TimeStretch.cpp
+  # Phase 6: Extraction
+  extraction/ExtractionPipeline.cpp
   # JNI bridge
   jni/AudioEngineJNI.cpp
 )

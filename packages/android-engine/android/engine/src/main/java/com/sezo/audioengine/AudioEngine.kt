@@ -125,6 +125,73 @@ class AudioEngine {
     return nativeGetTrackSpeed(nativeHandle, trackId)
   }
 
+  // Extraction (Phase 6)
+  data class ExtractionResult(
+    val success: Boolean,
+    val trackId: String?,
+    val outputPath: String,
+    val durationSamples: Long,
+    val fileSize: Long,
+    val errorMessage: String?
+  )
+
+  fun extractTrack(
+    trackId: String,
+    outputPath: String,
+    format: String = "wav",
+    bitrate: Int = 128000,
+    bitsPerSample: Int = 16,
+    includeEffects: Boolean = true
+  ): ExtractionResult {
+    val resultMap = nativeExtractTrack(
+      nativeHandle, trackId, outputPath, format, bitrate, bitsPerSample, includeEffects
+    ) as? Map<*, *> ?: return ExtractionResult(
+      success = false,
+      trackId = trackId,
+      outputPath = outputPath,
+      durationSamples = 0,
+      fileSize = 0,
+      errorMessage = "Native method returned null"
+    )
+
+    return ExtractionResult(
+      success = resultMap["success"] as? Boolean ?: false,
+      trackId = resultMap["trackId"] as? String,
+      outputPath = resultMap["outputPath"] as? String ?: outputPath,
+      durationSamples = resultMap["durationSamples"] as? Long ?: 0L,
+      fileSize = resultMap["fileSize"] as? Long ?: 0L,
+      errorMessage = resultMap["errorMessage"] as? String
+    )
+  }
+
+  fun extractAllTracks(
+    outputPath: String,
+    format: String = "wav",
+    bitrate: Int = 128000,
+    bitsPerSample: Int = 16,
+    includeEffects: Boolean = true
+  ): ExtractionResult {
+    val resultMap = nativeExtractAllTracks(
+      nativeHandle, outputPath, format, bitrate, bitsPerSample, includeEffects
+    ) as? Map<*, *> ?: return ExtractionResult(
+      success = false,
+      trackId = null,
+      outputPath = outputPath,
+      durationSamples = 0,
+      fileSize = 0,
+      errorMessage = "Native method returned null"
+    )
+
+    return ExtractionResult(
+      success = resultMap["success"] as? Boolean ?: false,
+      trackId = null,
+      outputPath = resultMap["outputPath"] as? String ?: outputPath,
+      durationSamples = resultMap["durationSamples"] as? Long ?: 0L,
+      fileSize = resultMap["fileSize"] as? Long ?: 0L,
+      errorMessage = resultMap["errorMessage"] as? String
+    )
+  }
+
   // Native method declarations
   private external fun nativeCreate(): Long
   private external fun nativeDestroy(handle: Long)
@@ -160,4 +227,14 @@ class AudioEngine {
   private external fun nativeGetTrackPitch(handle: Long, trackId: String): Float
   private external fun nativeSetTrackSpeed(handle: Long, trackId: String, rate: Float)
   private external fun nativeGetTrackSpeed(handle: Long, trackId: String): Float
+
+  private external fun nativeExtractTrack(
+    handle: Long, trackId: String, outputPath: String,
+    format: String, bitrate: Int, bitsPerSample: Int, includeEffects: Boolean
+  ): Any?
+
+  private external fun nativeExtractAllTracks(
+    handle: Long, outputPath: String,
+    format: String, bitrate: Int, bitsPerSample: Int, includeEffects: Boolean
+  ): Any?
 }

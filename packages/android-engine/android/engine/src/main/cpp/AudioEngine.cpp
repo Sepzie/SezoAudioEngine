@@ -1,4 +1,5 @@
 #include "AudioEngine.h"
+#include "extraction/ExtractionPipeline.h"
 #include <android/log.h>
 #include <utility>
 
@@ -367,6 +368,151 @@ void AudioEngine::SetSpeed(float rate) {
 
 float AudioEngine::GetSpeed() const {
   return speed_;
+}
+
+// Phase 6: Extraction
+AudioEngine::ExtractionResult AudioEngine::ExtractTrack(
+    const std::string& track_id,
+    const std::string& output_path,
+    const ExtractionOptions& options,
+    ExtractionProgressCallback progress_callback) {
+
+  ExtractionResult result;
+  result.track_id = track_id;
+  result.output_path = output_path;
+
+  if (!initialized_) {
+    result.error_message = "AudioEngine not initialized";
+    ReportError(core::ErrorCode::kNotInitialized, result.error_message);
+    return result;
+  }
+
+  auto it = tracks_.find(track_id);
+  if (it == tracks_.end()) {
+    result.error_message = "Track not found: " + track_id;
+    ReportError(core::ErrorCode::kTrackNotFound, result.error_message);
+    return result;
+  }
+
+  auto track = it->second;
+  if (!track->IsLoaded()) {
+    result.error_message = "Track not loaded: " + track_id;
+    ReportError(core::ErrorCode::kTrackNotFound, result.error_message);
+    return result;
+  }
+
+  // Create extraction pipeline
+  extraction::ExtractionPipeline pipeline;
+
+  // Convert options to extraction config
+  extraction::ExtractionConfig config;
+  config.sample_rate = sample_rate_;
+  config.bitrate = options.bitrate;
+  config.bits_per_sample = options.bits_per_sample;
+  config.include_effects = options.include_effects;
+
+  // Map format string to enum
+  if (options.format == "wav") {
+    config.format = audio::EncoderFormat::kWAV;
+  } else if (options.format == "aac") {
+    config.format = audio::EncoderFormat::kAAC;
+  } else if (options.format == "mp3") {
+    config.format = audio::EncoderFormat::kMP3;
+  } else {
+    result.error_message = "Unsupported format: " + options.format;
+    ReportError(core::ErrorCode::kInvalidArgument, result.error_message);
+    return result;
+  }
+
+  // Perform extraction
+  auto extraction_result = pipeline.ExtractTrack(
+      track, output_path, config, progress_callback);
+
+  // Convert extraction result
+  result.success = extraction_result.success;
+  result.duration_samples = extraction_result.duration_samples;
+  result.file_size = extraction_result.file_size;
+  result.error_message = extraction_result.error_message;
+
+  if (!result.success) {
+    ReportError(core::ErrorCode::kExtractionFailed, result.error_message);
+  }
+
+  return result;
+}
+
+AudioEngine::ExtractionResult AudioEngine::ExtractAllTracks(
+    const std::string& output_path,
+    const ExtractionOptions& options,
+    ExtractionProgressCallback progress_callback) {
+
+  ExtractionResult result;
+  result.output_path = output_path;
+
+  if (!initialized_) {
+    result.error_message = "AudioEngine not initialized";
+    ReportError(core::ErrorCode::kNotInitialized, result.error_message);
+    return result;
+  }
+
+  if (tracks_.empty()) {
+    result.error_message = "No tracks loaded";
+    ReportError(core::ErrorCode::kTrackNotFound, result.error_message);
+    return result;
+  }
+
+  // Collect all loaded tracks
+  std::vector<std::shared_ptr<playback::Track>> track_list;
+  for (const auto& pair : tracks_) {
+    if (pair.second->IsLoaded()) {
+      track_list.push_back(pair.second);
+    }
+  }
+
+  if (track_list.empty()) {
+    result.error_message = "No loaded tracks to extract";
+    ReportError(core::ErrorCode::kTrackNotFound, result.error_message);
+    return result;
+  }
+
+  // Create extraction pipeline
+  extraction::ExtractionPipeline pipeline;
+
+  // Convert options to extraction config
+  extraction::ExtractionConfig config;
+  config.sample_rate = sample_rate_;
+  config.bitrate = options.bitrate;
+  config.bits_per_sample = options.bits_per_sample;
+  config.include_effects = options.include_effects;
+
+  // Map format string to enum
+  if (options.format == "wav") {
+    config.format = audio::EncoderFormat::kWAV;
+  } else if (options.format == "aac") {
+    config.format = audio::EncoderFormat::kAAC;
+  } else if (options.format == "mp3") {
+    config.format = audio::EncoderFormat::kMP3;
+  } else {
+    result.error_message = "Unsupported format: " + options.format;
+    ReportError(core::ErrorCode::kInvalidArgument, result.error_message);
+    return result;
+  }
+
+  // Perform extraction
+  auto extraction_result = pipeline.ExtractMixedTracks(
+      track_list, output_path, config, progress_callback);
+
+  // Convert extraction result
+  result.success = extraction_result.success;
+  result.duration_samples = extraction_result.duration_samples;
+  result.file_size = extraction_result.file_size;
+  result.error_message = extraction_result.error_message;
+
+  if (!result.success) {
+    ReportError(core::ErrorCode::kExtractionFailed, result.error_message);
+  }
+
+  return result;
 }
 
 void AudioEngine::ReportError(core::ErrorCode code, const std::string& message) {
