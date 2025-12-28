@@ -93,23 +93,45 @@ size_t Track::ReadSamples(float* output, size_t frames) {
     return frames;
   }
 
-  // Read from buffer
-  const size_t samples_needed = frames * decoder_->GetFormat().channels;
-  const size_t samples_read = buffer_->Read(output, samples_needed);
-
-  // If we didn't get enough samples, fill the rest with silence
-  if (samples_read < samples_needed) {
-    std::fill_n(output + samples_read, samples_needed - samples_read, 0.0f);
-  }
-
   const int32_t channels = decoder_->GetFormat().channels;
   const float vol = volume_.load(std::memory_order_acquire);
   const float pan_value = pan_.load(std::memory_order_acquire);
+  const bool use_time_stretch =
+      time_stretcher_ && time_stretcher_->IsActive() && (channels == 1 || channels == 2);
+  size_t frames_processed = frames;
 
   // Phase 2: Apply time-stretch/pitch-shift effects BEFORE volume/pan
-  if (time_stretcher_ && time_stretcher_->IsActive()) {
-    // Process in-place (input and output can be the same buffer)
-    time_stretcher_->Process(output, output, samples_read / channels);
+  if (use_time_stretch) {
+    const float stretch = time_stretcher_->GetStretchFactor();
+    const double requested_input = static_cast<double>(frames) * stretch + stretch_input_fraction_;
+    size_t input_frames = static_cast<size_t>(requested_input);
+    stretch_input_fraction_ = requested_input - static_cast<double>(input_frames);
+    if (input_frames < 1) {
+      input_frames = 1;
+    }
+
+    const size_t input_samples = input_frames * channels;
+    if (stretch_input_buffer_.size() < input_samples) {
+      stretch_input_buffer_.resize(input_samples);
+    }
+
+    const size_t samples_read = buffer_->Read(stretch_input_buffer_.data(), input_samples);
+    if (samples_read < input_samples) {
+      std::fill_n(stretch_input_buffer_.data() + samples_read,
+                  input_samples - samples_read,
+                  0.0f);
+    }
+
+    time_stretcher_->Process(stretch_input_buffer_.data(), input_frames, output, frames);
+    frames_processed = frames;
+  } else {
+    stretch_input_fraction_ = 0.0;
+    const size_t samples_needed = frames * channels;
+    const size_t samples_read = buffer_->Read(output, samples_needed);
+    if (samples_read < samples_needed) {
+      std::fill_n(output + samples_read, samples_needed - samples_read, 0.0f);
+    }
+    frames_processed = samples_read / channels;
   }
 
   // Apply volume and pan (for stereo)
@@ -118,13 +140,13 @@ size_t Track::ReadSamples(float* output, size_t frames) {
     const float left_gain = vol * std::cos((pan_value + 1.0f) * 0.25f * M_PI);
     const float right_gain = vol * std::sin((pan_value + 1.0f) * 0.25f * M_PI);
 
-    for (size_t i = 0; i < samples_read; i += 2) {
+    for (size_t i = 0; i < frames_processed * 2; i += 2) {
       output[i] *= left_gain;       // Left channel
       output[i + 1] *= right_gain;  // Right channel
     }
   } else if (channels == 1 && vol != 1.0f) {
     // Mono, just apply volume
-    for (size_t i = 0; i < samples_read; ++i) {
+    for (size_t i = 0; i < frames_processed; ++i) {
       output[i] *= vol;
     }
   }
@@ -132,7 +154,7 @@ size_t Track::ReadSamples(float* output, size_t frames) {
   // Notify streaming thread that buffer has space
   streaming_cv_.notify_one();
 
-  return samples_read / channels;
+  return frames_processed;
 }
 
 bool Track::Seek(int64_t frame) {
@@ -155,6 +177,7 @@ bool Track::Seek(int64_t frame) {
   if (time_stretcher_) {
     time_stretcher_->Reset();
   }
+  stretch_input_fraction_ = 0.0;
 
   const bool result = decoder_->Seek(clamped_frame);
   streaming_cv_.notify_all();

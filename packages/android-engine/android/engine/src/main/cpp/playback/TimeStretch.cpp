@@ -70,18 +70,43 @@ bool TimeStretch::IsActive() const {
   return std::abs(pitch) > 0.01f || std::abs(stretch - 1.0f) > 0.01f;
 }
 
-void TimeStretch::Process(const float* input, float* output, size_t frames) {
+void TimeStretch::Process(const float* input, size_t input_frames, float* output, size_t output_frames) {
+  if (!input || !output || output_frames == 0) {
+    return;
+  }
+
+  if (input_frames == 0) {
+    std::fill_n(output, output_frames * channels_, 0.0f);
+    return;
+  }
+
+  if (channels_ != 1 && channels_ != 2) {
+    const size_t frames_to_copy = std::min(input_frames, output_frames);
+    const size_t samples_to_copy = frames_to_copy * channels_;
+    if (input != output && samples_to_copy > 0) {
+      std::copy(input, input + samples_to_copy, output);
+    }
+    if (frames_to_copy < output_frames) {
+      std::fill(output + samples_to_copy, output + output_frames * channels_, 0.0f);
+    }
+    return;
+  }
+
   // Quick path: if no effects are active, just copy input to output
   if (!IsActive()) {
-    if (input != output) {
-      std::copy(input, input + frames * channels_, output);
+    const size_t frames_to_copy = std::min(input_frames, output_frames);
+    const size_t samples_to_copy = frames_to_copy * channels_;
+    if (input != output && samples_to_copy > 0) {
+      std::copy(input, input + samples_to_copy, output);
+    }
+    if (frames_to_copy < output_frames) {
+      std::fill(output + samples_to_copy, output + output_frames * channels_, 0.0f);
     }
     return;
   }
 
   // Load current parameters
   const float pitch = pitch_semitones_.load(std::memory_order_acquire);
-  const float stretch = stretch_factor_.load(std::memory_order_acquire);
 
   // Update stretcher parameters if they changed
   if (std::abs(pitch - last_pitch_) > 0.001f) {
@@ -89,28 +114,26 @@ void TimeStretch::Process(const float* input, float* output, size_t frames) {
     last_pitch_ = pitch;
   }
 
-  // Note: The time-stretch rate is controlled by the ratio of input/output samples
-  // For now, we'll process with a 1:1 ratio and let the caller handle playback rate
-  // In a more advanced implementation, we could use different input/output sizes
-
   // Ensure buffers are large enough
   for (int c = 0; c < channels_; ++c) {
-    if (input_buffers_[c].size() < frames) {
-      input_buffers_[c].resize(frames);
-      output_buffers_[c].resize(frames);
+    if (input_buffers_[c].size() < input_frames) {
+      input_buffers_[c].resize(input_frames);
+    }
+    if (output_buffers_[c].size() < output_frames) {
+      output_buffers_[c].resize(output_frames);
     }
   }
 
   // De-interleave input samples into separate channel buffers
   if (channels_ == 2) {
-    for (size_t i = 0; i < frames; ++i) {
+    for (size_t i = 0; i < input_frames; ++i) {
       input_buffers_[0][i] = input[i * 2];      // Left
       input_buffers_[1][i] = input[i * 2 + 1];  // Right
     }
   } else {
     // Mono or other channel configs
     for (int c = 0; c < channels_; ++c) {
-      for (size_t i = 0; i < frames; ++i) {
+      for (size_t i = 0; i < input_frames; ++i) {
         input_buffers_[c][i] = input[i * channels_ + c];
       }
     }
@@ -121,17 +144,8 @@ void TimeStretch::Process(const float* input, float* output, size_t frames) {
   float* output_ptrs[2] = {output_buffers_[0].data(), output_buffers_[1].data()};
 
   // Process through Signalsmith Stretch
-  // For real-time processing with time-stretch, we typically want:
-  // - stretch < 1.0: fewer output samples than input (faster playback)
-  // - stretch > 1.0: more output samples than input (slower playback)
-  // However, for simplicity in real-time, we'll process 1:1 and handle rate elsewhere
-
-  int input_samples = static_cast<int>(frames);
-  int output_samples = static_cast<int>(frames / stretch);
-
-  // Clamp output samples to avoid buffer overflow
-  output_samples = std::min(output_samples, static_cast<int>(frames));
-
+  const int input_samples = static_cast<int>(input_frames);
+  const int output_samples = static_cast<int>(output_frames);
   stretcher_->process(input_ptrs, input_samples, output_ptrs, output_samples);
 
   // Re-interleave output samples
@@ -140,24 +154,11 @@ void TimeStretch::Process(const float* input, float* output, size_t frames) {
       output[i * 2] = output_buffers_[0][i];      // Left
       output[i * 2 + 1] = output_buffers_[1][i];  // Right
     }
-
-    // Fill remaining samples with silence if we produced fewer outputs
-    for (size_t i = output_samples; i < frames; ++i) {
-      output[i * 2] = 0.0f;
-      output[i * 2 + 1] = 0.0f;
-    }
   } else {
     // Mono or other channel configs
     for (int c = 0; c < channels_; ++c) {
       for (int i = 0; i < output_samples; ++i) {
         output[i * channels_ + c] = output_buffers_[c][i];
-      }
-    }
-
-    // Fill remaining with silence
-    for (size_t i = output_samples; i < frames; ++i) {
-      for (int c = 0; c < channels_; ++c) {
-        output[i * channels_ + c] = 0.0f;
       }
     }
   }

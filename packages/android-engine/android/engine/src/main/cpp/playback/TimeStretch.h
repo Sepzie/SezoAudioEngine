@@ -90,14 +90,15 @@ class TimeStretch {
    * It applies pitch shifting and time stretching based on current parameters.
    *
    * @param input Interleaved audio samples (e.g., [L, R, L, R, ...])
+   * @param input_frames Number of input frames (samples per channel)
    * @param output Output buffer (can be the same as input for in-place processing)
-   * @param frames Number of frames to process (samples per channel)
+   * @param output_frames Number of output frames (samples per channel)
    *
    * Note: For stereo, total samples = frames * 2
    *
    * Thread-safe: Should only be called from audio callback thread
    */
-  void Process(const float* input, float* output, size_t frames);
+  void Process(const float* input, size_t input_frames, float* output, size_t output_frames);
 
   /**
    * Resets the internal state of the time-stretcher.

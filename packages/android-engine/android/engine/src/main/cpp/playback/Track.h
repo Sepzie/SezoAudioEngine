@@ -10,6 +10,7 @@
 #include <thread>
 #include <condition_variable>
 #include <mutex>
+#include <vector>
 
 namespace sezo {
 namespace playback {
@@ -100,6 +101,8 @@ class Track {
 
   // Phase 2: Real-time effects
   std::unique_ptr<TimeStretch> time_stretcher_;
+  std::vector<float> stretch_input_buffer_;
+  double stretch_input_fraction_ = 0.0;
 };
 
 }  // namespace playback
