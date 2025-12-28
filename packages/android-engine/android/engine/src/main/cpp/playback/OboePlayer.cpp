@@ -47,6 +47,11 @@ bool OboePlayer::Start() {
     return false;
   }
 
+  if (stream_->getState() == oboe::StreamState::Started) {
+    LOGD("Stream already started");
+    return true;
+  }
+
   oboe::Result result = stream_->start();
   if (result != oboe::Result::OK) {
     LOGE("Failed to start stream: %s", oboe::convertToText(result));

@@ -180,10 +180,12 @@ void AudioEngine::Play() {
   }
 
   transport_->Play();
-  if (!player_->Start()) {
-    transport_->Stop();
-    ReportError(core::ErrorCode::kStreamError, "Failed to start audio stream");
-    return;
+  if (!player_->IsRunning()) {
+    if (!player_->Start()) {
+      transport_->Stop();
+      ReportError(core::ErrorCode::kStreamError, "Failed to start audio stream");
+      return;
+    }
   }
   LOGD("Playback started");
 }
