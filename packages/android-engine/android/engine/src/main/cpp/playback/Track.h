@@ -103,6 +103,8 @@ class Track {
   std::unique_ptr<TimeStretch> time_stretcher_;
   std::vector<float> stretch_input_buffer_;
   double stretch_input_fraction_ = 0.0;
+  uint32_t stretch_log_counter_ = 0;
+  uint32_t underrun_log_counter_ = 0;
 };
 
 }  // namespace playback

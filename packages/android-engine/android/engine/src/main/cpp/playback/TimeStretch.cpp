@@ -19,8 +19,10 @@ TimeStretch::TimeStretch(int32_t sample_rate, int32_t channels)
   stretcher_ = std::make_unique<StretcherType>();
 
   // Configure with default preset
-  // Using the "cheaper" preset for better real-time performance
-  stretcher_->presetCheaper(channels, static_cast<float>(sample_rate), false);
+  // Prefer quality for debugging artifacting; split computation to reduce spikes.
+  const float sample_rate_f = static_cast<float>(sample_rate);
+  stretcher_->presetDefault(channels, sample_rate_f, true);
+  tonality_limit_ = sample_rate_f > 0.0f ? (8000.0f / sample_rate_f) : 0.0f;
 
   // Get latency values
   input_latency_ = stretcher_->inputLatency();
@@ -34,8 +36,14 @@ TimeStretch::TimeStretch(int32_t sample_rate, int32_t channels)
   }
   temp_buffer_.resize(max_frames * channels);
 
-  LOGI("TimeStretch initialized: %d Hz, %d channels, input latency: %d, output latency: %d",
-       sample_rate, channels, input_latency_, output_latency_);
+  LOGI("TimeStretch initialized: %d Hz, %d channels, input latency: %d, output latency: %d, block: %d, interval: %d, split: %d",
+       sample_rate,
+       channels,
+       input_latency_,
+       output_latency_,
+       stretcher_->blockSamples(),
+       stretcher_->intervalSamples(),
+       stretcher_->splitComputation() ? 1 : 0);
 }
 
 TimeStretch::~TimeStretch() {
@@ -110,7 +118,7 @@ void TimeStretch::Process(const float* input, size_t input_frames, float* output
 
   // Update stretcher parameters if they changed
   if (std::abs(pitch - last_pitch_) > 0.001f) {
-    stretcher_->setTransposeSemitones(pitch);
+    stretcher_->setTransposeSemitones(pitch, tonality_limit_);
     last_pitch_ = pitch;
   }
 

@@ -135,6 +135,7 @@ class TimeStretch {
   // Latency compensation
   int32_t input_latency_ = 0;
   int32_t output_latency_ = 0;
+  float tonality_limit_ = 0.0f;
 
   // Last applied parameters (to detect changes)
   float last_pitch_ = 0.0f;

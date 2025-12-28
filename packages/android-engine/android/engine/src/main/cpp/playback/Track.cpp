@@ -9,6 +9,7 @@
 
 #define LOG_TAG "Track"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
+#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 #ifndef M_PI
@@ -103,6 +104,7 @@ size_t Track::ReadSamples(float* output, size_t frames) {
   // Phase 2: Apply time-stretch/pitch-shift effects BEFORE volume/pan
   if (use_time_stretch) {
     const float stretch = time_stretcher_->GetStretchFactor();
+    const float pitch = time_stretcher_->GetPitchSemitones();
     const double requested_input = static_cast<double>(frames) * stretch + stretch_input_fraction_;
     size_t input_frames = static_cast<size_t>(requested_input);
     stretch_input_fraction_ = requested_input - static_cast<double>(input_frames);
@@ -115,21 +117,52 @@ size_t Track::ReadSamples(float* output, size_t frames) {
       stretch_input_buffer_.resize(input_samples);
     }
 
+    const size_t available_samples = buffer_->Available();
     const size_t samples_read = buffer_->Read(stretch_input_buffer_.data(), input_samples);
     if (samples_read < input_samples) {
       std::fill_n(stretch_input_buffer_.data() + samples_read,
                   input_samples - samples_read,
                   0.0f);
+      if (++underrun_log_counter_ % 50 == 0) {
+        LOGW("Track %s stretch underrun: need=%zu read=%zu avail=%zu out_frames=%zu in_frames=%zu stretch=%.3f pitch=%.2f",
+             id_.c_str(),
+             input_samples,
+             samples_read,
+             available_samples,
+             frames,
+             input_frames,
+             stretch,
+             pitch);
+      }
     }
 
     time_stretcher_->Process(stretch_input_buffer_.data(), input_frames, output, frames);
     frames_processed = frames;
+    if (++stretch_log_counter_ % 200 == 0) {
+      LOGD("Track %s stretch: out_frames=%zu in_frames=%zu stretch=%.3f pitch=%.2f avail=%zu read=%zu",
+           id_.c_str(),
+           frames,
+           input_frames,
+           stretch,
+           pitch,
+           available_samples,
+           samples_read);
+    }
   } else {
     stretch_input_fraction_ = 0.0;
     const size_t samples_needed = frames * channels;
+    const size_t available_samples = buffer_->Available();
     const size_t samples_read = buffer_->Read(output, samples_needed);
     if (samples_read < samples_needed) {
       std::fill_n(output + samples_read, samples_needed - samples_read, 0.0f);
+      if (++underrun_log_counter_ % 50 == 0) {
+        LOGW("Track %s buffer underrun: need=%zu read=%zu avail=%zu frames=%zu",
+             id_.c_str(),
+             samples_needed,
+             samples_read,
+             available_samples,
+             frames);
+      }
     }
     frames_processed = samples_read / channels;
   }
