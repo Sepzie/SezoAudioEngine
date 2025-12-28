@@ -24,6 +24,15 @@ interface Track {
   speed: number;
 }
 
+interface ExtractionInfo {
+  trackId?: string;
+  uri: string;
+  duration: number;
+  format: string;
+  fileSize: number;
+  bitrate?: number;
+}
+
 const theme = {
   colors: {
     background: '#0b0f10',
@@ -55,6 +64,12 @@ export default function App() {
   const [masterPitch, setMasterPitch] = useState(0.0);
   const [masterSpeed, setMasterSpeed] = useState(1.0);
   const [tracks, setTracks] = useState<Track[]>([]);
+  const [extractionProgress, setExtractionProgress] = useState(0);
+  const [extractionStatus, setExtractionStatus] = useState('Idle');
+  const [extractionFormat, setExtractionFormat] = useState<'wav' | 'aac' | 'mp3'>('aac');
+  const [extractionIncludeEffects, setExtractionIncludeEffects] = useState(true);
+  const [lastExtraction, setLastExtraction] = useState<ExtractionInfo | null>(null);
+  const [isExtracting, setIsExtracting] = useState(false);
   const engineAny = AudioEngineModule as Record<string, any>;
   const supportsTrackPitch = typeof engineAny.setTrackPitch === 'function';
   const supportsTrackSpeed = typeof engineAny.setTrackSpeed === 'function';
@@ -85,6 +100,42 @@ export default function App() {
       AudioEngineModule.release().catch(() => {});
     };
   }, []);
+
+  useEffect(() => {
+    const progressSub = AudioEngineModule.addListener('extractionProgress', (event: any) => {
+      const progress = typeof event?.progress === 'number' ? event.progress : 0;
+      const operation = event?.operation === 'mix' ? 'Mix' : 'Track';
+      setExtractionProgress(progress);
+      setExtractionStatus(`${operation} export ${Math.round(progress * 100)}%`);
+      setIsExtracting(true);
+    });
+
+    const completeSub = AudioEngineModule.addListener('extractionComplete', (event: any) => {
+      const success = event?.success !== false;
+      setIsExtracting(false);
+      setExtractionProgress(success ? 1 : 0);
+      if (!success) {
+        setExtractionStatus(`Export failed: ${event?.errorMessage ?? 'Unknown error'}`);
+        return;
+      }
+      setExtractionStatus('Export complete');
+      if (event?.uri) {
+        setLastExtraction({
+          trackId: event?.trackId,
+          uri: event?.uri,
+          duration: event?.duration ?? 0,
+          format: event?.format ?? extractionFormat,
+          fileSize: event?.fileSize ?? 0,
+          bitrate: event?.bitrate,
+        });
+      }
+    });
+
+    return () => {
+      progressSub?.remove?.();
+      completeSub?.remove?.();
+    };
+  }, [extractionFormat]);
 
   useEffect(() => {
     Animated.stagger(120, [
@@ -261,6 +312,63 @@ export default function App() {
       console.error('Reset error:', error);
     }
   }, [engineAny, supportsTrackPitch, supportsTrackSpeed, tracks]);
+
+  const handleExtractTrack = useCallback(async () => {
+    const track = tracks[0];
+    if (!track) {
+      Alert.alert('No tracks', 'Load at least one track to export.');
+      return;
+    }
+
+    try {
+      setIsExtracting(true);
+      setExtractionProgress(0);
+      setExtractionStatus(`Exporting ${track.name}...`);
+
+      const result = await AudioEngineModule.extractTrack(track.id, {
+        format: extractionFormat,
+        includeEffects: extractionIncludeEffects,
+      });
+
+      setLastExtraction(result);
+      setExtractionStatus(`Exported ${track.name}`);
+      setExtractionProgress(1);
+    } catch (error: any) {
+      setExtractionStatus('Export failed');
+      Alert.alert('Export failed', error?.message ?? 'Unknown error');
+    } finally {
+      setIsExtracting(false);
+    }
+  }, [extractionFormat, extractionIncludeEffects, tracks]);
+
+  const handleExtractMix = useCallback(async () => {
+    if (tracks.length === 0) {
+      Alert.alert('No tracks', 'Load tracks to export a mix.');
+      return;
+    }
+
+    try {
+      setIsExtracting(true);
+      setExtractionProgress(0);
+      setExtractionStatus('Exporting mix...');
+
+      const results = await AudioEngineModule.extractAllTracks({
+        format: extractionFormat,
+        includeEffects: extractionIncludeEffects,
+      });
+
+      if (results.length > 0) {
+        setLastExtraction(results[0]);
+      }
+      setExtractionStatus('Exported mix');
+      setExtractionProgress(1);
+    } catch (error: any) {
+      setExtractionStatus('Export failed');
+      Alert.alert('Export failed', error?.message ?? 'Unknown error');
+    } finally {
+      setIsExtracting(false);
+    }
+  }, [extractionFormat, extractionIncludeEffects, tracks]);
 
   const handleMasterReset = useCallback(() => {
     try {
@@ -629,6 +737,97 @@ export default function App() {
               </View>
             </Animated.View>
 
+            <Animated.View style={[styles.card, controlsStyle]}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Extraction</Text>
+                <Text style={styles.sectionHint}>Offline export</Text>
+              </View>
+
+              <View style={styles.formatRow}>
+                {(['wav', 'aac', 'mp3'] as const).map((format) => (
+                  <TouchableOpacity
+                    key={format}
+                    style={[
+                      styles.formatButton,
+                      extractionFormat === format && styles.formatButtonActive,
+                      isExtracting && styles.formatButtonDisabled,
+                    ]}
+                    onPress={() => setExtractionFormat(format)}
+                    disabled={isExtracting}
+                  >
+                    <Text
+                      style={[
+                        styles.formatButtonText,
+                        extractionFormat === format && styles.formatButtonTextActive,
+                      ]}
+                    >
+                      {format.toUpperCase()}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+
+                <TouchableOpacity
+                  style={[
+                    styles.effectsToggle,
+                    extractionIncludeEffects && styles.effectsToggleActive,
+                    isExtracting && styles.formatButtonDisabled,
+                  ]}
+                  onPress={() => setExtractionIncludeEffects((prev) => !prev)}
+                  disabled={isExtracting}
+                >
+                  <Text style={styles.effectsToggleText}>
+                    {extractionIncludeEffects ? 'Effects On' : 'Dry Export'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.transportRow}>
+                <TouchableOpacity
+                  style={[styles.controlButton, isExtracting && styles.controlButtonDisabled]}
+                  onPress={handleExtractTrack}
+                  disabled={isExtracting}
+                >
+                  <Text style={styles.controlButtonText}>Export Track</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.controlButton, isExtracting && styles.controlButtonDisabled]}
+                  onPress={handleExtractMix}
+                  disabled={isExtracting}
+                >
+                  <Text style={styles.controlButtonText}>Export Mix</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.progressTrack}>
+                <View
+                  style={[
+                    styles.progressFill,
+                    { width: `${Math.round(extractionProgress * 100)}%` },
+                  ]}
+                />
+              </View>
+
+              <View style={styles.progressMeta}>
+                <Text style={styles.sectionHint}>{extractionStatus}</Text>
+                <Text style={styles.progressPercent}>
+                  {Math.round(extractionProgress * 100)}%
+                </Text>
+              </View>
+
+              {lastExtraction ? (
+                <View style={styles.extractionDetails}>
+                  <Text style={styles.detailLabel}>Last export</Text>
+                  <Text style={styles.detailValue}>
+                    {lastExtraction.format.toUpperCase()} •{' '}
+                    {(lastExtraction.fileSize / 1024).toFixed(1)} KB •{' '}
+                    {formatTime(lastExtraction.duration)}
+                  </Text>
+                </View>
+              ) : (
+                <Text style={styles.sectionHint}>No exports yet</Text>
+              )}
+            </Animated.View>
+
             <Animated.View style={[styles.sectionTitleRow, tracksStyle]}>
               <Text style={styles.sectionTitle}>Tracks</Text>
               <Text style={styles.sectionHint}>{tracks.length} loaded</Text>
@@ -959,6 +1158,53 @@ const styles = StyleSheet.create({
     gap: 10,
     marginBottom: 12,
   },
+  formatRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+  },
+  formatButton: {
+    borderRadius: theme.radius.pill,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    backgroundColor: theme.colors.surfaceAlt,
+  },
+  formatButtonActive: {
+    borderColor: theme.colors.accent,
+    backgroundColor: 'rgba(255, 180, 84, 0.18)',
+  },
+  formatButtonDisabled: {
+    opacity: 0.5,
+  },
+  formatButtonText: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+  },
+  formatButtonTextActive: {
+    color: theme.colors.accent,
+  },
+  effectsToggle: {
+    borderRadius: theme.radius.pill,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    backgroundColor: theme.colors.surfaceAlt,
+  },
+  effectsToggleActive: {
+    borderColor: 'rgba(35, 209, 139, 0.7)',
+    backgroundColor: 'rgba(35, 209, 139, 0.2)',
+  },
+  effectsToggleText: {
+    color: theme.colors.text,
+    fontSize: 12,
+    fontWeight: '600',
+  },
   controlButton: {
     backgroundColor: theme.colors.surfaceStrong,
     paddingVertical: 10,
@@ -975,6 +1221,49 @@ const styles = StyleSheet.create({
   controlButtonText: {
     color: theme.colors.text,
     fontSize: 14,
+    fontWeight: '600',
+  },
+  progressTrack: {
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: theme.colors.track,
+    overflow: 'hidden',
+    marginBottom: 8,
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor: theme.colors.accentStrong,
+  },
+  progressMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  progressPercent: {
+    color: theme.colors.text,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  extractionDetails: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: theme.radius.button,
+    backgroundColor: theme.colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  detailLabel: {
+    color: theme.colors.textMuted,
+    fontSize: 11,
+    textTransform: 'uppercase',
+    letterSpacing: 1.2,
+    marginBottom: 4,
+  },
+  detailValue: {
+    color: theme.colors.text,
+    fontSize: 13,
     fontWeight: '600',
   },
   resetButton: {

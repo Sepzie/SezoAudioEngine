@@ -364,8 +364,26 @@ Java_com_sezo_audioengine_AudioEngine_nativeExtractTrack(
   options.bits_per_sample = static_cast<int32_t>(bits_per_sample);
   options.include_effects = (include_effects == JNI_TRUE);
 
+  // Setup progress callback
+  jclass engine_class = env->GetObjectClass(thiz);
+  jmethodID progress_method = env->GetMethodID(
+      engine_class, "onNativeExtractionProgress", "(F)V");
+
+  AudioEngine::ExtractionProgressCallback progress_callback = nullptr;
+  if (progress_method) {
+    progress_callback = [env, thiz, progress_method](float progress) {
+      env->CallVoidMethod(thiz, progress_method, progress);
+    };
+  } else {
+    if (env->ExceptionCheck()) {
+      env->ExceptionClear();
+    }
+    LOGE("Failed to find onNativeExtractionProgress");
+  }
+
   // Perform extraction
-  auto result = engine->ExtractTrack(track_id_str, output_path_str, options);
+  auto result = engine->ExtractTrack(
+      track_id_str, output_path_str, options, progress_callback);
 
   // Create Java result object (HashMap)
   jclass hashMapClass = env->FindClass("java/util/HashMap");
@@ -427,8 +445,26 @@ Java_com_sezo_audioengine_AudioEngine_nativeExtractAllTracks(
   options.bits_per_sample = static_cast<int32_t>(bits_per_sample);
   options.include_effects = (include_effects == JNI_TRUE);
 
+  // Setup progress callback
+  jclass engine_class = env->GetObjectClass(thiz);
+  jmethodID progress_method = env->GetMethodID(
+      engine_class, "onNativeExtractionProgress", "(F)V");
+
+  AudioEngine::ExtractionProgressCallback progress_callback = nullptr;
+  if (progress_method) {
+    progress_callback = [env, thiz, progress_method](float progress) {
+      env->CallVoidMethod(thiz, progress_method, progress);
+    };
+  } else {
+    if (env->ExceptionCheck()) {
+      env->ExceptionClear();
+    }
+    LOGE("Failed to find onNativeExtractionProgress");
+  }
+
   // Perform extraction
-  auto result = engine->ExtractAllTracks(output_path_str, options);
+  auto result = engine->ExtractAllTracks(
+      output_path_str, options, progress_callback);
 
   // Create Java result object (HashMap)
   jclass hashMapClass = env->FindClass("java/util/HashMap");

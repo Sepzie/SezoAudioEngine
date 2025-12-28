@@ -214,21 +214,65 @@ class ExpoAudioEngineModule : Module() {
 
       Log.d(TAG, "Extracting track: $trackId to $outputPath (format=$format, bitrate=$bitrate)")
 
-      val result = engine.extractTrack(
-        trackId = trackId,
-        outputPath = outputPath,
-        format = format,
-        bitrate = bitrate,
-        bitsPerSample = bitsPerSample,
-        includeEffects = includeEffects
-      )
+      engine.setExtractionProgressListener { progress ->
+        sendEvent(
+          "extractionProgress",
+          mapOf(
+            "progress" to progress.toDouble(),
+            "trackId" to trackId,
+            "outputPath" to outputPath,
+            "format" to format,
+            "operation" to "track"
+          )
+        )
+      }
+
+      val result = try {
+        engine.extractTrack(
+          trackId = trackId,
+          outputPath = outputPath,
+          format = format,
+          bitrate = bitrate,
+          bitsPerSample = bitsPerSample,
+          includeEffects = includeEffects
+        )
+      } finally {
+        engine.setExtractionProgressListener(null)
+      }
 
       if (!result.success) {
+        sendEvent(
+          "extractionComplete",
+          mapOf(
+            "success" to false,
+            "trackId" to trackId,
+            "outputPath" to outputPath,
+            "format" to format,
+            "bitrate" to bitrate,
+            "errorMessage" to (result.errorMessage ?: "Unknown error"),
+            "operation" to "track"
+          )
+        )
         Log.e(TAG, "Extraction failed: ${result.errorMessage}")
         throw Exception("Extraction failed: ${result.errorMessage}")
       }
 
       Log.d(TAG, "Extraction successful: ${result.fileSize} bytes, ${result.durationSamples} samples")
+
+      sendEvent(
+        "extractionComplete",
+        mapOf(
+          "success" to true,
+          "trackId" to trackId,
+          "uri" to "file://${result.outputPath}",
+          "outputPath" to result.outputPath,
+          "duration" to (result.durationSamples / 44.1).toInt(),
+          "format" to format,
+          "fileSize" to result.fileSize,
+          "bitrate" to bitrate,
+          "operation" to "track"
+        )
+      )
 
       mapOf(
         "trackId" to result.trackId,
@@ -255,20 +299,61 @@ class ExpoAudioEngineModule : Module() {
 
       Log.d(TAG, "Extracting all tracks mixed to $outputPath (format=$format, bitrate=$bitrate)")
 
-      val result = engine.extractAllTracks(
-        outputPath = outputPath,
-        format = format,
-        bitrate = bitrate,
-        bitsPerSample = bitsPerSample,
-        includeEffects = includeEffects
-      )
+      engine.setExtractionProgressListener { progress ->
+        sendEvent(
+          "extractionProgress",
+          mapOf(
+            "progress" to progress.toDouble(),
+            "outputPath" to outputPath,
+            "format" to format,
+            "operation" to "mix"
+          )
+        )
+      }
+
+      val result = try {
+        engine.extractAllTracks(
+          outputPath = outputPath,
+          format = format,
+          bitrate = bitrate,
+          bitsPerSample = bitsPerSample,
+          includeEffects = includeEffects
+        )
+      } finally {
+        engine.setExtractionProgressListener(null)
+      }
 
       if (!result.success) {
+        sendEvent(
+          "extractionComplete",
+          mapOf(
+            "success" to false,
+            "outputPath" to outputPath,
+            "format" to format,
+            "bitrate" to bitrate,
+            "errorMessage" to (result.errorMessage ?: "Unknown error"),
+            "operation" to "mix"
+          )
+        )
         Log.e(TAG, "Extraction failed: ${result.errorMessage}")
         throw Exception("Extraction failed: ${result.errorMessage}")
       }
 
       Log.d(TAG, "Extraction successful: ${result.fileSize} bytes, ${result.durationSamples} samples")
+
+      sendEvent(
+        "extractionComplete",
+        mapOf(
+          "success" to true,
+          "uri" to "file://${result.outputPath}",
+          "outputPath" to result.outputPath,
+          "duration" to (result.durationSamples / 44.1).toInt(),
+          "format" to format,
+          "fileSize" to result.fileSize,
+          "bitrate" to bitrate,
+          "operation" to "mix"
+        )
+      )
 
       listOf(
         mapOf(

@@ -1,4 +1,6 @@
 #include "extraction/ExtractionPipeline.h"
+#include "audio/AACEncoder.h"
+#include "audio/MP3Encoder.h"
 #include "audio/WAVEncoder.h"
 
 #include <android/log.h>
@@ -22,11 +24,9 @@ std::unique_ptr<audio::AudioEncoder> ExtractionPipeline::CreateEncoder(
     case audio::EncoderFormat::kWAV:
       return std::make_unique<audio::WAVEncoder>();
     case audio::EncoderFormat::kAAC:
-      LOGE("AAC encoder not yet implemented");
-      return nullptr;
+      return std::make_unique<audio::AACEncoder>();
     case audio::EncoderFormat::kMP3:
-      LOGE("MP3 encoder not yet implemented");
-      return nullptr;
+      return std::make_unique<audio::MP3Encoder>();
     default:
       LOGE("Unknown encoder format");
       return nullptr;

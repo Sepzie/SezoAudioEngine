@@ -1,7 +1,10 @@
 package com.sezo.audioengine
 
+import androidx.annotation.Keep
+
 class AudioEngine {
   private var nativeHandle: Long = 0
+  private var extractionProgressListener: ((Float) -> Unit)? = null
 
   init {
     System.loadLibrary("sezo_audio_engine")
@@ -190,6 +193,15 @@ class AudioEngine {
       fileSize = resultMap["fileSize"] as? Long ?: 0L,
       errorMessage = resultMap["errorMessage"] as? String
     )
+  }
+
+  fun setExtractionProgressListener(listener: ((Float) -> Unit)?) {
+    extractionProgressListener = listener
+  }
+
+  @Keep
+  private fun onNativeExtractionProgress(progress: Float) {
+    extractionProgressListener?.invoke(progress)
   }
 
   // Native method declarations

@@ -21,6 +21,8 @@ add_library(sezo_audio_engine SHARED
   audio/MP3Decoder.cpp
   audio/WAVDecoder.cpp
   # Audio encoding
+  audio/AACEncoder.cpp
+  audio/MP3Encoder.cpp
   audio/WAVEncoder.cpp
   # Playback
   playback/Track.cpp
@@ -42,10 +44,23 @@ target_include_directories(sezo_audio_engine PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/third_party/signalsmith-linear/include
 )
 
+# Optional LAME MP3 encoder
+find_path(LAME_INCLUDE_DIR lame/lame.h
+  PATHS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/lame/include)
+find_library(LAME_LIBRARY NAMES mp3lame lame
+  PATHS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/lame/lib)
+
+if (LAME_INCLUDE_DIR AND LAME_LIBRARY)
+  target_include_directories(sezo_audio_engine PRIVATE ${LAME_INCLUDE_DIR})
+  target_link_libraries(sezo_audio_engine ${LAME_LIBRARY})
+  target_compile_definitions(sezo_audio_engine PRIVATE SEZO_ENABLE_LAME)
+endif()
+
 # Link libraries
 target_link_libraries(sezo_audio_engine
   oboe
   android
+  mediandk
   log
 )
 
