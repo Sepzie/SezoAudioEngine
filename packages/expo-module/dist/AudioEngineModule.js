@@ -1,9 +1,5 @@
 import { requireNativeModule } from 'expo-modules-core';
-console.log('[AudioEngineModule.ts] Loading NativeAudioEngineModule...');
 const NativeAudioEngineModule = requireNativeModule('ExpoAudioEngineModule');
-console.log('[AudioEngineModule.ts] NativeAudioEngineModule loaded:', NativeAudioEngineModule);
-console.log('[AudioEngineModule.ts] extractTrack function exists?', typeof NativeAudioEngineModule.extractTrack);
-console.log('[AudioEngineModule.ts] extractAllTracks function exists?', typeof NativeAudioEngineModule.extractAllTracks);
 export const AudioEngineModule = {
     initialize: (config) => NativeAudioEngineModule.initialize(config),
     release: () => NativeAudioEngineModule.release(),
@@ -37,18 +33,8 @@ export const AudioEngineModule = {
     stopRecording: () => NativeAudioEngineModule.stopRecording(),
     isRecording: () => NativeAudioEngineModule.isRecording(),
     setRecordingVolume: (volume) => NativeAudioEngineModule.setRecordingVolume(volume),
-    extractTrack: (trackId, config) => {
-        console.log('[AudioEngineModule.ts] extractTrack called', { trackId, config });
-        const result = NativeAudioEngineModule.extractTrack(trackId, config);
-        console.log('[AudioEngineModule.ts] extractTrack native call completed');
-        return result;
-    },
-    extractAllTracks: (config) => {
-        console.log('[AudioEngineModule.ts] extractAllTracks called', { config });
-        const result = NativeAudioEngineModule.extractAllTracks(config);
-        console.log('[AudioEngineModule.ts] extractAllTracks native call completed');
-        return result;
-    },
+    extractTrack: (trackId, config) => NativeAudioEngineModule.extractTrack(trackId, config),
+    extractAllTracks: (config) => NativeAudioEngineModule.extractAllTracks(config),
     getInputLevel: () => NativeAudioEngineModule.getInputLevel(),
     getOutputLevel: () => NativeAudioEngineModule.getOutputLevel(),
     getTrackLevel: (trackId) => NativeAudioEngineModule.getTrackLevel(trackId),
