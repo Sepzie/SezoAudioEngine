@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
+  Linking,
+  Share,
 } from 'react-native';
 import { AudioEngineModule } from 'sezo-audio-engine';
 import Slider from '@react-native-community/slider';
@@ -27,6 +29,7 @@ interface Track {
 interface ExtractionInfo {
   trackId?: string;
   uri: string;
+  outputPath?: string;
   duration: number;
   format: string;
   fileSize: number;
@@ -329,8 +332,10 @@ export default function App() {
         format: extractionFormat,
         includeEffects: extractionIncludeEffects,
       });
-
-      setLastExtraction(result);
+      setLastExtraction({
+        ...result,
+        outputPath: (result as any)?.outputPath,
+      });
       setExtractionStatus(`Exported ${track.name}`);
       setExtractionProgress(1);
     } catch (error: any) {
@@ -357,8 +362,11 @@ export default function App() {
         includeEffects: extractionIncludeEffects,
       });
 
-      if (results.length > 0) {
-        setLastExtraction(results[0]);
+      if (results && results.length > 0) {
+        setLastExtraction({
+          ...results[0],
+          outputPath: (results[0] as any)?.outputPath,
+        });
       }
       setExtractionStatus('Exported mix');
       setExtractionProgress(1);
@@ -369,6 +377,36 @@ export default function App() {
       setIsExtracting(false);
     }
   }, [extractionFormat, extractionIncludeEffects, tracks]);
+
+  const handleOpenExport = useCallback(async () => {
+    if (!lastExtraction?.uri) {
+      Alert.alert('No export', 'Run an export first.');
+      return;
+    }
+
+    try {
+      await Linking.openURL(lastExtraction.uri);
+    } catch (error) {
+      console.warn('[Extraction] Open export failed', error);
+      Alert.alert('Unable to open file', lastExtraction.uri);
+    }
+  }, [lastExtraction]);
+
+  const handleShareExport = useCallback(async () => {
+    if (!lastExtraction?.uri) {
+      Alert.alert('No export', 'Run an export first.');
+      return;
+    }
+
+    try {
+      await Share.share({
+        message: lastExtraction.uri,
+        url: lastExtraction.uri,
+      });
+    } catch (error) {
+      console.warn('[Extraction] Share export failed', error);
+    }
+  }, [lastExtraction]);
 
   const handleMasterReset = useCallback(() => {
     try {
@@ -822,6 +860,23 @@ export default function App() {
                     {(lastExtraction.fileSize / 1024).toFixed(1)} KB •{' '}
                     {formatTime(lastExtraction.duration)}
                   </Text>
+                  <Text style={styles.detailPath} numberOfLines={2}>
+                    {lastExtraction.outputPath ?? lastExtraction.uri}
+                  </Text>
+                  <View style={styles.exportActions}>
+                    <TouchableOpacity
+                      style={styles.controlButton}
+                      onPress={handleOpenExport}
+                    >
+                      <Text style={styles.controlButtonText}>Open File</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.resetButton}
+                      onPress={handleShareExport}
+                    >
+                      <Text style={styles.resetButtonText}>Share</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               ) : (
                 <Text style={styles.sectionHint}>No exports yet</Text>
@@ -1265,6 +1320,17 @@ const styles = StyleSheet.create({
     color: theme.colors.text,
     fontSize: 13,
     fontWeight: '600',
+  },
+  detailPath: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
+    marginTop: 6,
+    marginBottom: 8,
+  },
+  exportActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
   },
   resetButton: {
     backgroundColor: 'rgba(255, 180, 84, 0.15)',

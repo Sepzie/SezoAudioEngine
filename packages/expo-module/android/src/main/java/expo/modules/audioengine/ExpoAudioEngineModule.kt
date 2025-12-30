@@ -208,13 +208,13 @@ class ExpoAudioEngineModule : Module() {
       val includeEffects = (config?.get("includeEffects") as? Boolean) ?: true
       val outputDir = (config?.get("outputDir") as? String) ?: getCacheDir()
 
-      // Generate output path
       val fileName = "track_${trackId}_${System.currentTimeMillis()}.$format"
       val outputPath = "$outputDir/$fileName"
 
       Log.d(TAG, "Extracting track: $trackId to $outputPath (format=$format, bitrate=$bitrate)")
 
       engine.setExtractionProgressListener { progress ->
+        Log.d(TAG, "Extraction progress track=$trackId progress=$progress")
         sendEvent(
           "extractionProgress",
           mapOf(
@@ -241,6 +241,7 @@ class ExpoAudioEngineModule : Module() {
       }
 
       if (!result.success) {
+        Log.e(TAG, "Extraction failed for track=$trackId: ${result.errorMessage}")
         sendEvent(
           "extractionComplete",
           mapOf(
@@ -258,6 +259,7 @@ class ExpoAudioEngineModule : Module() {
       }
 
       Log.d(TAG, "Extraction successful: ${result.fileSize} bytes, ${result.durationSamples} samples")
+      Log.d(TAG, "Extraction complete event (track)")
 
       sendEvent(
         "extractionComplete",
@@ -293,13 +295,13 @@ class ExpoAudioEngineModule : Module() {
       val includeEffects = (config?.get("includeEffects") as? Boolean) ?: true
       val outputDir = (config?.get("outputDir") as? String) ?: getCacheDir()
 
-      // Generate output path
       val fileName = "mixed_tracks_${System.currentTimeMillis()}.$format"
       val outputPath = "$outputDir/$fileName"
 
       Log.d(TAG, "Extracting all tracks mixed to $outputPath (format=$format, bitrate=$bitrate)")
 
       engine.setExtractionProgressListener { progress ->
+        Log.d(TAG, "Extraction progress mix progress=$progress")
         sendEvent(
           "extractionProgress",
           mapOf(
@@ -324,6 +326,7 @@ class ExpoAudioEngineModule : Module() {
       }
 
       if (!result.success) {
+        Log.e(TAG, "Extraction failed for mix: ${result.errorMessage}")
         sendEvent(
           "extractionComplete",
           mapOf(
@@ -340,6 +343,7 @@ class ExpoAudioEngineModule : Module() {
       }
 
       Log.d(TAG, "Extraction successful: ${result.fileSize} bytes, ${result.durationSamples} samples")
+      Log.d(TAG, "Extraction complete event (mix)")
 
       sendEvent(
         "extractionComplete",
