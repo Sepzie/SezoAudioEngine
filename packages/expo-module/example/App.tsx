@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Animated,
   StyleSheet,
@@ -10,6 +10,7 @@ import {
   Linking,
   Platform,
   Share,
+  PermissionsAndroid,
 } from 'react-native';
 import { AudioEngineModule } from 'sezo-audio-engine';
 import Slider from '@react-native-community/slider';
@@ -34,6 +35,16 @@ interface ExtractionInfo {
   uri: string;
   outputPath?: string;
   duration: number;
+  format: string;
+  fileSize: number;
+  bitrate?: number;
+}
+
+interface RecordingInfo {
+  uri: string;
+  duration: number;
+  sampleRate: number;
+  channels: number;
   format: string;
   fileSize: number;
   bitrate?: number;
@@ -110,6 +121,18 @@ export default function App() {
   const [masterPitch, setMasterPitch] = useState(0.0);
   const [masterSpeed, setMasterSpeed] = useState(1.0);
   const [tracks, setTracks] = useState<Track[]>([]);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingStatus, setRecordingStatus] = useState('Idle');
+  const [recordingFormat, setRecordingFormat] = useState<'wav' | 'aac' | 'mp3'>('aac');
+  const [recordingQuality, setRecordingQuality] = useState<'low' | 'medium' | 'high'>(
+    'medium'
+  );
+  const [recordingChannels, setRecordingChannels] = useState<1 | 2>(1);
+  const [recordingSampleRate, setRecordingSampleRate] = useState<44100 | 48000>(44100);
+  const [recordingVolume, setRecordingVolume] = useState(1.0);
+  const [recordingLevel, setRecordingLevel] = useState(0);
+  const [recordingElapsed, setRecordingElapsed] = useState(0);
+  const [lastRecording, setLastRecording] = useState<RecordingInfo | null>(null);
   const [extractionProgress, setExtractionProgress] = useState(0);
   const [extractionStatus, setExtractionStatus] = useState('Idle');
   const [extractionFormat, setExtractionFormat] = useState<'wav' | 'aac' | 'mp3'>('aac');
@@ -117,9 +140,12 @@ export default function App() {
   const [lastExtraction, setLastExtraction] = useState<ExtractionInfo | null>(null);
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractionJobId, setExtractionJobId] = useState<number | null>(null);
+  const recordingStartRef = useRef<number | null>(null);
   const engineAny = AudioEngineModule as Record<string, any>;
   const supportsTrackPitch = typeof engineAny.setTrackPitch === 'function';
   const supportsTrackSpeed = typeof engineAny.setTrackSpeed === 'function';
+  const supportsRecording = typeof engineAny.startRecording === 'function';
+  const recordingUnavailable = !supportsRecording || Platform.OS === 'ios';
   const introAnim = useState(() => new Animated.Value(0))[0];
   const controlsAnim = useState(() => new Animated.Value(0))[0];
   const tracksAnim = useState(() => new Animated.Value(0))[0];
@@ -131,6 +157,7 @@ export default function App() {
       .then(() => {
         if (mounted) {
           setStatus('Ready');
+          setRecordingStatus('Ready');
         }
       })
       .catch((error) => {
@@ -195,6 +222,38 @@ export default function App() {
   }, [extractionFormat]);
 
   useEffect(() => {
+    const recordingStartedSub = AudioEngineModule.addListener('recordingStarted', () => {
+      setRecordingStatus('Recording');
+      setIsRecording(true);
+      recordingStartRef.current = Date.now();
+    });
+
+    const recordingStoppedSub = AudioEngineModule.addListener('recordingStopped', (event: any) => {
+      if (event?.uri) {
+        setLastRecording({
+          uri: event.uri,
+          duration: event?.duration ?? 0,
+          sampleRate: event?.sampleRate ?? 44100,
+          channels: event?.channels ?? 1,
+          format: event?.format ?? recordingFormat,
+          fileSize: event?.fileSize ?? 0,
+          bitrate: event?.bitrate,
+        });
+      }
+      recordingStartRef.current = null;
+      setRecordingElapsed(0);
+      setRecordingLevel(0);
+      setIsRecording(false);
+      setRecordingStatus(event?.uri ? 'Recording saved' : 'Recording stopped');
+    });
+
+    return () => {
+      recordingStartedSub?.remove?.();
+      recordingStoppedSub?.remove?.();
+    };
+  }, [recordingFormat]);
+
+  useEffect(() => {
     Animated.stagger(120, [
       Animated.timing(introAnim, {
         toValue: 1,
@@ -236,6 +295,133 @@ export default function App() {
 
     return () => clearInterval(interval);
   }, [isPlaying]);
+
+  useEffect(() => {
+    if (!isRecording) {
+      setRecordingElapsed(0);
+      setRecordingLevel(0);
+      recordingStartRef.current = null;
+      return;
+    }
+
+    if (!recordingStartRef.current) {
+      recordingStartRef.current = Date.now();
+    }
+
+    const interval = setInterval(() => {
+      try {
+        const level = AudioEngineModule.getInputLevel();
+        const clamped = Math.max(0, Math.min(1, level));
+        setRecordingLevel(clamped);
+      } catch (error) {
+        setRecordingLevel(0);
+      }
+
+      if (recordingStartRef.current) {
+        setRecordingElapsed(Date.now() - recordingStartRef.current);
+      }
+    }, 100);
+
+    return () => clearInterval(interval);
+  }, [isRecording]);
+
+  const requestRecordingPermission = useCallback(async () => {
+    if (Platform.OS !== 'android') {
+      return true;
+    }
+
+    try {
+      const permission = PermissionsAndroid.PERMISSIONS.RECORD_AUDIO;
+      const hasPermission = await PermissionsAndroid.check(permission);
+      if (hasPermission) {
+        return true;
+      }
+
+      const status = await PermissionsAndroid.request(permission, {
+        title: 'Microphone access',
+        message: 'Allow microphone access to record audio.',
+        buttonPositive: 'Allow',
+      });
+      return status === PermissionsAndroid.RESULTS.GRANTED;
+    } catch (error) {
+      console.warn('[Recording] Permission request failed', error);
+      return false;
+    }
+  }, []);
+
+  const handleStartRecording = useCallback(async () => {
+    if (!supportsRecording) {
+      Alert.alert('Recording unavailable', 'Recording is not supported in this build.');
+      return;
+    }
+
+    if (Platform.OS === 'ios') {
+      Alert.alert('Recording unavailable', 'Recording is Android-only for now.');
+      return;
+    }
+
+    const granted = await requestRecordingPermission();
+    if (!granted) {
+      setRecordingStatus('Permission denied');
+      Alert.alert('Permission denied', 'Microphone access is required to record.');
+      return;
+    }
+
+    try {
+      setRecordingStatus('Starting...');
+      await AudioEngineModule.startRecording({
+        sampleRate: recordingSampleRate,
+        channels: recordingChannels,
+        format: recordingFormat,
+        quality: recordingQuality,
+      });
+      AudioEngineModule.setRecordingVolume(recordingVolume);
+      recordingStartRef.current = Date.now();
+      setRecordingElapsed(0);
+      setRecordingLevel(0);
+      setIsRecording(true);
+      setRecordingStatus('Recording');
+    } catch (error: any) {
+      console.error('Start recording error:', error);
+      setIsRecording(false);
+      setRecordingStatus('Start failed');
+      Alert.alert('Recording failed', error?.message ?? 'Unable to start recording.');
+    }
+  }, [
+    recordingChannels,
+    recordingFormat,
+    recordingQuality,
+    recordingSampleRate,
+    recordingVolume,
+    requestRecordingPermission,
+    supportsRecording,
+  ]);
+
+  const handleStopRecording = useCallback(async () => {
+    try {
+      setRecordingStatus('Stopping...');
+      const result = await AudioEngineModule.stopRecording();
+      setLastRecording(result);
+      recordingStartRef.current = null;
+      setRecordingElapsed(0);
+      setRecordingLevel(0);
+      setIsRecording(false);
+      setRecordingStatus('Recording saved');
+    } catch (error: any) {
+      console.error('Stop recording error:', error);
+      setRecordingStatus('Stop failed');
+      Alert.alert('Recording failed', error?.message ?? 'Unable to stop recording.');
+    }
+  }, []);
+
+  const handleRecordingVolumeChange = useCallback((value: number) => {
+    try {
+      AudioEngineModule.setRecordingVolume(value);
+      setRecordingVolume(value);
+    } catch (error) {
+      console.error('Recording volume error:', error);
+    }
+  }, []);
 
   const loadTracks = useCallback(async () => {
     try {
@@ -512,6 +698,56 @@ export default function App() {
     }
   }, [lastExtraction]);
 
+  const handleOpenRecording = useCallback(async () => {
+    if (!lastRecording?.uri) {
+      Alert.alert('No recording', 'Make a recording first.');
+      return;
+    }
+
+    try {
+      const openUri = await getAndroidContentUri(lastRecording.uri);
+      if (Platform.OS === 'android') {
+        await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+          data: openUri,
+          type: getMimeType(lastRecording.format),
+          flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
+        });
+      } else {
+        await Linking.openURL(openUri);
+      }
+    } catch (error) {
+      console.warn('[Recording] Open recording failed', error);
+      Alert.alert('Unable to open file', lastRecording.uri);
+    }
+  }, [lastRecording]);
+
+  const handleShareRecording = useCallback(async () => {
+    if (!lastRecording?.uri) {
+      Alert.alert('No recording', 'Make a recording first.');
+      return;
+    }
+
+    try {
+      const shareUri = await getAndroidContentUri(lastRecording.uri);
+      if (Platform.OS === 'android') {
+        await IntentLauncher.startActivityAsync('android.intent.action.SEND', {
+          type: getMimeType(lastRecording.format),
+          flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
+          extra: {
+            'android.intent.extra.STREAM': shareUri,
+          },
+        });
+      } else {
+        await Share.share({
+          message: lastRecording.uri,
+          url: lastRecording.uri,
+        });
+      }
+    } catch (error) {
+      console.warn('[Recording] Share recording failed', error);
+    }
+  }, [lastRecording]);
+
   const handleMasterReset = useCallback(() => {
     try {
       AudioEngineModule.setMasterVolume(1.0);
@@ -708,7 +944,7 @@ export default function App() {
           <View style={styles.heroTopRow}>
             <View>
               <Text style={styles.eyebrow}>Sezo Audio Engine</Text>
-              <Text style={styles.title}>Phase 2 Playground</Text>
+              <Text style={styles.title}>Phase 3 Playground</Text>
             </View>
             <View
               style={[
@@ -722,7 +958,7 @@ export default function App() {
             </View>
           </View>
           <Text style={styles.subtitle}>
-            Real-time pitch, time stretch, and multi-track mixing in one place.
+            Playback, mixing, and live recording built for real-time audio apps.
           </Text>
 
           {tracks.length === 0 && (
@@ -877,6 +1113,242 @@ export default function App() {
                   thumbTintColor={theme.colors.accentStrong}
                 />
               </View>
+            </Animated.View>
+
+            <Animated.View style={[styles.card, controlsStyle]}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Recording</Text>
+                <View style={styles.sectionHeaderActions}>
+                  <View
+                    style={[
+                      styles.statusPill,
+                      isRecording && styles.recordingStatusPill,
+                      recordingUnavailable && styles.statusPillDanger,
+                    ]}
+                  >
+                    <Text style={styles.statusText}>
+                      {recordingUnavailable
+                        ? 'Unavailable'
+                        : isRecording
+                          ? 'Recording'
+                          : recordingStatus}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              {Platform.OS === 'ios' && (
+                <Text style={styles.sectionHint}>
+                  Recording is Android-only in this preview build.
+                </Text>
+              )}
+
+              <View style={styles.formatRow}>
+                {(['wav', 'aac', 'mp3'] as const).map((format) => (
+                  <TouchableOpacity
+                    key={format}
+                    style={[
+                      styles.formatButton,
+                      recordingFormat === format && styles.formatButtonActive,
+                      (isRecording || recordingUnavailable) && styles.formatButtonDisabled,
+                    ]}
+                    onPress={() => setRecordingFormat(format)}
+                    disabled={isRecording || recordingUnavailable}
+                  >
+                    <Text
+                      style={[
+                        styles.formatButtonText,
+                        recordingFormat === format && styles.formatButtonTextActive,
+                      ]}
+                    >
+                      {format.toUpperCase()}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <View style={styles.formatRow}>
+                {(['low', 'medium', 'high'] as const).map((quality) => (
+                  <TouchableOpacity
+                    key={quality}
+                    style={[
+                      styles.formatButton,
+                      recordingQuality === quality && styles.formatButtonActive,
+                      (isRecording || recordingUnavailable) && styles.formatButtonDisabled,
+                    ]}
+                    onPress={() => setRecordingQuality(quality)}
+                    disabled={isRecording || recordingUnavailable}
+                  >
+                    <Text
+                      style={[
+                        styles.formatButtonText,
+                        recordingQuality === quality && styles.formatButtonTextActive,
+                      ]}
+                    >
+                      {quality.toUpperCase()}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <View style={styles.formatRow}>
+                {[1, 2].map((channels) => (
+                  <TouchableOpacity
+                    key={channels}
+                    style={[
+                      styles.formatButton,
+                      recordingChannels === channels && styles.formatButtonActive,
+                      (isRecording || recordingUnavailable) && styles.formatButtonDisabled,
+                    ]}
+                    onPress={() => setRecordingChannels(channels as 1 | 2)}
+                    disabled={isRecording || recordingUnavailable}
+                  >
+                    <Text
+                      style={[
+                        styles.formatButtonText,
+                        recordingChannels === channels && styles.formatButtonTextActive,
+                      ]}
+                    >
+                      {channels === 1 ? 'MONO' : 'STEREO'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+
+                {[44100, 48000].map((sampleRate) => (
+                  <TouchableOpacity
+                    key={sampleRate}
+                    style={[
+                      styles.formatButton,
+                      recordingSampleRate === sampleRate && styles.formatButtonActive,
+                      (isRecording || recordingUnavailable) && styles.formatButtonDisabled,
+                    ]}
+                    onPress={() => setRecordingSampleRate(sampleRate as 44100 | 48000)}
+                    disabled={isRecording || recordingUnavailable}
+                  >
+                    <Text
+                      style={[
+                        styles.formatButtonText,
+                        recordingSampleRate === sampleRate && styles.formatButtonTextActive,
+                      ]}
+                    >
+                      {sampleRate === 44100 ? '44.1K' : '48K'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <View style={styles.controlGroup}>
+                <View style={styles.labelRow}>
+                  <Text style={styles.label}>Input Gain</Text>
+                  <View style={styles.valueRow}>
+                    <Text style={styles.valuePill}>
+                      {(recordingVolume * 100).toFixed(0)}%
+                    </Text>
+                    <TouchableOpacity
+                      style={[
+                        styles.iconResetButton,
+                        recordingUnavailable && styles.iconResetButtonDisabled,
+                      ]}
+                      onPress={() => handleRecordingVolumeChange(1.0)}
+                      disabled={recordingUnavailable}
+                    >
+                      <Text style={styles.iconResetText}>↺</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+                <Slider
+                  style={styles.slider}
+                  minimumValue={0}
+                  maximumValue={2.0}
+                  value={recordingVolume}
+                  onValueChange={handleRecordingVolumeChange}
+                  disabled={recordingUnavailable}
+                  minimumTrackTintColor={theme.colors.accent}
+                  maximumTrackTintColor={theme.colors.track}
+                  thumbTintColor={theme.colors.accentStrong}
+                />
+              </View>
+
+              <View style={styles.progressTrack}>
+                <View
+                  style={[
+                    styles.levelFill,
+                    { width: `${Math.round(recordingLevel * 100)}%` },
+                  ]}
+                />
+              </View>
+
+              <View style={styles.progressMeta}>
+                <Text style={styles.sectionHint}>
+                  {isRecording
+                    ? `Recording ${formatTime(recordingElapsed)}`
+                    : recordingUnavailable
+                      ? 'Recording unavailable'
+                      : recordingStatus}
+                </Text>
+                <Text style={styles.progressPercent}>
+                  {Math.round(recordingLevel * 100)}%
+                </Text>
+              </View>
+
+              <View style={styles.transportRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.controlButton,
+                    styles.recordButton,
+                    (isRecording || recordingUnavailable) && styles.controlButtonDisabled,
+                  ]}
+                  onPress={handleStartRecording}
+                  disabled={isRecording || recordingUnavailable}
+                >
+                  <Text style={[styles.controlButtonText, styles.recordButtonText]}>
+                    Start Recording
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.controlButton,
+                    styles.stopButton,
+                    (!isRecording || recordingUnavailable) && styles.controlButtonDisabled,
+                  ]}
+                  onPress={handleStopRecording}
+                  disabled={!isRecording || recordingUnavailable}
+                >
+                  <Text style={[styles.controlButtonText, styles.stopButtonText]}>
+                    Stop Recording
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {lastRecording ? (
+                <View style={styles.extractionDetails}>
+                  <Text style={styles.detailLabel}>Last recording</Text>
+                  <Text style={styles.detailValue}>
+                    {lastRecording.format.toUpperCase()} •{' '}
+                    {(lastRecording.fileSize / 1024).toFixed(1)} KB •{' '}
+                    {formatTime(lastRecording.duration)}
+                  </Text>
+                  <Text style={styles.detailPath} numberOfLines={2}>
+                    {lastRecording.uri}
+                  </Text>
+                  <View style={styles.exportActions}>
+                    <TouchableOpacity
+                      style={styles.controlButton}
+                      onPress={handleOpenRecording}
+                    >
+                      <Text style={styles.controlButtonText}>Open File</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.resetButton}
+                      onPress={handleShareRecording}
+                    >
+                      <Text style={styles.resetButtonText}>Share</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                <Text style={styles.sectionHint}>No recordings yet</Text>
+              )}
             </Animated.View>
 
             <Animated.View style={[styles.card, controlsStyle]}>
@@ -1253,6 +1725,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(35, 209, 139, 0.2)',
     borderColor: 'rgba(35, 209, 139, 0.7)',
   },
+  recordingStatusPill: {
+    backgroundColor: 'rgba(255, 93, 93, 0.18)',
+    borderColor: 'rgba(255, 93, 93, 0.7)',
+  },
   statusPillDanger: {
     backgroundColor: 'rgba(255, 93, 93, 0.18)',
     borderColor: 'rgba(255, 93, 93, 0.7)',
@@ -1395,6 +1871,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
+  recordButton: {
+    backgroundColor: 'rgba(255, 180, 84, 0.18)',
+    borderColor: 'rgba(255, 180, 84, 0.6)',
+  },
+  recordButtonText: {
+    color: theme.colors.accent,
+  },
+  stopButton: {
+    backgroundColor: 'rgba(255, 93, 93, 0.18)',
+    borderColor: 'rgba(255, 93, 93, 0.6)',
+  },
+  stopButtonText: {
+    color: theme.colors.danger,
+  },
   cancelButton: {
     backgroundColor: 'rgba(255, 93, 93, 0.15)',
     borderColor: 'rgba(255, 93, 93, 0.6)',
@@ -1413,6 +1903,11 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: 999,
     backgroundColor: theme.colors.accentStrong,
+  },
+  levelFill: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor: theme.colors.success,
   },
   progressMeta: {
     flexDirection: 'row',
