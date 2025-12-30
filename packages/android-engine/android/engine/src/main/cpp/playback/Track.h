@@ -56,6 +56,7 @@ class Track {
 
   // Getters
   const std::string& GetId() const { return id_; }
+  const std::string& GetFilePath() const { return file_path_; }
   bool IsLoaded() const { return is_loaded_.load(std::memory_order_acquire); }
   int64_t GetDuration() const;
   int32_t GetSampleRate() const;

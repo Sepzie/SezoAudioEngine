@@ -8,11 +8,14 @@ import {
   ScrollView,
   Alert,
   Linking,
+  Platform,
   Share,
 } from 'react-native';
 import { AudioEngineModule } from 'sezo-audio-engine';
 import Slider from '@react-native-community/slider';
 import { Asset } from 'expo-asset';
+import * as FileSystem from 'expo-file-system';
+import * as IntentLauncher from 'expo-intent-launcher';
 
 interface Track {
   id: string;
@@ -56,6 +59,32 @@ const theme = {
     pill: 999,
     button: 12,
   },
+};
+
+const getMimeType = (format: string) => {
+  switch (format) {
+    case 'aac':
+      return 'audio/aac';
+    case 'mp3':
+      return 'audio/mpeg';
+    case 'wav':
+      return 'audio/wav';
+    default:
+      return 'audio/*';
+  }
+};
+
+const getAndroidContentUri = async (uri: string) => {
+  if (Platform.OS !== 'android') {
+    return uri;
+  }
+  if (uri.startsWith('content://')) {
+    return uri;
+  }
+  if (uri.startsWith('file://')) {
+    return FileSystem.getContentUriAsync(uri);
+  }
+  return uri;
 };
 
 export default function App() {
@@ -385,7 +414,16 @@ export default function App() {
     }
 
     try {
-      await Linking.openURL(lastExtraction.uri);
+      const openUri = await getAndroidContentUri(lastExtraction.uri);
+      if (Platform.OS === 'android') {
+        await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+          data: openUri,
+          type: getMimeType(lastExtraction.format),
+          flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
+        });
+      } else {
+        await Linking.openURL(openUri);
+      }
     } catch (error) {
       console.warn('[Extraction] Open export failed', error);
       Alert.alert('Unable to open file', lastExtraction.uri);
@@ -399,10 +437,21 @@ export default function App() {
     }
 
     try {
-      await Share.share({
-        message: lastExtraction.uri,
-        url: lastExtraction.uri,
-      });
+      const shareUri = await getAndroidContentUri(lastExtraction.uri);
+      if (Platform.OS === 'android') {
+        await IntentLauncher.startActivityAsync('android.intent.action.SEND', {
+          type: getMimeType(lastExtraction.format),
+          flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
+          extra: {
+            'android.intent.extra.STREAM': shareUri,
+          },
+        });
+      } else {
+        await Share.share({
+          message: lastExtraction.uri,
+          url: lastExtraction.uri,
+        });
+      }
     } catch (error) {
       console.warn('[Extraction] Share export failed', error);
     }

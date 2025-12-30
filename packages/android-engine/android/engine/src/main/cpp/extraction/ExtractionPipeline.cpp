@@ -1,15 +1,225 @@
 #include "extraction/ExtractionPipeline.h"
 #include "audio/AACEncoder.h"
+#include "audio/MP3Decoder.h"
 #include "audio/MP3Encoder.h"
+#include "audio/WAVDecoder.h"
 #include "audio/WAVEncoder.h"
+#include "playback/TimeStretch.h"
 
 #include <android/log.h>
 #include <algorithm>
+#include <cctype>
+#include <cmath>
 #include <cstring>
+#include <limits>
 
 #define LOG_TAG "ExtractionPipeline"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
+
+namespace {
+
+constexpr float kPi = 3.14159265358979323846f;
+constexpr float kProgressStep = 0.01f;
+
+bool HasExtension(const std::string& path, const char* extension) {
+  const size_t path_len = path.size();
+  const size_t ext_len = std::strlen(extension);
+  if (path_len < ext_len) {
+    return false;
+  }
+
+  const size_t start = path_len - ext_len;
+  for (size_t i = 0; i < ext_len; ++i) {
+    const char path_char = static_cast<char>(
+        std::tolower(static_cast<unsigned char>(path[start + i])));
+    if (path_char != extension[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+std::unique_ptr<sezo::audio::AudioDecoder> CreateDecoderForPath(
+    const std::string& path) {
+  if (HasExtension(path, ".mp3")) {
+    return std::make_unique<sezo::audio::MP3Decoder>();
+  }
+  if (HasExtension(path, ".wav")) {
+    return std::make_unique<sezo::audio::WAVDecoder>();
+  }
+  return nullptr;
+}
+
+struct OfflineTrackState {
+  std::shared_ptr<sezo::playback::Track> track;
+  std::unique_ptr<sezo::audio::AudioDecoder> decoder;
+  std::unique_ptr<sezo::playback::TimeStretch> time_stretcher;
+  std::vector<float> stretch_input_buffer;
+  double stretch_input_fraction = 0.0;
+  int32_t channels = 0;
+  float volume = 1.0f;
+  float pan = 0.0f;
+  bool muted = false;
+  bool solo = false;
+  int64_t total_frames = 0;
+  int64_t input_frames_processed = 0;
+};
+
+bool InitOfflineState(OfflineTrackState& state, bool include_effects, std::string* error) {
+  if (!state.track) {
+    if (error) {
+      *error = "Track is null";
+    }
+    return false;
+  }
+
+  state.decoder = CreateDecoderForPath(state.track->GetFilePath());
+  if (!state.decoder) {
+    if (error) {
+      *error = "Unsupported audio format: " + state.track->GetFilePath();
+    }
+    return false;
+  }
+
+  if (!state.decoder->Open(state.track->GetFilePath())) {
+    if (error) {
+      *error = "Failed to open decoder: " + state.track->GetFilePath();
+    }
+    return false;
+  }
+
+  state.channels = state.decoder->GetFormat().channels;
+  state.total_frames = state.decoder->GetFormat().total_frames;
+  state.volume = state.track->GetVolume();
+  state.pan = state.track->GetPan();
+  state.muted = state.track->IsMuted();
+  state.solo = state.track->IsSolo();
+
+  if (include_effects && state.channels > 0 && state.channels <= 2) {
+    state.time_stretcher = std::make_unique<sezo::playback::TimeStretch>(
+        state.decoder->GetFormat().sample_rate,
+        state.channels);
+    state.time_stretcher->SetPitchSemitones(state.track->GetPitchSemitones());
+    state.time_stretcher->SetStretchFactor(state.track->GetStretchFactor());
+    if (!state.time_stretcher->IsActive()) {
+      state.time_stretcher.reset();
+    }
+  }
+
+  return true;
+}
+
+void ApplyVolumePan(float* buffer, size_t frames, int32_t channels, float volume, float pan) {
+  if (channels == 2) {
+    const float left_gain = volume * std::cos((pan + 1.0f) * 0.25f * kPi);
+    const float right_gain = volume * std::sin((pan + 1.0f) * 0.25f * kPi);
+    for (size_t i = 0; i < frames * 2; i += 2) {
+      buffer[i] *= left_gain;
+      buffer[i + 1] *= right_gain;
+    }
+  } else if (channels == 1 && volume != 1.0f) {
+    for (size_t i = 0; i < frames; ++i) {
+      buffer[i] *= volume;
+    }
+  }
+}
+
+double GetStretchFactor(const OfflineTrackState& state, bool include_effects) {
+  if (!include_effects || !state.time_stretcher) {
+    return 1.0;
+  }
+  return static_cast<double>(state.time_stretcher->GetStretchFactor());
+}
+
+size_t RenderOfflineTrack(
+    OfflineTrackState& state,
+    float* output,
+    size_t frames,
+    bool include_effects,
+    size_t* input_frames_read) {
+
+  if (!state.decoder || frames == 0 || state.channels <= 0) {
+    if (input_frames_read) {
+      *input_frames_read = 0;
+    }
+    return 0;
+  }
+
+  if (state.muted) {
+    std::fill_n(output, frames * static_cast<size_t>(state.channels), 0.0f);
+    if (input_frames_read) {
+      *input_frames_read = frames;
+    }
+    return frames;
+  }
+
+  const bool use_time_stretch = include_effects && state.time_stretcher &&
+      state.time_stretcher->IsActive() && (state.channels == 1 || state.channels == 2);
+
+  if (use_time_stretch) {
+    const float stretch = state.time_stretcher->GetStretchFactor();
+    const double requested_input =
+        static_cast<double>(frames) * stretch + state.stretch_input_fraction;
+    size_t input_frames = static_cast<size_t>(requested_input);
+    state.stretch_input_fraction = requested_input - static_cast<double>(input_frames);
+    if (input_frames < 1) {
+      input_frames = 1;
+    }
+
+    const size_t input_samples = input_frames * static_cast<size_t>(state.channels);
+    if (state.stretch_input_buffer.size() < input_samples) {
+      state.stretch_input_buffer.resize(input_samples);
+    }
+
+    const size_t frames_read = state.decoder->Read(
+        state.stretch_input_buffer.data(), input_frames);
+    if (frames_read == 0) {
+      if (input_frames_read) {
+        *input_frames_read = 0;
+      }
+      return 0;
+    }
+
+    if (frames_read < input_frames) {
+      std::fill_n(
+          state.stretch_input_buffer.data() + frames_read * state.channels,
+          (input_frames - frames_read) * state.channels,
+          0.0f);
+    }
+
+    state.time_stretcher->Process(
+        state.stretch_input_buffer.data(), input_frames, output, frames);
+    ApplyVolumePan(output, frames, state.channels, state.volume, state.pan);
+
+    if (input_frames_read) {
+      *input_frames_read = frames_read;
+    }
+    return frames;
+  }
+
+  const size_t frames_read = state.decoder->Read(output, frames);
+  if (frames_read == 0) {
+    if (input_frames_read) {
+      *input_frames_read = 0;
+    }
+    return 0;
+  }
+
+  ApplyVolumePan(output, frames_read, state.channels, state.volume, state.pan);
+  if (frames_read < frames) {
+    std::fill_n(output + frames_read * state.channels,
+                (frames - frames_read) * state.channels,
+                0.0f);
+  }
+
+  if (input_frames_read) {
+    *input_frames_read = frames_read;
+  }
+  return frames_read;
+}
+
+}  // namespace
 
 namespace sezo {
 namespace extraction {
@@ -50,6 +260,18 @@ ExtractionResult ExtractionPipeline::ExtractTrack(
     return result;
   }
 
+  OfflineTrackState state;
+  state.track = track;
+  if (!InitOfflineState(state, config.include_effects, &result.error_message)) {
+    LOGE("%s", result.error_message.c_str());
+    return result;
+  }
+  if (state.channels <= 0) {
+    result.error_message = "Invalid track channels";
+    LOGE("%s", result.error_message.c_str());
+    return result;
+  }
+
   // Create encoder
   auto encoder = CreateEncoder(config.format);
   if (!encoder) {
@@ -62,7 +284,7 @@ ExtractionResult ExtractionPipeline::ExtractTrack(
   audio::EncoderConfig encoder_config;
   encoder_config.format = config.format;
   encoder_config.sample_rate = config.sample_rate;
-  encoder_config.channels = track->GetChannels();
+  encoder_config.channels = state.channels;
   encoder_config.bitrate = config.bitrate;
   encoder_config.bits_per_sample = config.bits_per_sample;
 
@@ -75,26 +297,36 @@ ExtractionResult ExtractionPipeline::ExtractTrack(
 
   LOGD("Extracting track '%s' to '%s'", track->GetId().c_str(), output_path.c_str());
 
-  // Seek track to beginning
-  track->Seek(0);
-
   // Get track duration
-  int64_t total_frames = track->GetDuration();
-  int64_t frames_processed = 0;
+  const int64_t total_frames = state.total_frames;
+  int64_t input_frames_processed = 0;
+  float last_progress = -1.0f;
 
   // Render buffer
-  std::vector<float> buffer(kRenderBufferFrames * track->GetChannels());
+  std::vector<float> buffer(kRenderBufferFrames * state.channels);
 
   bool success = true;
-  while (frames_processed < total_frames) {
+  while (total_frames <= 0 || input_frames_processed < total_frames) {
     // Calculate frames to render this iteration
-    size_t frames_to_render = static_cast<size_t>(
-        std::min(static_cast<int64_t>(kRenderBufferFrames),
-                 total_frames - frames_processed));
+    size_t frames_to_render = kRenderBufferFrames;
+    if (total_frames > 0) {
+      const double stretch = GetStretchFactor(state, config.include_effects);
+      const double remaining_output =
+          static_cast<double>(total_frames - input_frames_processed) / stretch;
+      if (remaining_output <= 0.0) {
+        break;
+      }
+      frames_to_render = static_cast<size_t>(
+          std::min<double>(remaining_output, kRenderBufferFrames));
+      if (frames_to_render == 0) {
+        frames_to_render = 1;
+      }
+    }
 
     // Render audio from track
-    size_t frames_rendered = RenderTrack(
-        track, buffer.data(), frames_to_render, config.include_effects);
+    size_t input_frames_read = 0;
+    size_t frames_rendered = RenderOfflineTrack(
+        state, buffer.data(), frames_to_render, config.include_effects, &input_frames_read);
 
     if (frames_rendered == 0) {
       // End of track
@@ -109,17 +341,22 @@ ExtractionResult ExtractionPipeline::ExtractTrack(
       break;
     }
 
-    frames_processed += static_cast<int64_t>(frames_rendered);
+    input_frames_processed += static_cast<int64_t>(
+        input_frames_read > 0 ? input_frames_read : frames_rendered);
 
     // Report progress
     if (progress_callback && total_frames > 0) {
-      float progress = static_cast<float>(frames_processed) /
+      float progress = static_cast<float>(input_frames_processed) /
                        static_cast<float>(total_frames);
-      progress_callback(progress);
+      progress = std::min(1.0f, std::max(0.0f, progress));
+      if (progress >= 1.0f || progress - last_progress >= kProgressStep) {
+        last_progress = progress;
+        progress_callback(progress);
+      }
     }
 
     // If we rendered fewer frames than requested, we're at the end
-    if (frames_rendered < frames_to_render) {
+    if (frames_rendered < frames_to_render && input_frames_read == 0) {
       break;
     }
   }
@@ -172,6 +409,25 @@ ExtractionResult ExtractionPipeline::ExtractMixedTracks(
     }
   }
 
+  std::vector<OfflineTrackState> states;
+  states.reserve(tracks.size());
+  for (const auto& track : tracks) {
+    OfflineTrackState state;
+    state.track = track;
+    std::string error;
+    if (!InitOfflineState(state, config.include_effects, &error)) {
+      result.error_message = error;
+      LOGE("%s", result.error_message.c_str());
+      return result;
+    }
+    if (state.channels <= 0) {
+      result.error_message = "Invalid track channels";
+      LOGE("%s", result.error_message.c_str());
+      return result;
+    }
+    states.push_back(std::move(state));
+  }
+
   // Create encoder
   auto encoder = CreateEncoder(config.format);
   if (!encoder) {
@@ -181,7 +437,7 @@ ExtractionResult ExtractionPipeline::ExtractMixedTracks(
   }
 
   // Get output channels (use first track as reference)
-  int32_t output_channels = tracks[0]->GetChannels();
+  int32_t output_channels = states[0].channels;
 
   // Setup encoder config
   audio::EncoderConfig encoder_config;
@@ -200,32 +456,112 @@ ExtractionResult ExtractionPipeline::ExtractMixedTracks(
 
   LOGD("Extracting %zu mixed tracks to '%s'", tracks.size(), output_path.c_str());
 
-  // Seek all tracks to beginning
-  for (const auto& track : tracks) {
-    track->Seek(0);
+  bool has_solo = false;
+  for (const auto& state : states) {
+    if (state.solo) {
+      has_solo = true;
+      break;
+    }
   }
 
-  // Find longest track duration
+  // Find longest track duration (input frames)
   int64_t total_frames = 0;
-  for (const auto& track : tracks) {
-    total_frames = std::max(total_frames, track->GetDuration());
+  for (const auto& state : states) {
+    if (state.total_frames > total_frames) {
+      total_frames = state.total_frames;
+    }
   }
 
-  int64_t frames_processed = 0;
+  float last_progress = -1.0f;
 
   // Render buffer
   std::vector<float> buffer(kRenderBufferFrames * output_channels);
 
   bool success = true;
-  while (frames_processed < total_frames) {
+  while (true) {
     // Calculate frames to render this iteration
+    double max_remaining_output = 0.0;
+    for (const auto& state : states) {
+      if (!state.decoder) {
+        continue;
+      }
+      if (has_solo && !state.solo) {
+        continue;
+      }
+      if (state.muted) {
+        continue;
+      }
+      if (state.total_frames <= 0) {
+        max_remaining_output = static_cast<double>(kRenderBufferFrames);
+        break;
+      }
+      const double stretch = GetStretchFactor(state, config.include_effects);
+      const double remaining_input =
+          static_cast<double>(state.total_frames - state.input_frames_processed);
+      if (remaining_input <= 0.0) {
+        continue;
+      }
+      const double remaining_output = remaining_input / stretch;
+      if (remaining_output > max_remaining_output) {
+        max_remaining_output = remaining_output;
+      }
+    }
+
+    if (max_remaining_output <= 0.0) {
+      break;
+    }
+
     size_t frames_to_render = static_cast<size_t>(
-        std::min(static_cast<int64_t>(kRenderBufferFrames),
-                 total_frames - frames_processed));
+        std::min<double>(max_remaining_output, kRenderBufferFrames));
+    if (frames_to_render == 0) {
+      frames_to_render = 1;
+    }
 
     // Render mixed audio
-    size_t frames_rendered = RenderMixedTracks(
-        tracks, buffer.data(), frames_to_render);
+    std::memset(buffer.data(), 0, frames_to_render * output_channels * sizeof(float));
+
+    std::vector<float> track_buffer(frames_to_render * output_channels);
+    size_t min_frames_read = frames_to_render;
+    bool any_track_active = false;
+
+    for (auto& state : states) {
+      if (!state.decoder) {
+        continue;
+      }
+      if (has_solo && !state.solo) {
+        continue;
+      }
+      if (state.muted) {
+        continue;
+      }
+
+      std::memset(track_buffer.data(), 0, track_buffer.size() * sizeof(float));
+      size_t input_frames_read = 0;
+      const size_t frames_read = RenderOfflineTrack(
+          state, track_buffer.data(), frames_to_render, config.include_effects, &input_frames_read);
+
+      if (frames_read > 0) {
+        any_track_active = true;
+        min_frames_read = std::min(min_frames_read, frames_read);
+        state.input_frames_processed += static_cast<int64_t>(
+            input_frames_read > 0 ? input_frames_read : frames_read);
+
+        for (size_t i = 0; i < frames_read * output_channels; ++i) {
+          buffer[i] += track_buffer[i];
+        }
+      }
+    }
+
+    if (!any_track_active) {
+      break;
+    }
+
+    // Clamp mixed output to prevent clipping
+    for (size_t i = 0; i < min_frames_read * output_channels; ++i) {
+      buffer[i] = std::max(-1.0f, std::min(1.0f, buffer[i]));
+    }
+
+    size_t frames_rendered = min_frames_read;
 
     if (frames_rendered == 0) {
       // End of all tracks
@@ -240,17 +576,30 @@ ExtractionResult ExtractionPipeline::ExtractMixedTracks(
       break;
     }
 
-    frames_processed += static_cast<int64_t>(frames_rendered);
+    int64_t max_input_processed = 0;
+    for (const auto& state : states) {
+      if (state.input_frames_processed > max_input_processed) {
+        max_input_processed = state.input_frames_processed;
+      }
+    }
 
     // Report progress
     if (progress_callback && total_frames > 0) {
-      float progress = static_cast<float>(frames_processed) /
+      float progress = static_cast<float>(max_input_processed) /
                        static_cast<float>(total_frames);
-      progress_callback(progress);
+      progress = std::min(1.0f, std::max(0.0f, progress));
+      if (progress >= 1.0f || progress - last_progress >= kProgressStep) {
+        last_progress = progress;
+        progress_callback(progress);
+      }
     }
 
     // If we rendered fewer frames than requested, we're at the end
     if (frames_rendered < frames_to_render) {
+      break;
+    }
+
+    if (total_frames > 0 && max_input_processed >= total_frames) {
       break;
     }
   }
@@ -276,86 +625,6 @@ ExtractionResult ExtractionPipeline::ExtractMixedTracks(
   }
 
   return result;
-}
-
-size_t ExtractionPipeline::RenderTrack(
-    std::shared_ptr<playback::Track> track,
-    float* buffer,
-    size_t frames,
-    bool include_effects [[maybe_unused]]) {
-
-  if (!track || !track->IsLoaded()) {
-    return 0;
-  }
-
-  // Read samples from track
-  // The Track::ReadSamples already applies effects if they are set
-  // (pitch/speed/volume/pan/mute/solo)
-  // Note: include_effects parameter is reserved for future use when we may want to
-  // optionally bypass effects during extraction
-  size_t frames_read = track->ReadSamples(buffer, frames);
-
-  return frames_read;
-}
-
-size_t ExtractionPipeline::RenderMixedTracks(
-    const std::vector<std::shared_ptr<playback::Track>>& tracks,
-    float* buffer,
-    size_t frames) {
-
-  if (tracks.empty() || frames == 0) {
-    return 0;
-  }
-
-  // Get channels from first track
-  int32_t channels = tracks[0]->GetChannels();
-  size_t total_samples = frames * channels;
-
-  // Clear output buffer
-  std::memset(buffer, 0, total_samples * sizeof(float));
-
-  // Temporary buffer for each track
-  std::vector<float> track_buffer(total_samples);
-
-  size_t min_frames_read = frames;
-  bool any_track_active = false;
-
-  // Mix all tracks
-  for (const auto& track : tracks) {
-    if (!track || !track->IsLoaded()) {
-      continue;
-    }
-
-    // Skip muted tracks (unless solo is active)
-    if (track->IsMuted() && !track->IsSolo()) {
-      continue;
-    }
-
-    // Read from this track
-    std::memset(track_buffer.data(), 0, total_samples * sizeof(float));
-    size_t frames_read = track->ReadSamples(track_buffer.data(), frames);
-
-    if (frames_read > 0) {
-      any_track_active = true;
-      min_frames_read = std::min(min_frames_read, frames_read);
-
-      // Mix into output buffer
-      for (size_t i = 0; i < frames_read * channels; ++i) {
-        buffer[i] += track_buffer[i];
-      }
-    }
-  }
-
-  if (!any_track_active) {
-    return 0;
-  }
-
-  // Clamp mixed output to prevent clipping
-  for (size_t i = 0; i < min_frames_read * channels; ++i) {
-    buffer[i] = std::max(-1.0f, std::min(1.0f, buffer[i]));
-  }
-
-  return min_frames_read;
 }
 
 }  // namespace extraction

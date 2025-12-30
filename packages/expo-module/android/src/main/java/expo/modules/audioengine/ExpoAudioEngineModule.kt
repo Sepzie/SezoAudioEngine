@@ -213,12 +213,17 @@ class ExpoAudioEngineModule : Module() {
 
       Log.d(TAG, "Extracting track: $trackId to $outputPath (format=$format, bitrate=$bitrate)")
 
+      var lastProgressLog = -1.0f
       engine.setExtractionProgressListener { progress ->
-        Log.d(TAG, "Extraction progress track=$trackId progress=$progress")
+        val clamped = progress.coerceIn(0.0f, 1.0f)
+        if (clamped >= 1.0f || clamped - lastProgressLog >= 0.05f) {
+          lastProgressLog = clamped
+          Log.d(TAG, "Extraction progress track=$trackId progress=$clamped")
+        }
         sendEvent(
           "extractionProgress",
           mapOf(
-            "progress" to progress.toDouble(),
+            "progress" to clamped.toDouble(),
             "trackId" to trackId,
             "outputPath" to outputPath,
             "format" to format,
@@ -300,12 +305,17 @@ class ExpoAudioEngineModule : Module() {
 
       Log.d(TAG, "Extracting all tracks mixed to $outputPath (format=$format, bitrate=$bitrate)")
 
+      var lastProgressLog = -1.0f
       engine.setExtractionProgressListener { progress ->
-        Log.d(TAG, "Extraction progress mix progress=$progress")
+        val clamped = progress.coerceIn(0.0f, 1.0f)
+        if (clamped >= 1.0f || clamped - lastProgressLog >= 0.05f) {
+          lastProgressLog = clamped
+          Log.d(TAG, "Extraction progress mix progress=$clamped")
+        }
         sendEvent(
           "extractionProgress",
           mapOf(
-            "progress" to progress.toDouble(),
+            "progress" to clamped.toDouble(),
             "outputPath" to outputPath,
             "format" to format,
             "operation" to "mix"

@@ -88,32 +88,6 @@ class ExtractionPipeline {
    */
   std::unique_ptr<audio::AudioEncoder> CreateEncoder(audio::EncoderFormat format);
 
-  /**
-   * Render audio from a single track to a buffer.
-   * @param track Track to render
-   * @param buffer Output buffer
-   * @param frames Number of frames to render
-   * @param include_effects Apply effects during rendering
-   * @return Number of frames actually rendered
-   */
-  size_t RenderTrack(
-      std::shared_ptr<playback::Track> track,
-      float* buffer,
-      size_t frames,
-      bool include_effects);
-
-  /**
-   * Render audio from multiple tracks mixed together.
-   * @param tracks Tracks to mix
-   * @param buffer Output buffer
-   * @param frames Number of frames to render
-   * @return Number of frames actually rendered
-   */
-  size_t RenderMixedTracks(
-      const std::vector<std::shared_ptr<playback::Track>>& tracks,
-      float* buffer,
-      size_t frames);
-
   static constexpr size_t kRenderBufferFrames = 4096;
 };
 
