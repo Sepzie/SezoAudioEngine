@@ -87,6 +87,20 @@ const getAndroidContentUri = async (uri: string) => {
   return uri;
 };
 
+const isExtractionCancelledMessage = (message?: string) => {
+  return typeof message === 'string' && message.toLowerCase().includes('cancel');
+};
+
+const isExtractionCancellationError = (error: any) => {
+  if (error?.code === 'EXTRACTION_CANCELLED') {
+    return true;
+  }
+  return (
+    isExtractionCancelledMessage(error?.message) ||
+    isExtractionCancelledMessage(error?.errorMessage)
+  );
+};
+
 export default function App() {
   const [status, setStatus] = useState('Idle');
   const [isPlaying, setIsPlaying] = useState(false);
@@ -102,6 +116,7 @@ export default function App() {
   const [extractionIncludeEffects, setExtractionIncludeEffects] = useState(true);
   const [lastExtraction, setLastExtraction] = useState<ExtractionInfo | null>(null);
   const [isExtracting, setIsExtracting] = useState(false);
+  const [extractionJobId, setExtractionJobId] = useState<number | null>(null);
   const engineAny = AudioEngineModule as Record<string, any>;
   const supportsTrackPitch = typeof engineAny.setTrackPitch === 'function';
   const supportsTrackSpeed = typeof engineAny.setTrackSpeed === 'function';
@@ -136,18 +151,28 @@ export default function App() {
   useEffect(() => {
     const progressSub = AudioEngineModule.addListener('extractionProgress', (event: any) => {
       const progress = typeof event?.progress === 'number' ? event.progress : 0;
+      const jobId = typeof event?.jobId === 'number' ? event.jobId : null;
       const operation = event?.operation === 'mix' ? 'Mix' : 'Track';
       setExtractionProgress(progress);
       setExtractionStatus(`${operation} export ${Math.round(progress * 100)}%`);
       setIsExtracting(true);
+      if (jobId !== null) {
+        setExtractionJobId(jobId);
+      }
     });
 
     const completeSub = AudioEngineModule.addListener('extractionComplete', (event: any) => {
       const success = event?.success !== false;
+      const errorMessage =
+        typeof event?.errorMessage === 'string' ? event.errorMessage : 'Unknown error';
+      const cancelled = isExtractionCancelledMessage(errorMessage);
       setIsExtracting(false);
+      setExtractionJobId(null);
       setExtractionProgress(success ? 1 : 0);
       if (!success) {
-        setExtractionStatus(`Export failed: ${event?.errorMessage ?? 'Unknown error'}`);
+        setExtractionStatus(
+          cancelled ? 'Export cancelled' : `Export failed: ${errorMessage}`
+        );
         return;
       }
       setExtractionStatus('Export complete');
@@ -354,6 +379,7 @@ export default function App() {
 
     try {
       setIsExtracting(true);
+      setExtractionJobId(null);
       setExtractionProgress(0);
       setExtractionStatus(`Exporting ${track.name}...`);
 
@@ -368,8 +394,13 @@ export default function App() {
       setExtractionStatus(`Exported ${track.name}`);
       setExtractionProgress(1);
     } catch (error: any) {
-      setExtractionStatus('Export failed');
-      Alert.alert('Export failed', error?.message ?? 'Unknown error');
+      if (isExtractionCancellationError(error)) {
+        setExtractionStatus('Export cancelled');
+        setExtractionProgress(0);
+      } else {
+        setExtractionStatus('Export failed');
+        Alert.alert('Export failed', error?.message ?? 'Unknown error');
+      }
     } finally {
       setIsExtracting(false);
     }
@@ -383,6 +414,7 @@ export default function App() {
 
     try {
       setIsExtracting(true);
+      setExtractionJobId(null);
       setExtractionProgress(0);
       setExtractionStatus('Exporting mix...');
 
@@ -400,12 +432,35 @@ export default function App() {
       setExtractionStatus('Exported mix');
       setExtractionProgress(1);
     } catch (error: any) {
-      setExtractionStatus('Export failed');
-      Alert.alert('Export failed', error?.message ?? 'Unknown error');
+      if (isExtractionCancellationError(error)) {
+        setExtractionStatus('Export cancelled');
+        setExtractionProgress(0);
+      } else {
+        setExtractionStatus('Export failed');
+        Alert.alert('Export failed', error?.message ?? 'Unknown error');
+      }
     } finally {
       setIsExtracting(false);
     }
   }, [extractionFormat, extractionIncludeEffects, tracks]);
+
+  const handleCancelExtraction = useCallback(() => {
+    if (!isExtracting) {
+      return;
+    }
+
+    try {
+      const didCancel = AudioEngineModule.cancelExtraction(extractionJobId ?? undefined);
+      if (didCancel) {
+        setExtractionStatus('Cancelling export...');
+      } else {
+        setExtractionStatus('No active export');
+      }
+    } catch (error) {
+      console.warn('[Extraction] Cancel export failed', error);
+      setExtractionStatus('Cancel failed');
+    }
+  }, [extractionJobId, isExtracting]);
 
   const handleOpenExport = useCallback(async () => {
     if (!lastExtraction?.uri) {
@@ -883,6 +938,19 @@ export default function App() {
                 >
                   <Text style={styles.controlButtonText}>Export Mix</Text>
                 </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.controlButton,
+                    styles.cancelButton,
+                    !isExtracting && styles.controlButtonDisabled,
+                  ]}
+                  onPress={handleCancelExtraction}
+                  disabled={!isExtracting}
+                >
+                  <Text style={[styles.controlButtonText, styles.cancelButtonText]}>
+                    Cancel Export
+                  </Text>
+                </TouchableOpacity>
               </View>
 
               <View style={styles.progressTrack}>
@@ -1326,6 +1394,13 @@ const styles = StyleSheet.create({
     color: theme.colors.text,
     fontSize: 14,
     fontWeight: '600',
+  },
+  cancelButton: {
+    backgroundColor: 'rgba(255, 93, 93, 0.15)',
+    borderColor: 'rgba(255, 93, 93, 0.6)',
+  },
+  cancelButtonText: {
+    color: theme.colors.danger,
   },
   progressTrack: {
     height: 8,
