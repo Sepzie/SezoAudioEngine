@@ -4,7 +4,10 @@
 
 #include <android/log.h>
 #include <sys/stat.h>
+#include <algorithm>
+#include <cmath>
 #include <cstring>
+#include <vector>
 
 #define LOG_TAG "WAVEncoder"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
@@ -12,6 +15,19 @@
 
 namespace sezo {
 namespace audio {
+namespace {
+
+int16_t FloatToPcm16(float sample) {
+  float clamped = std::max(-1.0f, std::min(1.0f, sample));
+  return static_cast<int16_t>(std::lrint(clamped * 32767.0f));
+}
+
+int32_t FloatToPcm32(float sample) {
+  float clamped = std::max(-1.0f, std::min(1.0f, sample));
+  return static_cast<int32_t>(std::lrint(clamped * 2147483647.0f));
+}
+
+}  // namespace
 
 WAVEncoder::WAVEncoder() = default;
 
@@ -82,10 +98,36 @@ bool WAVEncoder::Write(const float* samples, size_t frame_count) {
 
   auto* wav = static_cast<drwav*>(wav_handle_);
 
-  // dr_wav expects samples in interleaved format (already the case)
-  // Write float samples directly - dr_wav will convert to PCM
-  drwav_uint64 frames_written = drwav_write_pcm_frames(
-      wav, frame_count, samples);
+  drwav_uint64 frames_written = 0;
+  const size_t sample_count = frame_count * static_cast<size_t>(channels_);
+
+  if (bits_per_sample_ == 16) {
+    std::vector<int16_t> pcm(sample_count);
+    for (size_t i = 0; i < sample_count; ++i) {
+      pcm[i] = FloatToPcm16(samples[i]);
+    }
+    frames_written = drwav_write_pcm_frames(wav, frame_count, pcm.data());
+  } else if (bits_per_sample_ == 24) {
+    std::vector<uint8_t> pcm(sample_count * 3);
+    for (size_t i = 0; i < sample_count; ++i) {
+      int32_t value = FloatToPcm32(samples[i]);
+      uint32_t packed = static_cast<uint32_t>(value);
+      const size_t offset = i * 3;
+      pcm[offset] = static_cast<uint8_t>(packed & 0xFF);
+      pcm[offset + 1] = static_cast<uint8_t>((packed >> 8) & 0xFF);
+      pcm[offset + 2] = static_cast<uint8_t>((packed >> 16) & 0xFF);
+    }
+    frames_written = drwav_write_pcm_frames(wav, frame_count, pcm.data());
+  } else if (bits_per_sample_ == 32) {
+    std::vector<int32_t> pcm(sample_count);
+    for (size_t i = 0; i < sample_count; ++i) {
+      pcm[i] = FloatToPcm32(samples[i]);
+    }
+    frames_written = drwav_write_pcm_frames(wav, frame_count, pcm.data());
+  } else {
+    LOGE("Unsupported bits per sample: %d", bits_per_sample_);
+    return false;
+  }
 
   if (frames_written != frame_count) {
     LOGE("Failed to write all frames: wrote %llu of %zu",
