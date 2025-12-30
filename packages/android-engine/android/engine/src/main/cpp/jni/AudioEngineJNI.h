@@ -148,4 +148,18 @@ Java_com_sezo_audioengine_AudioEngine_nativeExtractAllTracks(
     JNIEnv* env, jobject thiz, jlong handle, jstring output_path,
     jstring format, jint bitrate, jint bits_per_sample, jboolean include_effects);
 
+JNIEXPORT jlong JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeStartExtractTrack(
+    JNIEnv* env, jobject thiz, jlong handle, jstring track_id, jstring output_path,
+    jstring format, jint bitrate, jint bits_per_sample, jboolean include_effects);
+
+JNIEXPORT jlong JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeStartExtractAllTracks(
+    JNIEnv* env, jobject thiz, jlong handle, jstring output_path,
+    jstring format, jint bitrate, jint bits_per_sample, jboolean include_effects);
+
+JNIEXPORT jboolean JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeCancelExtraction(
+    JNIEnv* env, jobject thiz, jlong handle, jlong job_id);
+
 }  // extern "C"

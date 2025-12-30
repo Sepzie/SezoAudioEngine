@@ -4,6 +4,7 @@
 #include "playback/Track.h"
 #include "playback/MultiTrackMixer.h"
 
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <string>
@@ -66,7 +67,8 @@ class ExtractionPipeline {
       std::shared_ptr<playback::Track> track,
       const std::string& output_path,
       const ExtractionConfig& config,
-      ProgressCallback progress_callback = nullptr);
+      ProgressCallback progress_callback = nullptr,
+      std::atomic<bool>* cancel_flag = nullptr);
 
   /**
    * Extract multiple tracks mixed together to an audio file.
@@ -80,7 +82,8 @@ class ExtractionPipeline {
       const std::vector<std::shared_ptr<playback::Track>>& tracks,
       const std::string& output_path,
       const ExtractionConfig& config,
-      ProgressCallback progress_callback = nullptr);
+      ProgressCallback progress_callback = nullptr,
+      std::atomic<bool>* cancel_flag = nullptr);
 
  private:
   /**

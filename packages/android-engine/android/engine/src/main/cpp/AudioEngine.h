@@ -8,11 +8,16 @@
 #include "playback/OboePlayer.h"
 #include "playback/Track.h"
 
+#include <atomic>
+#include <condition_variable>
+#include <deque>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <functional>
 #include <string>
+#include <thread>
+#include <unordered_map>
 #include <vector>
 
 namespace sezo {
@@ -90,8 +95,6 @@ class AudioEngine {
     bool include_effects = true;
   };
 
-  using ExtractionProgressCallback = std::function<void(float progress)>;
-
   struct ExtractionResult {
     bool success = false;
     std::string track_id;
@@ -100,6 +103,10 @@ class AudioEngine {
     int64_t file_size = 0;
     std::string error_message;
   };
+
+  using ExtractionProgressCallback = std::function<void(float progress)>;
+  using ExtractionCompletionCallback =
+      std::function<void(int64_t job_id, const ExtractionResult& result)>;
 
   /**
    * Extract a single track to an audio file with effects applied.
@@ -113,7 +120,8 @@ class AudioEngine {
       const std::string& track_id,
       const std::string& output_path,
       const ExtractionOptions& options,
-      ExtractionProgressCallback progress_callback = nullptr);
+      ExtractionProgressCallback progress_callback = nullptr,
+      std::atomic<bool>* cancel_flag = nullptr);
 
   /**
    * Extract all loaded tracks mixed together to an audio file.
@@ -125,10 +133,43 @@ class AudioEngine {
   ExtractionResult ExtractAllTracks(
       const std::string& output_path,
       const ExtractionOptions& options,
-      ExtractionProgressCallback progress_callback = nullptr);
+      ExtractionProgressCallback progress_callback = nullptr,
+      std::atomic<bool>* cancel_flag = nullptr);
+
+  int64_t StartExtractTrack(
+      const std::string& track_id,
+      const std::string& output_path,
+      const ExtractionOptions& options,
+      ExtractionProgressCallback progress_callback,
+      ExtractionCompletionCallback completion_callback);
+
+  int64_t StartExtractAllTracks(
+      const std::string& output_path,
+      const ExtractionOptions& options,
+      ExtractionProgressCallback progress_callback,
+      ExtractionCompletionCallback completion_callback);
+
+  bool CancelExtraction(int64_t job_id);
+  void CancelAllExtractions();
+  bool IsExtractionRunning() const;
 
  private:
   void ReportError(core::ErrorCode code, const std::string& message);
+  void StartExtractionWorker();
+  void StopExtractionWorker();
+  void ExtractionWorkerLoop();
+  int64_t NextExtractionJobId();
+
+  struct ExtractionTask {
+    int64_t job_id = 0;
+    bool is_mix = false;
+    std::string track_id;
+    std::string output_path;
+    ExtractionOptions options;
+    ExtractionProgressCallback progress_callback;
+    ExtractionCompletionCallback completion_callback;
+    std::shared_ptr<std::atomic<bool>> cancel_flag;
+  };
 
   bool initialized_ = false;
   int32_t sample_rate_ = 44100;
@@ -154,6 +195,16 @@ class AudioEngine {
   ErrorCallback error_callback_;
   core::ErrorCode last_error_ = core::ErrorCode::kOk;
   std::string last_error_message_;
+
+  std::thread extraction_thread_;
+  std::atomic<bool> extraction_worker_running_{false};
+  std::atomic<bool> extraction_shutdown_{false};
+  mutable std::mutex extraction_mutex_;
+  std::condition_variable extraction_cv_;
+  std::deque<ExtractionTask> extraction_queue_;
+  std::unordered_map<int64_t, std::shared_ptr<std::atomic<bool>>> extraction_cancel_flags_;
+  int64_t next_extraction_job_id_ = 1;
+  int64_t current_extraction_job_id_ = 0;
 };
 
 }  // namespace sezo

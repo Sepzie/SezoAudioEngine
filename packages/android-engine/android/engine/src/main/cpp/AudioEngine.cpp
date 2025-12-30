@@ -65,6 +65,8 @@ bool AudioEngine::Initialize(int32_t sample_rate, int32_t max_tracks) {
     return false;
   }
 
+  StartExtractionWorker();
+
   initialized_ = true;
   LOGD("AudioEngine initialized: sample_rate=%d, max_tracks=%d", sample_rate, max_tracks);
   return true;
@@ -74,6 +76,9 @@ void AudioEngine::Release() {
   if (!initialized_) {
     return;
   }
+
+  CancelAllExtractions();
+  StopExtractionWorker();
 
   Stop();
   UnloadAllTracks();
@@ -375,7 +380,8 @@ AudioEngine::ExtractionResult AudioEngine::ExtractTrack(
     const std::string& track_id,
     const std::string& output_path,
     const ExtractionOptions& options,
-    ExtractionProgressCallback progress_callback) {
+    ExtractionProgressCallback progress_callback,
+    std::atomic<bool>* cancel_flag) {
 
   ExtractionResult result;
   result.track_id = track_id;
@@ -426,7 +432,7 @@ AudioEngine::ExtractionResult AudioEngine::ExtractTrack(
 
   // Perform extraction
   auto extraction_result = pipeline.ExtractTrack(
-      track, output_path, config, progress_callback);
+      track, output_path, config, progress_callback, cancel_flag);
 
   // Convert extraction result
   result.success = extraction_result.success;
@@ -444,7 +450,8 @@ AudioEngine::ExtractionResult AudioEngine::ExtractTrack(
 AudioEngine::ExtractionResult AudioEngine::ExtractAllTracks(
     const std::string& output_path,
     const ExtractionOptions& options,
-    ExtractionProgressCallback progress_callback) {
+    ExtractionProgressCallback progress_callback,
+    std::atomic<bool>* cancel_flag) {
 
   ExtractionResult result;
   result.output_path = output_path;
@@ -500,7 +507,7 @@ AudioEngine::ExtractionResult AudioEngine::ExtractAllTracks(
 
   // Perform extraction
   auto extraction_result = pipeline.ExtractMixedTracks(
-      track_list, output_path, config, progress_callback);
+      track_list, output_path, config, progress_callback, cancel_flag);
 
   // Convert extraction result
   result.success = extraction_result.success;
@@ -513,6 +520,204 @@ AudioEngine::ExtractionResult AudioEngine::ExtractAllTracks(
   }
 
   return result;
+}
+
+int64_t AudioEngine::StartExtractTrack(
+    const std::string& track_id,
+    const std::string& output_path,
+    const ExtractionOptions& options,
+    ExtractionProgressCallback progress_callback,
+    ExtractionCompletionCallback completion_callback) {
+
+  if (!initialized_) {
+    ReportError(core::ErrorCode::kNotInitialized, "AudioEngine not initialized");
+    return 0;
+  }
+
+  if (track_id.empty() || output_path.empty()) {
+    ReportError(core::ErrorCode::kInvalidArgument, "Invalid extraction arguments");
+    return 0;
+  }
+
+  StartExtractionWorker();
+
+  ExtractionTask task;
+  task.job_id = NextExtractionJobId();
+  task.is_mix = false;
+  task.track_id = track_id;
+  task.output_path = output_path;
+  task.options = options;
+  task.progress_callback = std::move(progress_callback);
+  task.completion_callback = std::move(completion_callback);
+  task.cancel_flag = std::make_shared<std::atomic<bool>>(false);
+
+  {
+    std::lock_guard<std::mutex> lock(extraction_mutex_);
+    extraction_queue_.push_back(task);
+    extraction_cancel_flags_[task.job_id] = task.cancel_flag;
+  }
+  extraction_cv_.notify_one();
+  return task.job_id;
+}
+
+int64_t AudioEngine::StartExtractAllTracks(
+    const std::string& output_path,
+    const ExtractionOptions& options,
+    ExtractionProgressCallback progress_callback,
+    ExtractionCompletionCallback completion_callback) {
+
+  if (!initialized_) {
+    ReportError(core::ErrorCode::kNotInitialized, "AudioEngine not initialized");
+    return 0;
+  }
+
+  if (output_path.empty()) {
+    ReportError(core::ErrorCode::kInvalidArgument, "Output path is empty");
+    return 0;
+  }
+
+  StartExtractionWorker();
+
+  ExtractionTask task;
+  task.job_id = NextExtractionJobId();
+  task.is_mix = true;
+  task.output_path = output_path;
+  task.options = options;
+  task.progress_callback = std::move(progress_callback);
+  task.completion_callback = std::move(completion_callback);
+  task.cancel_flag = std::make_shared<std::atomic<bool>>(false);
+
+  {
+    std::lock_guard<std::mutex> lock(extraction_mutex_);
+    extraction_queue_.push_back(task);
+    extraction_cancel_flags_[task.job_id] = task.cancel_flag;
+  }
+  extraction_cv_.notify_one();
+  return task.job_id;
+}
+
+bool AudioEngine::CancelExtraction(int64_t job_id) {
+  std::lock_guard<std::mutex> lock(extraction_mutex_);
+  auto it = extraction_cancel_flags_.find(job_id);
+  if (it == extraction_cancel_flags_.end()) {
+    return false;
+  }
+  it->second->store(true, std::memory_order_release);
+  extraction_cv_.notify_one();
+  return true;
+}
+
+void AudioEngine::CancelAllExtractions() {
+  std::lock_guard<std::mutex> lock(extraction_mutex_);
+  for (auto& entry : extraction_cancel_flags_) {
+    entry.second->store(true, std::memory_order_release);
+  }
+  extraction_cv_.notify_one();
+}
+
+bool AudioEngine::IsExtractionRunning() const {
+  std::lock_guard<std::mutex> lock(extraction_mutex_);
+  return current_extraction_job_id_ != 0;
+}
+
+void AudioEngine::StartExtractionWorker() {
+  if (extraction_worker_running_.load(std::memory_order_acquire)) {
+    return;
+  }
+
+  extraction_shutdown_.store(false, std::memory_order_release);
+  extraction_worker_running_.store(true, std::memory_order_release);
+  extraction_thread_ = std::thread(&AudioEngine::ExtractionWorkerLoop, this);
+}
+
+void AudioEngine::StopExtractionWorker() {
+  if (!extraction_worker_running_.load(std::memory_order_acquire)) {
+    return;
+  }
+
+  extraction_shutdown_.store(true, std::memory_order_release);
+  CancelAllExtractions();
+  extraction_cv_.notify_one();
+
+  if (extraction_thread_.joinable()) {
+    extraction_thread_.join();
+  }
+  extraction_worker_running_.store(false, std::memory_order_release);
+}
+
+void AudioEngine::ExtractionWorkerLoop() {
+  while (true) {
+    ExtractionTask task;
+    {
+      std::unique_lock<std::mutex> lock(extraction_mutex_);
+      extraction_cv_.wait(lock, [this] {
+        return extraction_shutdown_.load(std::memory_order_acquire) ||
+               !extraction_queue_.empty();
+      });
+
+      if (extraction_queue_.empty()) {
+        if (extraction_shutdown_.load(std::memory_order_acquire)) {
+          break;
+        }
+        continue;
+      }
+
+      task = std::move(extraction_queue_.front());
+      extraction_queue_.pop_front();
+      current_extraction_job_id_ = task.job_id;
+    }
+
+    ExtractionResult result;
+    result.track_id = task.track_id;
+    result.output_path = task.output_path;
+
+    const auto cancel_flag = task.cancel_flag;
+    if (cancel_flag && cancel_flag->load(std::memory_order_acquire)) {
+      result.success = false;
+      result.error_message = "Extraction cancelled";
+    } else {
+      auto progress_wrapper = [cancel_flag, &task](float progress) {
+        if (cancel_flag && cancel_flag->load(std::memory_order_acquire)) {
+          return;
+        }
+        if (task.progress_callback) {
+          task.progress_callback(progress);
+        }
+      };
+
+      if (task.is_mix) {
+        result = ExtractAllTracks(
+            task.output_path, task.options, progress_wrapper,
+            cancel_flag ? cancel_flag.get() : nullptr);
+      } else {
+        result = ExtractTrack(
+            task.track_id, task.output_path, task.options, progress_wrapper,
+            cancel_flag ? cancel_flag.get() : nullptr);
+      }
+
+      if (cancel_flag && cancel_flag->load(std::memory_order_acquire)) {
+        result.success = false;
+        if (result.error_message.empty()) {
+          result.error_message = "Extraction cancelled";
+        }
+      }
+    }
+
+    if (task.completion_callback) {
+      task.completion_callback(task.job_id, result);
+    }
+
+    {
+      std::lock_guard<std::mutex> lock(extraction_mutex_);
+      extraction_cancel_flags_.erase(task.job_id);
+      current_extraction_job_id_ = 0;
+    }
+  }
+}
+
+int64_t AudioEngine::NextExtractionJobId() {
+  std::lock_guard<std::mutex> lock(extraction_mutex_);
+  return next_extraction_job_id_++;
 }
 
 void AudioEngine::ReportError(core::ErrorCode code, const std::string& message) {

@@ -2,11 +2,139 @@
 #include "AudioEngine.h"
 
 #include <android/log.h>
+#include <atomic>
+#include <memory>
 #include <string>
 
 #define LOG_TAG "AudioEngineJNI"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
+
+namespace {
+
+JavaVM* g_java_vm = nullptr;
+using sezo::AudioEngine;
+using sezo::jni::JNIHelper;
+
+struct JniExtractionCallbackContext {
+  JavaVM* jvm = nullptr;
+  jobject engine_object = nullptr;
+  jmethodID progress_method = nullptr;
+  jmethodID completion_method = nullptr;
+};
+
+JNIEnv* GetEnvForCallback(JavaVM* jvm, bool* did_attach) {
+  if (did_attach) {
+    *did_attach = false;
+  }
+  if (!jvm) {
+    return nullptr;
+  }
+
+  JNIEnv* env = nullptr;
+  if (jvm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) == JNI_OK) {
+    return env;
+  }
+
+  if (jvm->AttachCurrentThread(&env, nullptr) == JNI_OK) {
+    if (did_attach) {
+      *did_attach = true;
+    }
+    return env;
+  }
+  return nullptr;
+}
+
+void CallProgressCallback(
+    const std::shared_ptr<JniExtractionCallbackContext>& context,
+    int64_t job_id,
+    float progress) {
+  if (!context || !context->jvm || !context->engine_object || !context->progress_method) {
+    return;
+  }
+
+  bool did_attach = false;
+  JNIEnv* env = GetEnvForCallback(context->jvm, &did_attach);
+  if (!env) {
+    return;
+  }
+
+  env->CallVoidMethod(context->engine_object, context->progress_method,
+                      static_cast<jlong>(job_id), progress);
+  if (env->ExceptionCheck()) {
+    env->ExceptionClear();
+  }
+
+  if (did_attach) {
+    context->jvm->DetachCurrentThread();
+  }
+}
+
+jobject CreateExtractionResultMap(JNIEnv* env, const AudioEngine::ExtractionResult& result) {
+  jclass hashMapClass = env->FindClass("java/util/HashMap");
+  jmethodID hashMapInit = env->GetMethodID(hashMapClass, "<init>", "()V");
+  jmethodID hashMapPut = env->GetMethodID(hashMapClass, "put",
+      "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
+
+  jobject resultMap = env->NewObject(hashMapClass, hashMapInit);
+
+  jclass booleanClass = env->FindClass("java/lang/Boolean");
+  jmethodID booleanInit = env->GetMethodID(booleanClass, "<init>", "(Z)V");
+  jobject successObj = env->NewObject(booleanClass, booleanInit,
+                                      result.success ? JNI_TRUE : JNI_FALSE);
+  env->CallObjectMethod(resultMap, hashMapPut, env->NewStringUTF("success"), successObj);
+
+  env->CallObjectMethod(resultMap, hashMapPut, env->NewStringUTF("trackId"),
+                        JNIHelper::StringToJString(env, result.track_id));
+
+  env->CallObjectMethod(resultMap, hashMapPut, env->NewStringUTF("outputPath"),
+                        JNIHelper::StringToJString(env, result.output_path));
+
+  jclass longClass = env->FindClass("java/lang/Long");
+  jmethodID longInit = env->GetMethodID(longClass, "<init>", "(J)V");
+  jobject durationObj = env->NewObject(longClass, longInit, result.duration_samples);
+  env->CallObjectMethod(resultMap, hashMapPut,
+                        env->NewStringUTF("durationSamples"), durationObj);
+
+  jobject fileSizeObj = env->NewObject(longClass, longInit, result.file_size);
+  env->CallObjectMethod(resultMap, hashMapPut, env->NewStringUTF("fileSize"), fileSizeObj);
+
+  env->CallObjectMethod(resultMap, hashMapPut, env->NewStringUTF("errorMessage"),
+                        JNIHelper::StringToJString(env, result.error_message));
+
+  return resultMap;
+}
+
+void CallCompletionCallback(
+    const std::shared_ptr<JniExtractionCallbackContext>& context,
+    int64_t job_id,
+    const AudioEngine::ExtractionResult& result) {
+  if (!context || !context->jvm || !context->engine_object || !context->completion_method) {
+    return;
+  }
+
+  bool did_attach = false;
+  JNIEnv* env = GetEnvForCallback(context->jvm, &did_attach);
+  if (!env) {
+    return;
+  }
+
+  jobject resultMap = CreateExtractionResultMap(env, result);
+  env->CallVoidMethod(context->engine_object, context->completion_method,
+                      static_cast<jlong>(job_id), resultMap);
+  if (env->ExceptionCheck()) {
+    env->ExceptionClear();
+  }
+
+  env->DeleteLocalRef(resultMap);
+  env->DeleteGlobalRef(context->engine_object);
+
+  if (did_attach) {
+    context->jvm->DetachCurrentThread();
+  }
+}
+
+}  // namespace
 
 namespace sezo {
 namespace jni {
@@ -38,6 +166,11 @@ using namespace sezo;
 using namespace sezo::jni;
 
 extern "C" {
+
+JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved [[maybe_unused]]) {
+  g_java_vm = vm;
+  return JNI_VERSION_1_6;
+}
 
 JNIEXPORT jlong JNICALL
 Java_com_sezo_audioengine_AudioEngine_nativeCreate(JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]]) {
@@ -367,12 +500,12 @@ Java_com_sezo_audioengine_AudioEngine_nativeExtractTrack(
   // Setup progress callback
   jclass engine_class = env->GetObjectClass(thiz);
   jmethodID progress_method = env->GetMethodID(
-      engine_class, "onNativeExtractionProgress", "(F)V");
+      engine_class, "onNativeExtractionProgress", "(JF)V");
 
   AudioEngine::ExtractionProgressCallback progress_callback = nullptr;
   if (progress_method) {
     progress_callback = [env, thiz, progress_method](float progress) {
-      env->CallVoidMethod(thiz, progress_method, progress);
+      env->CallVoidMethod(thiz, progress_method, static_cast<jlong>(0), progress);
     };
   } else {
     if (env->ExceptionCheck()) {
@@ -385,43 +518,7 @@ Java_com_sezo_audioengine_AudioEngine_nativeExtractTrack(
   auto result = engine->ExtractTrack(
       track_id_str, output_path_str, options, progress_callback);
 
-  // Create Java result object (HashMap)
-  jclass hashMapClass = env->FindClass("java/util/HashMap");
-  jmethodID hashMapInit = env->GetMethodID(hashMapClass, "<init>", "()V");
-  jmethodID hashMapPut = env->GetMethodID(hashMapClass, "put",
-      "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
-
-  jobject resultMap = env->NewObject(hashMapClass, hashMapInit);
-
-  // Add success
-  jclass booleanClass = env->FindClass("java/lang/Boolean");
-  jmethodID booleanInit = env->GetMethodID(booleanClass, "<init>", "(Z)V");
-  jobject successObj = env->NewObject(booleanClass, booleanInit, result.success ? JNI_TRUE : JNI_FALSE);
-  env->CallObjectMethod(resultMap, hashMapPut, env->NewStringUTF("success"), successObj);
-
-  // Add track_id
-  env->CallObjectMethod(resultMap, hashMapPut, env->NewStringUTF("trackId"),
-      JNIHelper::StringToJString(env, result.track_id));
-
-  // Add output_path
-  env->CallObjectMethod(resultMap, hashMapPut, env->NewStringUTF("outputPath"),
-      JNIHelper::StringToJString(env, result.output_path));
-
-  // Add duration_samples
-  jclass longClass = env->FindClass("java/lang/Long");
-  jmethodID longInit = env->GetMethodID(longClass, "<init>", "(J)V");
-  jobject durationObj = env->NewObject(longClass, longInit, result.duration_samples);
-  env->CallObjectMethod(resultMap, hashMapPut, env->NewStringUTF("durationSamples"), durationObj);
-
-  // Add file_size
-  jobject fileSizeObj = env->NewObject(longClass, longInit, result.file_size);
-  env->CallObjectMethod(resultMap, hashMapPut, env->NewStringUTF("fileSize"), fileSizeObj);
-
-  // Add error_message
-  env->CallObjectMethod(resultMap, hashMapPut, env->NewStringUTF("errorMessage"),
-      JNIHelper::StringToJString(env, result.error_message));
-
-  return resultMap;
+  return CreateExtractionResultMap(env, result);
 }
 
 JNIEXPORT jobject JNICALL
@@ -448,12 +545,12 @@ Java_com_sezo_audioengine_AudioEngine_nativeExtractAllTracks(
   // Setup progress callback
   jclass engine_class = env->GetObjectClass(thiz);
   jmethodID progress_method = env->GetMethodID(
-      engine_class, "onNativeExtractionProgress", "(F)V");
+      engine_class, "onNativeExtractionProgress", "(JF)V");
 
   AudioEngine::ExtractionProgressCallback progress_callback = nullptr;
   if (progress_method) {
     progress_callback = [env, thiz, progress_method](float progress) {
-      env->CallVoidMethod(thiz, progress_method, progress);
+      env->CallVoidMethod(thiz, progress_method, static_cast<jlong>(0), progress);
     };
   } else {
     if (env->ExceptionCheck()) {
@@ -466,39 +563,152 @@ Java_com_sezo_audioengine_AudioEngine_nativeExtractAllTracks(
   auto result = engine->ExtractAllTracks(
       output_path_str, options, progress_callback);
 
-  // Create Java result object (HashMap)
-  jclass hashMapClass = env->FindClass("java/util/HashMap");
-  jmethodID hashMapInit = env->GetMethodID(hashMapClass, "<init>", "()V");
-  jmethodID hashMapPut = env->GetMethodID(hashMapClass, "put",
-      "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
+  return CreateExtractionResultMap(env, result);
+}
 
-  jobject resultMap = env->NewObject(hashMapClass, hashMapInit);
+JNIEXPORT jlong JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeStartExtractTrack(
+    JNIEnv* env, jobject thiz [[maybe_unused]], jlong handle, jstring track_id,
+    jstring output_path, jstring format, jint bitrate, jint bits_per_sample,
+    jboolean include_effects) {
 
-  // Add success
-  jclass booleanClass = env->FindClass("java/lang/Boolean");
-  jmethodID booleanInit = env->GetMethodID(booleanClass, "<init>", "(Z)V");
-  jobject successObj = env->NewObject(booleanClass, booleanInit, result.success ? JNI_TRUE : JNI_FALSE);
-  env->CallObjectMethod(resultMap, hashMapPut, env->NewStringUTF("success"), successObj);
+  auto* engine = reinterpret_cast<AudioEngine*>(handle);
+  if (!engine || !g_java_vm) {
+    return 0;
+  }
 
-  // Add output_path
-  env->CallObjectMethod(resultMap, hashMapPut, env->NewStringUTF("outputPath"),
-      JNIHelper::StringToJString(env, result.output_path));
+  std::string track_id_str = JNIHelper::JStringToString(env, track_id);
+  std::string output_path_str = JNIHelper::JStringToString(env, output_path);
+  std::string format_str = JNIHelper::JStringToString(env, format);
 
-  // Add duration_samples
-  jclass longClass = env->FindClass("java/lang/Long");
-  jmethodID longInit = env->GetMethodID(longClass, "<init>", "(J)V");
-  jobject durationObj = env->NewObject(longClass, longInit, result.duration_samples);
-  env->CallObjectMethod(resultMap, hashMapPut, env->NewStringUTF("durationSamples"), durationObj);
+  AudioEngine::ExtractionOptions options;
+  options.format = format_str;
+  options.bitrate = static_cast<int32_t>(bitrate);
+  options.bits_per_sample = static_cast<int32_t>(bits_per_sample);
+  options.include_effects = (include_effects == JNI_TRUE);
 
-  // Add file_size
-  jobject fileSizeObj = env->NewObject(longClass, longInit, result.file_size);
-  env->CallObjectMethod(resultMap, hashMapPut, env->NewStringUTF("fileSize"), fileSizeObj);
+  jclass engine_class = env->GetObjectClass(thiz);
+  jmethodID progress_method = env->GetMethodID(
+      engine_class, "onNativeExtractionProgress", "(JF)V");
+  jmethodID completion_method = env->GetMethodID(
+      engine_class, "onNativeExtractionComplete", "(JLjava/util/Map;)V");
 
-  // Add error_message
-  env->CallObjectMethod(resultMap, hashMapPut, env->NewStringUTF("errorMessage"),
-      JNIHelper::StringToJString(env, result.error_message));
+  if (!progress_method && env->ExceptionCheck()) {
+    env->ExceptionClear();
+  }
 
-  return resultMap;
+  if (!completion_method) {
+    if (env->ExceptionCheck()) {
+      env->ExceptionClear();
+    }
+    LOGE("Failed to find onNativeExtractionComplete");
+    return 0;
+  }
+
+  auto context = std::make_shared<JniExtractionCallbackContext>();
+  context->jvm = g_java_vm;
+  context->engine_object = env->NewGlobalRef(thiz);
+  context->progress_method = progress_method;
+  context->completion_method = completion_method;
+
+  auto job_id_holder = std::make_shared<std::atomic<int64_t>>(0);
+
+  auto progress_callback = [context, job_id_holder](float progress) {
+    CallProgressCallback(context, job_id_holder->load(std::memory_order_acquire), progress);
+  };
+
+  auto completion_callback =
+      [context, job_id_holder](int64_t job_id, const AudioEngine::ExtractionResult& result) {
+        job_id_holder->store(job_id, std::memory_order_release);
+        CallCompletionCallback(context, job_id, result);
+      };
+
+  int64_t job_id = engine->StartExtractTrack(
+      track_id_str, output_path_str, options, progress_callback, completion_callback);
+  job_id_holder->store(job_id, std::memory_order_release);
+
+  if (job_id == 0) {
+    env->DeleteGlobalRef(context->engine_object);
+  }
+
+  return job_id;
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeStartExtractAllTracks(
+    JNIEnv* env, jobject thiz [[maybe_unused]], jlong handle, jstring output_path,
+    jstring format, jint bitrate, jint bits_per_sample, jboolean include_effects) {
+
+  auto* engine = reinterpret_cast<AudioEngine*>(handle);
+  if (!engine || !g_java_vm) {
+    return 0;
+  }
+
+  std::string output_path_str = JNIHelper::JStringToString(env, output_path);
+  std::string format_str = JNIHelper::JStringToString(env, format);
+
+  AudioEngine::ExtractionOptions options;
+  options.format = format_str;
+  options.bitrate = static_cast<int32_t>(bitrate);
+  options.bits_per_sample = static_cast<int32_t>(bits_per_sample);
+  options.include_effects = (include_effects == JNI_TRUE);
+
+  jclass engine_class = env->GetObjectClass(thiz);
+  jmethodID progress_method = env->GetMethodID(
+      engine_class, "onNativeExtractionProgress", "(JF)V");
+  jmethodID completion_method = env->GetMethodID(
+      engine_class, "onNativeExtractionComplete", "(JLjava/util/Map;)V");
+
+  if (!progress_method && env->ExceptionCheck()) {
+    env->ExceptionClear();
+  }
+
+  if (!completion_method) {
+    if (env->ExceptionCheck()) {
+      env->ExceptionClear();
+    }
+    LOGE("Failed to find onNativeExtractionComplete");
+    return 0;
+  }
+
+  auto context = std::make_shared<JniExtractionCallbackContext>();
+  context->jvm = g_java_vm;
+  context->engine_object = env->NewGlobalRef(thiz);
+  context->progress_method = progress_method;
+  context->completion_method = completion_method;
+
+  auto job_id_holder = std::make_shared<std::atomic<int64_t>>(0);
+
+  auto progress_callback = [context, job_id_holder](float progress) {
+    CallProgressCallback(context, job_id_holder->load(std::memory_order_acquire), progress);
+  };
+
+  auto completion_callback =
+      [context, job_id_holder](int64_t job_id, const AudioEngine::ExtractionResult& result) {
+        job_id_holder->store(job_id, std::memory_order_release);
+        CallCompletionCallback(context, job_id, result);
+      };
+
+  int64_t job_id = engine->StartExtractAllTracks(
+      output_path_str, options, progress_callback, completion_callback);
+  job_id_holder->store(job_id, std::memory_order_release);
+
+  if (job_id == 0) {
+    env->DeleteGlobalRef(context->engine_object);
+  }
+
+  return job_id;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeCancelExtraction(
+    JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]],
+    jlong handle, jlong job_id) {
+  auto* engine = reinterpret_cast<AudioEngine*>(handle);
+  if (!engine) {
+    return JNI_FALSE;
+  }
+  return engine->CancelExtraction(job_id) ? JNI_TRUE : JNI_FALSE;
 }
 
 }  // extern "C"

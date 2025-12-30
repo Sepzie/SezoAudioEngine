@@ -92,6 +92,7 @@ export interface AudioEngine {
     setRecordingVolume(volume: number): void;
     extractTrack(trackId: string, config?: ExtractionConfig): Promise<ExtractionResult>;
     extractAllTracks(config?: ExtractionConfig): Promise<ExtractionResult[]>;
+    cancelExtraction(jobId?: number): boolean;
     getInputLevel(): number;
     getOutputLevel(): number;
     getTrackLevel(trackId: string): number;

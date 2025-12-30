@@ -119,6 +119,7 @@ export interface AudioEngine {
 
   extractTrack(trackId: string, config?: ExtractionConfig): Promise<ExtractionResult>;
   extractAllTracks(config?: ExtractionConfig): Promise<ExtractionResult[]>;
+  cancelExtraction(jobId?: number): boolean;
 
   getInputLevel(): number;
   getOutputLevel(): number;

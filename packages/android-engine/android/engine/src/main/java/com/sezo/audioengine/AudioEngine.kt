@@ -4,7 +4,8 @@ import androidx.annotation.Keep
 
 class AudioEngine {
   private var nativeHandle: Long = 0
-  private var extractionProgressListener: ((Float) -> Unit)? = null
+  private var extractionProgressListener: ((Long, Float) -> Unit)? = null
+  private var extractionCompletionListener: ((Long, ExtractionResult) -> Unit)? = null
 
   init {
     System.loadLibrary("sezo_audio_engine")
@@ -167,6 +168,19 @@ class AudioEngine {
     )
   }
 
+  fun startExtractTrack(
+    trackId: String,
+    outputPath: String,
+    format: String = "wav",
+    bitrate: Int = 128000,
+    bitsPerSample: Int = 16,
+    includeEffects: Boolean = true
+  ): Long {
+    return nativeStartExtractTrack(
+      nativeHandle, trackId, outputPath, format, bitrate, bitsPerSample, includeEffects
+    )
+  }
+
   fun extractAllTracks(
     outputPath: String,
     format: String = "wav",
@@ -195,13 +209,61 @@ class AudioEngine {
     )
   }
 
-  fun setExtractionProgressListener(listener: ((Float) -> Unit)?) {
+  fun startExtractAllTracks(
+    outputPath: String,
+    format: String = "wav",
+    bitrate: Int = 128000,
+    bitsPerSample: Int = 16,
+    includeEffects: Boolean = true
+  ): Long {
+    return nativeStartExtractAllTracks(
+      nativeHandle, outputPath, format, bitrate, bitsPerSample, includeEffects
+    )
+  }
+
+  fun cancelExtraction(jobId: Long): Boolean {
+    return nativeCancelExtraction(nativeHandle, jobId)
+  }
+
+  fun setExtractionProgressListener(listener: ((Long, Float) -> Unit)?) {
     extractionProgressListener = listener
   }
 
+  fun setExtractionCompletionListener(listener: ((Long, ExtractionResult) -> Unit)?) {
+    extractionCompletionListener = listener
+  }
+
   @Keep
-  private fun onNativeExtractionProgress(progress: Float) {
-    extractionProgressListener?.invoke(progress)
+  private fun onNativeExtractionProgress(jobId: Long, progress: Float) {
+    extractionProgressListener?.invoke(jobId, progress)
+  }
+
+  @Keep
+  private fun onNativeExtractionComplete(jobId: Long, result: Map<String, Any?>) {
+    val success = result["success"] as? Boolean ?: false
+    val trackId = result["trackId"] as? String
+    val outputPath = result["outputPath"] as? String ?: ""
+    val durationSamples = when (val value = result["durationSamples"]) {
+      is Number -> value.toLong()
+      else -> 0L
+    }
+    val fileSize = when (val value = result["fileSize"]) {
+      is Number -> value.toLong()
+      else -> 0L
+    }
+    val errorMessage = result["errorMessage"] as? String
+
+    extractionCompletionListener?.invoke(
+      jobId,
+      ExtractionResult(
+        success = success,
+        trackId = trackId,
+        outputPath = outputPath,
+        durationSamples = durationSamples,
+        fileSize = fileSize,
+        errorMessage = errorMessage
+      )
+    )
   }
 
   // Native method declarations
@@ -249,4 +311,16 @@ class AudioEngine {
     handle: Long, outputPath: String,
     format: String, bitrate: Int, bitsPerSample: Int, includeEffects: Boolean
   ): Any?
+
+  private external fun nativeStartExtractTrack(
+    handle: Long, trackId: String, outputPath: String,
+    format: String, bitrate: Int, bitsPerSample: Int, includeEffects: Boolean
+  ): Long
+
+  private external fun nativeStartExtractAllTracks(
+    handle: Long, outputPath: String,
+    format: String, bitrate: Int, bitsPerSample: Int, includeEffects: Boolean
+  ): Long
+
+  private external fun nativeCancelExtraction(handle: Long, jobId: Long): Boolean
 }

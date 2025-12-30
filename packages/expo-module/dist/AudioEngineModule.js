@@ -35,6 +35,7 @@ export const AudioEngineModule = {
     setRecordingVolume: (volume) => NativeAudioEngineModule.setRecordingVolume(volume),
     extractTrack: (trackId, config) => NativeAudioEngineModule.extractTrack(trackId, config),
     extractAllTracks: (config) => NativeAudioEngineModule.extractAllTracks(config),
+    cancelExtraction: (jobId) => NativeAudioEngineModule.cancelExtraction(jobId),
     getInputLevel: () => NativeAudioEngineModule.getInputLevel(),
     getOutputLevel: () => NativeAudioEngineModule.getOutputLevel(),
     getTrackLevel: (trackId) => NativeAudioEngineModule.getTrackLevel(trackId),

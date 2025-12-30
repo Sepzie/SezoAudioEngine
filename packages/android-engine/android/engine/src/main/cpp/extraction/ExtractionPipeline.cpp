@@ -8,6 +8,7 @@
 
 #include <android/log.h>
 #include <algorithm>
+#include <cstdio>
 #include <cctype>
 #include <cmath>
 #include <cstring>
@@ -247,7 +248,8 @@ ExtractionResult ExtractionPipeline::ExtractTrack(
     std::shared_ptr<playback::Track> track,
     const std::string& output_path,
     const ExtractionConfig& config,
-    ProgressCallback progress_callback) {
+    ProgressCallback progress_callback,
+    std::atomic<bool>* cancel_flag) {
 
   ExtractionResult result;
   result.track_id = track->GetId();
@@ -307,6 +309,11 @@ ExtractionResult ExtractionPipeline::ExtractTrack(
 
   bool success = true;
   while (total_frames <= 0 || input_frames_processed < total_frames) {
+    if (cancel_flag && cancel_flag->load(std::memory_order_acquire)) {
+      result.error_message = "Extraction cancelled";
+      success = false;
+      break;
+    }
     // Calculate frames to render this iteration
     size_t frames_to_render = kRenderBufferFrames;
     if (total_frames > 0) {
@@ -345,7 +352,8 @@ ExtractionResult ExtractionPipeline::ExtractTrack(
         input_frames_read > 0 ? input_frames_read : frames_rendered);
 
     // Report progress
-    if (progress_callback && total_frames > 0) {
+    if (progress_callback && total_frames > 0 &&
+        !(cancel_flag && cancel_flag->load(std::memory_order_acquire))) {
       float progress = static_cast<float>(input_frames_processed) /
                        static_cast<float>(total_frames);
       progress = std::min(1.0f, std::max(0.0f, progress));
@@ -379,6 +387,8 @@ ExtractionResult ExtractionPipeline::ExtractTrack(
          track->GetId().c_str(),
          static_cast<long long>(result.duration_samples),
          static_cast<long long>(result.file_size));
+  } else if (cancel_flag && cancel_flag->load(std::memory_order_acquire)) {
+    std::remove(output_path.c_str());
   }
 
   return result;
@@ -388,7 +398,8 @@ ExtractionResult ExtractionPipeline::ExtractMixedTracks(
     const std::vector<std::shared_ptr<playback::Track>>& tracks,
     const std::string& output_path,
     const ExtractionConfig& config,
-    ProgressCallback progress_callback) {
+    ProgressCallback progress_callback,
+    std::atomic<bool>* cancel_flag) {
 
   ExtractionResult result;
   result.output_path = output_path;
@@ -479,6 +490,11 @@ ExtractionResult ExtractionPipeline::ExtractMixedTracks(
 
   bool success = true;
   while (true) {
+    if (cancel_flag && cancel_flag->load(std::memory_order_acquire)) {
+      result.error_message = "Extraction cancelled";
+      success = false;
+      break;
+    }
     // Calculate frames to render this iteration
     double max_remaining_output = 0.0;
     for (const auto& state : states) {
@@ -584,7 +600,8 @@ ExtractionResult ExtractionPipeline::ExtractMixedTracks(
     }
 
     // Report progress
-    if (progress_callback && total_frames > 0) {
+    if (progress_callback && total_frames > 0 &&
+        !(cancel_flag && cancel_flag->load(std::memory_order_acquire))) {
       float progress = static_cast<float>(max_input_processed) /
                        static_cast<float>(total_frames);
       progress = std::min(1.0f, std::max(0.0f, progress));
@@ -622,6 +639,8 @@ ExtractionResult ExtractionPipeline::ExtractMixedTracks(
          tracks.size(),
          static_cast<long long>(result.duration_samples),
          static_cast<long long>(result.file_size));
+  } else if (cancel_flag && cancel_flag->load(std::memory_order_acquire)) {
+    std::remove(output_path.c_str());
   }
 
   return result;

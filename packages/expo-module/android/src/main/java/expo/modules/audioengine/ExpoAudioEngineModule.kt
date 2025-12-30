@@ -2,12 +2,26 @@ package expo.modules.audioengine
 
 import android.util.Log
 import com.sezo.audioengine.AudioEngine
+import expo.modules.kotlin.Promise
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+import java.util.Collections
 
 class ExpoAudioEngineModule : Module() {
   private var audioEngine: AudioEngine? = null
   private val loadedTrackIds = mutableSetOf<String>()
+  private val pendingExtractions = Collections.synchronizedMap(mutableMapOf<Long, PendingExtraction>())
+  private val progressLogState = Collections.synchronizedMap(mutableMapOf<Long, Float>())
+  private var lastExtractionJobId: Long? = null
+
+  private data class PendingExtraction(
+    val promise: Promise,
+    val trackId: String?,
+    val outputPath: String,
+    val format: String,
+    val bitrate: Int,
+    val operation: String
+  )
 
   override fun definition() = ModuleDefinition {
     Name("ExpoAudioEngineModule")
@@ -30,8 +44,17 @@ class ExpoAudioEngineModule : Module() {
 
     AsyncFunction("release") {
       Log.d(TAG, "Release called")
-      audioEngine?.release()
-      audioEngine?.destroy()
+      audioEngine?.let { engine ->
+        synchronized(pendingExtractions) {
+          pendingExtractions.keys.forEach { engine.cancelExtraction(it) }
+          pendingExtractions.clear()
+        }
+        progressLogState.clear()
+        engine.setExtractionProgressListener(null)
+        engine.setExtractionCompletionListener(null)
+        engine.release()
+        engine.destroy()
+      }
       audioEngine = null
       loadedTrackIds.clear()
       Log.d(TAG, "Audio engine released")
@@ -199,7 +222,7 @@ class ExpoAudioEngineModule : Module() {
     Function("isRecording") { false }
     Function("setRecordingVolume") { _volume: Double -> }
 
-    AsyncFunction("extractTrack") { trackId: String, config: Map<String, Any?>? ->
+    AsyncFunction("extractTrack") { trackId: String, config: Map<String, Any?>?, promise: Promise ->
       val engine = audioEngine ?: throw Exception("Engine not initialized")
 
       val format = (config?.get("format") as? String) ?: "wav"
@@ -213,85 +236,33 @@ class ExpoAudioEngineModule : Module() {
 
       Log.d(TAG, "Extracting track: $trackId to $outputPath (format=$format, bitrate=$bitrate)")
 
-      var lastProgressLog = -1.0f
-      engine.setExtractionProgressListener { progress ->
-        val clamped = progress.coerceIn(0.0f, 1.0f)
-        if (clamped >= 1.0f || clamped - lastProgressLog >= 0.05f) {
-          lastProgressLog = clamped
-          Log.d(TAG, "Extraction progress track=$trackId progress=$clamped")
-        }
-        sendEvent(
-          "extractionProgress",
-          mapOf(
-            "progress" to clamped.toDouble(),
-            "trackId" to trackId,
-            "outputPath" to outputPath,
-            "format" to format,
-            "operation" to "track"
-          )
-        )
-      }
-
-      val result = try {
-        engine.extractTrack(
-          trackId = trackId,
-          outputPath = outputPath,
-          format = format,
-          bitrate = bitrate,
-          bitsPerSample = bitsPerSample,
-          includeEffects = includeEffects
-        )
-      } finally {
-        engine.setExtractionProgressListener(null)
-      }
-
-      if (!result.success) {
-        Log.e(TAG, "Extraction failed for track=$trackId: ${result.errorMessage}")
-        sendEvent(
-          "extractionComplete",
-          mapOf(
-            "success" to false,
-            "trackId" to trackId,
-            "outputPath" to outputPath,
-            "format" to format,
-            "bitrate" to bitrate,
-            "errorMessage" to (result.errorMessage ?: "Unknown error"),
-            "operation" to "track"
-          )
-        )
-        Log.e(TAG, "Extraction failed: ${result.errorMessage}")
-        throw Exception("Extraction failed: ${result.errorMessage}")
-      }
-
-      Log.d(TAG, "Extraction successful: ${result.fileSize} bytes, ${result.durationSamples} samples")
-      Log.d(TAG, "Extraction complete event (track)")
-
-      sendEvent(
-        "extractionComplete",
-        mapOf(
-          "success" to true,
-          "trackId" to trackId,
-          "uri" to "file://${result.outputPath}",
-          "outputPath" to result.outputPath,
-          "duration" to (result.durationSamples / 44.1).toInt(),
-          "format" to format,
-          "fileSize" to result.fileSize,
-          "bitrate" to bitrate,
-          "operation" to "track"
-        )
+      val jobId = engine.startExtractTrack(
+        trackId = trackId,
+        outputPath = outputPath,
+        format = format,
+        bitrate = bitrate,
+        bitsPerSample = bitsPerSample,
+        includeEffects = includeEffects
       )
 
-      mapOf(
-        "trackId" to result.trackId,
-        "uri" to "file://${result.outputPath}",
-        "duration" to (result.durationSamples / 44.1).toInt(), // Convert to milliseconds
-        "format" to format,
-        "fileSize" to result.fileSize,
-        "bitrate" to bitrate
+      if (jobId <= 0L) {
+        promise.reject("EXTRACTION_FAILED", "Failed to start extraction", null)
+        return@AsyncFunction
+      }
+
+      pendingExtractions[jobId] = PendingExtraction(
+        promise = promise,
+        trackId = trackId,
+        outputPath = outputPath,
+        format = format,
+        bitrate = bitrate,
+        operation = "track"
       )
+      lastExtractionJobId = jobId
+      attachExtractionListeners(engine)
     }
 
-    AsyncFunction("extractAllTracks") { config: Map<String, Any?>? ->
+    AsyncFunction("extractAllTracks") { config: Map<String, Any?>?, promise: Promise ->
       val engine = audioEngine ?: throw Exception("Engine not initialized")
 
       val format = (config?.get("format") as? String) ?: "wav"
@@ -305,79 +276,39 @@ class ExpoAudioEngineModule : Module() {
 
       Log.d(TAG, "Extracting all tracks mixed to $outputPath (format=$format, bitrate=$bitrate)")
 
-      var lastProgressLog = -1.0f
-      engine.setExtractionProgressListener { progress ->
-        val clamped = progress.coerceIn(0.0f, 1.0f)
-        if (clamped >= 1.0f || clamped - lastProgressLog >= 0.05f) {
-          lastProgressLog = clamped
-          Log.d(TAG, "Extraction progress mix progress=$clamped")
-        }
-        sendEvent(
-          "extractionProgress",
-          mapOf(
-            "progress" to clamped.toDouble(),
-            "outputPath" to outputPath,
-            "format" to format,
-            "operation" to "mix"
-          )
-        )
-      }
-
-      val result = try {
-        engine.extractAllTracks(
-          outputPath = outputPath,
-          format = format,
-          bitrate = bitrate,
-          bitsPerSample = bitsPerSample,
-          includeEffects = includeEffects
-        )
-      } finally {
-        engine.setExtractionProgressListener(null)
-      }
-
-      if (!result.success) {
-        Log.e(TAG, "Extraction failed for mix: ${result.errorMessage}")
-        sendEvent(
-          "extractionComplete",
-          mapOf(
-            "success" to false,
-            "outputPath" to outputPath,
-            "format" to format,
-            "bitrate" to bitrate,
-            "errorMessage" to (result.errorMessage ?: "Unknown error"),
-            "operation" to "mix"
-          )
-        )
-        Log.e(TAG, "Extraction failed: ${result.errorMessage}")
-        throw Exception("Extraction failed: ${result.errorMessage}")
-      }
-
-      Log.d(TAG, "Extraction successful: ${result.fileSize} bytes, ${result.durationSamples} samples")
-      Log.d(TAG, "Extraction complete event (mix)")
-
-      sendEvent(
-        "extractionComplete",
-        mapOf(
-          "success" to true,
-          "uri" to "file://${result.outputPath}",
-          "outputPath" to result.outputPath,
-          "duration" to (result.durationSamples / 44.1).toInt(),
-          "format" to format,
-          "fileSize" to result.fileSize,
-          "bitrate" to bitrate,
-          "operation" to "mix"
-        )
+      val jobId = engine.startExtractAllTracks(
+        outputPath = outputPath,
+        format = format,
+        bitrate = bitrate,
+        bitsPerSample = bitsPerSample,
+        includeEffects = includeEffects
       )
 
-      listOf(
-        mapOf(
-          "uri" to "file://${result.outputPath}",
-          "duration" to (result.durationSamples / 44.1).toInt(), // Convert to milliseconds
-          "format" to format,
-          "fileSize" to result.fileSize,
-          "bitrate" to bitrate
-        )
+      if (jobId <= 0L) {
+        promise.reject("EXTRACTION_FAILED", "Failed to start extraction", null)
+        return@AsyncFunction
+      }
+
+      pendingExtractions[jobId] = PendingExtraction(
+        promise = promise,
+        trackId = null,
+        outputPath = outputPath,
+        format = format,
+        bitrate = bitrate,
+        operation = "mix"
       )
+      lastExtractionJobId = jobId
+      attachExtractionListeners(engine)
+    }
+
+    Function("cancelExtraction") { jobId: Double? ->
+      val engine = audioEngine ?: throw Exception("Engine not initialized")
+      val resolvedJobId = jobId?.toLong() ?: lastExtractionJobId
+      if (resolvedJobId == null) {
+        false
+      } else {
+        engine.cancelExtraction(resolvedJobId)
+      }
     }
 
     Function("getInputLevel") { 0.0 }
@@ -400,6 +331,111 @@ class ExpoAudioEngineModule : Module() {
       "extractionComplete",
       "error"
     )
+  }
+
+  private fun attachExtractionListeners(engine: AudioEngine) {
+    if (pendingExtractions.isEmpty()) {
+      return
+    }
+
+    engine.setExtractionProgressListener { jobId, progress ->
+      val pending = pendingExtractions[jobId] ?: return@setExtractionProgressListener
+      val clamped = progress.coerceIn(0.0f, 1.0f)
+      val lastLogged = progressLogState[jobId] ?: -1.0f
+      if (clamped >= 1.0f || clamped - lastLogged >= 0.05f) {
+        progressLogState[jobId] = clamped
+        Log.d(TAG, "Extraction progress job=$jobId op=${pending.operation} progress=$clamped")
+      }
+      sendEvent(
+        "extractionProgress",
+        mapOf(
+          "jobId" to jobId,
+          "progress" to clamped.toDouble(),
+          "trackId" to pending.trackId,
+          "outputPath" to pending.outputPath,
+          "format" to pending.format,
+          "operation" to pending.operation
+        )
+      )
+    }
+
+    engine.setExtractionCompletionListener { jobId, result ->
+      val pending = pendingExtractions.remove(jobId)
+      progressLogState.remove(jobId)
+      if (pending == null) {
+        return@setExtractionCompletionListener
+      }
+
+      if (!result.success) {
+        Log.e(TAG, "Extraction failed for job=$jobId: ${result.errorMessage}")
+        sendEvent(
+          "extractionComplete",
+          mapOf(
+            "success" to false,
+            "jobId" to jobId,
+            "trackId" to pending.trackId,
+            "outputPath" to pending.outputPath,
+            "format" to pending.format,
+            "bitrate" to pending.bitrate,
+            "errorMessage" to (result.errorMessage ?: "Unknown error"),
+            "operation" to pending.operation
+          )
+        )
+        val code = if (result.errorMessage == "Extraction cancelled") {
+          "EXTRACTION_CANCELLED"
+        } else {
+          "EXTRACTION_FAILED"
+        }
+        pending.promise.reject(code, result.errorMessage, null)
+      } else {
+        Log.d(TAG, "Extraction successful: ${result.fileSize} bytes, ${result.durationSamples} samples")
+        Log.d(TAG, "Extraction complete event (${pending.operation})")
+
+        sendEvent(
+          "extractionComplete",
+          mapOf(
+            "success" to true,
+            "jobId" to jobId,
+            "trackId" to pending.trackId,
+            "uri" to "file://${result.outputPath}",
+            "outputPath" to result.outputPath,
+            "duration" to (result.durationSamples / 44.1).toInt(),
+            "format" to pending.format,
+            "fileSize" to result.fileSize,
+            "bitrate" to pending.bitrate,
+            "operation" to pending.operation
+          )
+        )
+
+        val response = if (pending.operation == "mix") {
+          listOf(
+            mapOf(
+              "uri" to "file://${result.outputPath}",
+              "duration" to (result.durationSamples / 44.1).toInt(),
+              "format" to pending.format,
+              "fileSize" to result.fileSize,
+              "bitrate" to pending.bitrate
+            )
+          )
+        } else {
+          mapOf(
+            "trackId" to pending.trackId,
+            "uri" to "file://${result.outputPath}",
+            "duration" to (result.durationSamples / 44.1).toInt(),
+            "format" to pending.format,
+            "fileSize" to result.fileSize,
+            "bitrate" to pending.bitrate
+          )
+        }
+
+        pending.promise.resolve(response)
+      }
+
+      if (pendingExtractions.isEmpty()) {
+        engine.setExtractionProgressListener(null)
+        engine.setExtractionCompletionListener(null)
+      }
+    }
   }
 
   private fun getCacheDir(): String {
