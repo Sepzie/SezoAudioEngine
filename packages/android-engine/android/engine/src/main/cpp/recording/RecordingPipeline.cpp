@@ -41,21 +41,29 @@ bool RecordingPipeline::StartRecording(
   }
 
   // Create encoder based on format
+  audio::EncoderConfig encoder_config;
+  encoder_config.sample_rate = config.sample_rate;
+  encoder_config.channels = config.channels;
+  encoder_config.bitrate = config.bitrate;
+  encoder_config.bits_per_sample = config.bits_per_sample;
+
   if (config.format == "aac") {
     encoder_ = std::make_unique<audio::AACEncoder>();
+    encoder_config.format = audio::EncoderFormat::kAAC;
   } else if (config.format == "mp3") {
     encoder_ = std::make_unique<audio::MP3Encoder>();
+    encoder_config.format = audio::EncoderFormat::kMP3;
   } else if (config.format == "wav") {
     encoder_ = std::make_unique<audio::WAVEncoder>();
+    encoder_config.format = audio::EncoderFormat::kWAV;
   } else {
     LOGE("Unsupported format: %s", config.format.c_str());
     return false;
   }
 
-  // Initialize encoder
-  if (!encoder_->Initialize(output_path, config.sample_rate, config.channels,
-                            config.bitrate, config.bits_per_sample)) {
-    LOGE("Failed to initialize encoder");
+  // Open encoder
+  if (!encoder_->Open(output_path, encoder_config)) {
+    LOGE("Failed to open encoder");
     return false;
   }
 
@@ -66,7 +74,7 @@ bool RecordingPipeline::StartRecording(
   // Start microphone
   if (!microphone_->Start()) {
     LOGE("Failed to start microphone");
-    encoder_->Finalize();
+    encoder_->Close();
     encoder_.reset();
     return false;
   }
@@ -204,30 +212,28 @@ RecordingResult RecordingPipeline::EncodeRecording() {
 
   LOGD("Encoding %zu samples to %s", recording_buffer_.size(), output_path_.c_str());
 
+  // Calculate frame count
+  size_t frame_count = recording_buffer_.size() / config_.channels;
+
   // Write audio data to encoder
-  if (!encoder_->Write(recording_buffer_.data(), recording_buffer_.size())) {
+  if (!encoder_->Write(recording_buffer_.data(), frame_count)) {
     result.success = false;
     result.error_message = "Failed to write audio data";
     LOGE("Failed to write audio data to encoder");
-    encoder_->Finalize();
+    encoder_->Close();
     return result;
   }
 
-  // Finalize encoding
-  if (!encoder_->Finalize()) {
+  // Close encoder
+  if (!encoder_->Close()) {
     result.success = false;
-    result.error_message = "Failed to finalize encoding";
-    LOGE("Failed to finalize encoder");
+    result.error_message = "Failed to close encoder";
+    LOGE("Failed to close encoder");
     return result;
   }
 
-  // Get file size
-  FILE* file = fopen(output_path_.c_str(), "rb");
-  if (file) {
-    fseek(file, 0, SEEK_END);
-    result.file_size = ftell(file);
-    fclose(file);
-  }
+  // Get file size from encoder
+  result.file_size = encoder_->GetFileSize();
 
   result.success = true;
   LOGD("Encoding complete: %lld bytes", (long long)result.file_size);
