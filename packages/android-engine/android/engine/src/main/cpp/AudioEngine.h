@@ -7,6 +7,7 @@
 #include "playback/MultiTrackMixer.h"
 #include "playback/OboePlayer.h"
 #include "playback/Track.h"
+#include "recording/RecordingPipeline.h"
 
 #include <atomic>
 #include <condition_variable>
@@ -86,6 +87,45 @@ class AudioEngine {
   float GetPitch() const;
   void SetSpeed(float rate);
   float GetSpeed() const;
+
+  // Phase 3: Recording
+  using RecordingCompletionCallback = std::function<void(const recording::RecordingResult&)>;
+
+  /**
+   * Start recording audio from microphone.
+   * @param output_path Path to output file
+   * @param config Recording configuration
+   * @param callback Completion callback (optional)
+   * @return true if recording started successfully
+   */
+  bool StartRecording(
+      const std::string& output_path,
+      const recording::RecordingConfig& config,
+      RecordingCompletionCallback callback = nullptr);
+
+  /**
+   * Stop recording and save to file.
+   * @return Recording result
+   */
+  recording::RecordingResult StopRecording();
+
+  /**
+   * Check if currently recording.
+   * @return true if recording
+   */
+  bool IsRecording() const;
+
+  /**
+   * Get current input level (for UI metering).
+   * @return Peak amplitude (0.0 to 1.0)
+   */
+  float GetInputLevel() const;
+
+  /**
+   * Set recording volume/gain.
+   * @param volume Volume multiplier (0.0 to 2.0)
+   */
+  void SetRecordingVolume(float volume);
 
   // Phase 6: Extraction
   struct ExtractionOptions {
@@ -183,6 +223,9 @@ class AudioEngine {
   // Playback components
   std::shared_ptr<playback::MultiTrackMixer> mixer_;
   std::shared_ptr<playback::OboePlayer> player_;
+
+  // Recording components
+  std::unique_ptr<recording::RecordingPipeline> recording_pipeline_;
 
   // Track management
   std::map<std::string, std::shared_ptr<playback::Track>> tracks_;

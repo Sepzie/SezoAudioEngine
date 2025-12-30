@@ -474,6 +474,110 @@ Java_com_sezo_audioengine_AudioEngine_nativeGetTrackSpeed(
   return 1.0f;
 }
 
+// Phase 3: Recording
+JNIEXPORT jboolean JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeStartRecording(
+    JNIEnv* env, jobject thiz [[maybe_unused]], jlong handle, jstring output_path,
+    jint sample_rate, jint channels, jstring format, jint bitrate, jint bits_per_sample) {
+
+  auto* engine = reinterpret_cast<AudioEngine*>(handle);
+  if (!engine) {
+    return JNI_FALSE;
+  }
+
+  std::string output_path_str = JNIHelper::JStringToString(env, output_path);
+  std::string format_str = JNIHelper::JStringToString(env, format);
+
+  recording::RecordingConfig config;
+  config.sample_rate = static_cast<int32_t>(sample_rate);
+  config.channels = static_cast<int32_t>(channels);
+  config.format = format_str;
+  config.bitrate = static_cast<int32_t>(bitrate);
+  config.bits_per_sample = static_cast<int32_t>(bits_per_sample);
+
+  bool success = engine->StartRecording(output_path_str, config, nullptr);
+  return success ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jobject JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeStopRecording(
+    JNIEnv* env, jobject thiz [[maybe_unused]], jlong handle) {
+
+  auto* engine = reinterpret_cast<AudioEngine*>(handle);
+  if (!engine) {
+    return nullptr;
+  }
+
+  auto result = engine->StopRecording();
+
+  // Create HashMap for result
+  jclass hashMapClass = env->FindClass("java/util/HashMap");
+  jmethodID hashMapInit = env->GetMethodID(hashMapClass, "<init>", "()V");
+  jmethodID hashMapPut = env->GetMethodID(hashMapClass, "put",
+      "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
+
+  jobject resultMap = env->NewObject(hashMapClass, hashMapInit);
+
+  // Add success
+  jclass booleanClass = env->FindClass("java/lang/Boolean");
+  jmethodID booleanInit = env->GetMethodID(booleanClass, "<init>", "(Z)V");
+  jobject successObj = env->NewObject(booleanClass, booleanInit,
+                                      result.success ? JNI_TRUE : JNI_FALSE);
+  env->CallObjectMethod(resultMap, hashMapPut, env->NewStringUTF("success"), successObj);
+
+  // Add outputPath
+  env->CallObjectMethod(resultMap, hashMapPut, env->NewStringUTF("outputPath"),
+                        JNIHelper::StringToJString(env, result.output_path));
+
+  // Add durationSamples
+  jclass longClass = env->FindClass("java/lang/Long");
+  jmethodID longInit = env->GetMethodID(longClass, "<init>", "(J)V");
+  jobject durationObj = env->NewObject(longClass, longInit, result.duration_samples);
+  env->CallObjectMethod(resultMap, hashMapPut,
+                        env->NewStringUTF("durationSamples"), durationObj);
+
+  // Add fileSize
+  jobject fileSizeObj = env->NewObject(longClass, longInit, result.file_size);
+  env->CallObjectMethod(resultMap, hashMapPut, env->NewStringUTF("fileSize"), fileSizeObj);
+
+  // Add errorMessage if present
+  if (!result.error_message.empty()) {
+    env->CallObjectMethod(resultMap, hashMapPut, env->NewStringUTF("errorMessage"),
+                          JNIHelper::StringToJString(env, result.error_message));
+  }
+
+  return resultMap;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeIsRecording(
+    JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]], jlong handle) {
+  auto* engine = reinterpret_cast<AudioEngine*>(handle);
+  if (engine) {
+    return engine->IsRecording() ? JNI_TRUE : JNI_FALSE;
+  }
+  return JNI_FALSE;
+}
+
+JNIEXPORT jfloat JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeGetInputLevel(
+    JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]], jlong handle) {
+  auto* engine = reinterpret_cast<AudioEngine*>(handle);
+  if (engine) {
+    return engine->GetInputLevel();
+  }
+  return 0.0f;
+}
+
+JNIEXPORT void JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeSetRecordingVolume(
+    JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]], jlong handle, jfloat volume) {
+  auto* engine = reinterpret_cast<AudioEngine*>(handle);
+  if (engine) {
+    engine->SetRecordingVolume(volume);
+  }
+}
+
 // Phase 6: Extraction
 JNIEXPORT jobject JNICALL
 Java_com_sezo_audioengine_AudioEngine_nativeExtractTrack(

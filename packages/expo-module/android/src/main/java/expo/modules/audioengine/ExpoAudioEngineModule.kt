@@ -208,19 +208,86 @@ class ExpoAudioEngineModule : Module() {
       audioEngine?.getTrackSpeed(trackId)?.toDouble() ?: 1.0
     }
 
-    AsyncFunction("startRecording") { _config: Map<String, Any?>? -> }
+    AsyncFunction("startRecording") { config: Map<String, Any?>? ->
+      val engine = audioEngine ?: throw Exception("Engine not initialized")
+
+      val sampleRate = (config?.get("sampleRate") as? Number)?.toInt() ?: 44100
+      val channels = (config?.get("channels") as? Number)?.toInt() ?: 1
+      val format = (config?.get("format") as? String) ?: "aac"
+      val bitrate = (config?.get("bitrate") as? Number)?.toInt() ?: 128000
+      val quality = config?.get("quality") as? String
+
+      val actualBitrate = when (quality) {
+        "low" -> 64000
+        "medium" -> 128000
+        "high" -> 192000
+        else -> bitrate
+      }
+
+      val outputDir = getCacheDir()
+      val fileName = "recording_${System.currentTimeMillis()}.$format"
+      val outputPath = "$outputDir/$fileName"
+
+      Log.d(TAG, "Starting recording: $outputPath (format=$format, bitrate=$actualBitrate)")
+
+      val success = engine.startRecording(
+        outputPath = outputPath,
+        sampleRate = sampleRate,
+        channels = channels,
+        format = format,
+        bitrate = actualBitrate,
+        bitsPerSample = 16
+      )
+
+      if (!success) {
+        throw Exception("Failed to start recording")
+      }
+
+      Log.d(TAG, "Recording started successfully")
+    }
+
     AsyncFunction("stopRecording") {
+      val engine = audioEngine ?: throw Exception("Engine not initialized")
+
+      Log.d(TAG, "Stopping recording")
+      val result = engine.stopRecording()
+
+      if (!result.success) {
+        throw Exception("Failed to stop recording: ${result.errorMessage}")
+      }
+
+      Log.d(TAG, "Recording stopped: ${result.fileSize} bytes, ${result.durationSamples} samples")
+
+      sendEvent(
+        "recordingStopped",
+        mapOf(
+          "uri" to "file://${result.outputPath}",
+          "duration" to (result.durationSamples / 44.1).toInt(),
+          "sampleRate" to 44100,
+          "channels" to 1,
+          "format" to "aac",
+          "fileSize" to result.fileSize
+        )
+      )
+
       mapOf(
-        "uri" to "",
-        "duration" to 0,
+        "uri" to "file://${result.outputPath}",
+        "duration" to (result.durationSamples / 44.1).toInt(),
         "sampleRate" to 44100,
         "channels" to 1,
         "format" to "aac",
-        "fileSize" to 0
+        "fileSize" to result.fileSize
       )
     }
-    Function("isRecording") { false }
-    Function("setRecordingVolume") { _volume: Double -> }
+
+    Function("isRecording") {
+      audioEngine?.isRecording() ?: false
+    }
+
+    Function("setRecordingVolume") { volume: Double ->
+      val engine = audioEngine ?: throw Exception("Engine not initialized")
+      engine.setRecordingVolume(volume.toFloat())
+    }
 
     AsyncFunction("extractTrack") { trackId: String, config: Map<String, Any?>?, promise: Promise ->
       val engine = audioEngine ?: throw Exception("Engine not initialized")
@@ -311,7 +378,10 @@ class ExpoAudioEngineModule : Module() {
       }
     }
 
-    Function("getInputLevel") { 0.0 }
+    Function("getInputLevel") {
+      audioEngine?.getInputLevel()?.toDouble() ?: 0.0
+    }
+
     Function("getOutputLevel") { 0.0 }
     Function("getTrackLevel") { _trackId: String -> 0.0 }
 

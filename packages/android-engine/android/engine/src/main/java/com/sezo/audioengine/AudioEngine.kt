@@ -129,6 +129,67 @@ class AudioEngine {
     return nativeGetTrackSpeed(nativeHandle, trackId)
   }
 
+  // Recording (Phase 3)
+  data class RecordingConfig(
+    val sampleRate: Int = 44100,
+    val channels: Int = 1,
+    val format: String = "aac",
+    val bitrate: Int = 128000,
+    val bitsPerSample: Int = 16,
+    val enableNoiseGate: Boolean = false,
+    val enableNormalization: Boolean = false
+  )
+
+  data class RecordingResult(
+    val success: Boolean,
+    val outputPath: String,
+    val durationSamples: Long,
+    val fileSize: Long,
+    val errorMessage: String?
+  )
+
+  fun startRecording(
+    outputPath: String,
+    sampleRate: Int = 44100,
+    channels: Int = 1,
+    format: String = "aac",
+    bitrate: Int = 128000,
+    bitsPerSample: Int = 16
+  ): Boolean {
+    return nativeStartRecording(
+      nativeHandle,
+      outputPath,
+      sampleRate,
+      channels,
+      format,
+      bitrate,
+      bitsPerSample
+    )
+  }
+
+  fun stopRecording(): RecordingResult {
+    val resultMap = nativeStopRecording(nativeHandle)
+    return RecordingResult(
+      success = resultMap["success"] as? Boolean ?: false,
+      outputPath = resultMap["outputPath"] as? String ?: "",
+      durationSamples = resultMap["durationSamples"] as? Long ?: 0L,
+      fileSize = resultMap["fileSize"] as? Long ?: 0L,
+      errorMessage = resultMap["errorMessage"] as? String
+    )
+  }
+
+  fun isRecording(): Boolean {
+    return nativeIsRecording(nativeHandle)
+  }
+
+  fun getInputLevel(): Float {
+    return nativeGetInputLevel(nativeHandle)
+  }
+
+  fun setRecordingVolume(volume: Float) {
+    nativeSetRecordingVolume(nativeHandle, volume)
+  }
+
   // Extraction (Phase 6)
   data class ExtractionResult(
     val success: Boolean,
@@ -301,6 +362,16 @@ class AudioEngine {
   private external fun nativeGetTrackPitch(handle: Long, trackId: String): Float
   private external fun nativeSetTrackSpeed(handle: Long, trackId: String, rate: Float)
   private external fun nativeGetTrackSpeed(handle: Long, trackId: String): Float
+
+  // Recording (Phase 3)
+  private external fun nativeStartRecording(
+    handle: Long, outputPath: String, sampleRate: Int, channels: Int,
+    format: String, bitrate: Int, bitsPerSample: Int
+  ): Boolean
+  private external fun nativeStopRecording(handle: Long): Map<String, Any?>
+  private external fun nativeIsRecording(handle: Long): Boolean
+  private external fun nativeGetInputLevel(handle: Long): Float
+  private external fun nativeSetRecordingVolume(handle: Long, volume: Float)
 
   private external fun nativeExtractTrack(
     handle: Long, trackId: String, outputPath: String,

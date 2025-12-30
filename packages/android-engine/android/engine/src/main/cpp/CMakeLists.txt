@@ -30,6 +30,9 @@ add_library(sezo_audio_engine SHARED
   playback/OboePlayer.cpp
   # Phase 2: Real-time effects
   playback/TimeStretch.cpp
+  # Phase 3: Recording
+  recording/MicrophoneCapture.cpp
+  recording/RecordingPipeline.cpp
   # Phase 6: Extraction
   extraction/ExtractionPipeline.cpp
   # JNI bridge

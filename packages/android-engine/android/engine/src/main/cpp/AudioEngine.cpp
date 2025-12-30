@@ -375,6 +375,71 @@ float AudioEngine::GetSpeed() const {
   return speed_;
 }
 
+// Phase 3: Recording
+bool AudioEngine::StartRecording(
+    const std::string& output_path,
+    const recording::RecordingConfig& config,
+    RecordingCompletionCallback callback) {
+
+  if (!initialized_) {
+    ReportError(core::ErrorCode::kNotInitialized, "AudioEngine not initialized");
+    return false;
+  }
+
+  if (IsRecording()) {
+    ReportError(core::ErrorCode::kInvalidState, "Already recording");
+    return false;
+  }
+
+  // Create recording pipeline if not exists
+  if (!recording_pipeline_) {
+    recording_pipeline_ = std::make_unique<recording::RecordingPipeline>();
+  }
+
+  // Start recording
+  bool success = recording_pipeline_->StartRecording(output_path, config, callback);
+  if (!success) {
+    ReportError(core::ErrorCode::kRecordingFailed, "Failed to start recording");
+  } else {
+    LOGD("Recording started: %s", output_path.c_str());
+  }
+
+  return success;
+}
+
+recording::RecordingResult AudioEngine::StopRecording() {
+  if (!recording_pipeline_) {
+    recording::RecordingResult result;
+    result.success = false;
+    result.error_message = "Not recording";
+    return result;
+  }
+
+  auto result = recording_pipeline_->StopRecording();
+  LOGD("Recording stopped: %s, %lld samples",
+       result.output_path.c_str(),
+       static_cast<long long>(result.duration_samples));
+
+  return result;
+}
+
+bool AudioEngine::IsRecording() const {
+  return recording_pipeline_ && recording_pipeline_->IsRecording();
+}
+
+float AudioEngine::GetInputLevel() const {
+  if (recording_pipeline_) {
+    return recording_pipeline_->GetInputLevel();
+  }
+  return 0.0f;
+}
+
+void AudioEngine::SetRecordingVolume(float volume) {
+  if (recording_pipeline_) {
+    recording_pipeline_->SetVolume(volume);
+  }
+}
+
 // Phase 6: Extraction
 AudioEngine::ExtractionResult AudioEngine::ExtractTrack(
     const std::string& track_id,
