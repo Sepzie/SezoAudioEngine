@@ -11,11 +11,11 @@
     "node": ">=18"
   },
   "scripts": {
-    "dev:example": "yarn build:expo-module && yarn build:android-engine && yarn build:example:android && yarn install:apk",
+    "dev:example": "yarn build:expo-module && yarn build:android-engine && yarn run:example",
     "build:expo-module": "yarn workspace sezo-audio-engine build",
     "build:android-engine": "cd packages/android-engine/android && ./gradlew :engine:build",
-    "build:example:android": "cd packages/expo-module/example/android && ./gradlew app:assembleDebug",
-    "install:apk": "adb install -r packages/expo-module/example/android/app/build/outputs/apk/debug/app-debug.apk",
+    "build:example:android": "yarn workspace sezo-audio-engine-example android",
+    "run:example": "yarn workspace sezo-audio-engine-example android",
     "clean": "rm -rf packages/expo-module/dist packages/expo-module/example/android/app/build packages/expo-module/example/android/.gradle",
     "rebuild": "yarn clean && yarn dev:example"
   }
