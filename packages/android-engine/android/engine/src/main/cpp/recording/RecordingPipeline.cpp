@@ -29,6 +29,10 @@ bool RecordingPipeline::StartRecording(
     return false;
   }
 
+  if (worker_thread_.joinable()) {
+    worker_thread_.join();
+  }
+
   output_path_ = output_path;
   config_ = config;
   callback_ = callback;
@@ -82,9 +86,8 @@ bool RecordingPipeline::StartRecording(
   // Start worker thread
   worker_shutdown_.store(false);
   worker_running_.store(true);
-  worker_thread_ = std::thread(&RecordingPipeline::RecordingWorkerLoop, this);
-
   is_recording_.store(true);
+  worker_thread_ = std::thread(&RecordingPipeline::RecordingWorkerLoop, this);
   LOGD("Recording started: %s, %d Hz, %d channels, format=%s",
        output_path.c_str(), config.sample_rate, config.channels, config.format.c_str());
 
@@ -189,12 +192,10 @@ void RecordingPipeline::RecordingWorkerLoop() {
 }
 
 void RecordingPipeline::StopWorker() {
-  if (worker_running_.load()) {
-    worker_shutdown_.store(true);
+  worker_shutdown_.store(true);
 
-    if (worker_thread_.joinable()) {
-      worker_thread_.join();
-    }
+  if (worker_thread_.joinable()) {
+    worker_thread_.join();
   }
 }
 
