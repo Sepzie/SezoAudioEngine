@@ -65,6 +65,8 @@ struct OfflineTrackState {
   bool solo = false;
   int64_t total_frames = 0;
   int64_t input_frames_processed = 0;
+  int64_t start_time_samples = 0;
+  bool finished = false;
 };
 
 bool InitOfflineState(OfflineTrackState& state, bool include_effects, std::string* error) {
@@ -96,6 +98,7 @@ bool InitOfflineState(OfflineTrackState& state, bool include_effects, std::strin
   state.pan = state.track->GetPan();
   state.muted = state.track->IsMuted();
   state.solo = state.track->IsSolo();
+  state.start_time_samples = state.track->GetStartTimeSamples();
 
   if (include_effects && state.channels > 0 && state.channels <= 2) {
     state.time_stretcher = std::make_unique<sezo::playback::TimeStretch>(
@@ -475,11 +478,28 @@ ExtractionResult ExtractionPipeline::ExtractMixedTracks(
     }
   }
 
-  // Find longest track duration (input frames)
-  int64_t total_frames = 0;
+  int64_t total_output_frames = 0;
+  bool has_unknown_duration = false;
   for (const auto& state : states) {
-    if (state.total_frames > total_frames) {
-      total_frames = state.total_frames;
+    if (has_solo && !state.solo) {
+      continue;
+    }
+    if (state.muted) {
+      continue;
+    }
+    if (state.total_frames <= 0) {
+      has_unknown_duration = true;
+      continue;
+    }
+    double stretch = GetStretchFactor(state, config.include_effects);
+    if (stretch <= 0.0) {
+      stretch = 1.0;
+    }
+    const double output_duration = static_cast<double>(state.total_frames) / stretch;
+    const int64_t output_frames = static_cast<int64_t>(std::ceil(output_duration));
+    const int64_t end = state.start_time_samples + output_frames;
+    if (end > total_output_frames) {
+      total_output_frames = end;
     }
   }
 
@@ -487,58 +507,38 @@ ExtractionResult ExtractionPipeline::ExtractMixedTracks(
 
   // Render buffer
   std::vector<float> buffer(kRenderBufferFrames * output_channels);
+  std::vector<float> track_buffer(kRenderBufferFrames * output_channels);
 
   bool success = true;
+  int64_t timeline_position = 0;
   while (true) {
     if (cancel_flag && cancel_flag->load(std::memory_order_acquire)) {
       result.error_message = "Extraction cancelled";
       success = false;
       break;
     }
-    // Calculate frames to render this iteration
-    double max_remaining_output = 0.0;
-    for (const auto& state : states) {
-      if (!state.decoder) {
-        continue;
-      }
-      if (has_solo && !state.solo) {
-        continue;
-      }
-      if (state.muted) {
-        continue;
-      }
-      if (state.total_frames <= 0) {
-        max_remaining_output = static_cast<double>(kRenderBufferFrames);
-        break;
-      }
-      const double stretch = GetStretchFactor(state, config.include_effects);
-      const double remaining_input =
-          static_cast<double>(state.total_frames - state.input_frames_processed);
-      if (remaining_input <= 0.0) {
-        continue;
-      }
-      const double remaining_output = remaining_input / stretch;
-      if (remaining_output > max_remaining_output) {
-        max_remaining_output = remaining_output;
-      }
-    }
-
-    if (max_remaining_output <= 0.0) {
+    if (!has_unknown_duration && timeline_position >= total_output_frames) {
       break;
     }
 
-    size_t frames_to_render = static_cast<size_t>(
-        std::min<double>(max_remaining_output, kRenderBufferFrames));
+    size_t frames_to_render = kRenderBufferFrames;
+    if (!has_unknown_duration) {
+      const int64_t remaining = total_output_frames - timeline_position;
+      if (remaining <= 0) {
+        break;
+      }
+      frames_to_render = static_cast<size_t>(
+          std::min<int64_t>(remaining, static_cast<int64_t>(kRenderBufferFrames)));
+    }
     if (frames_to_render == 0) {
-      frames_to_render = 1;
+      break;
     }
 
     // Render mixed audio
     std::memset(buffer.data(), 0, frames_to_render * output_channels * sizeof(float));
 
-    std::vector<float> track_buffer(frames_to_render * output_channels);
-    size_t min_frames_read = frames_to_render;
     bool any_track_active = false;
+    bool has_future_tracks = false;
 
     for (auto& state : states) {
       if (!state.decoder) {
@@ -550,74 +550,78 @@ ExtractionResult ExtractionPipeline::ExtractMixedTracks(
       if (state.muted) {
         continue;
       }
+      if (state.finished) {
+        continue;
+      }
 
-      std::memset(track_buffer.data(), 0, track_buffer.size() * sizeof(float));
+      const int64_t track_frame = timeline_position - state.start_time_samples;
+      if (track_frame < 0 &&
+          track_frame + static_cast<int64_t>(frames_to_render) <= 0) {
+        has_future_tracks = true;
+        continue;
+      }
+
+      size_t offset_frames = 0;
+      if (track_frame < 0) {
+        offset_frames = static_cast<size_t>(-track_frame);
+      }
+      if (offset_frames >= frames_to_render) {
+        has_future_tracks = true;
+        continue;
+      }
+
+      const size_t frames_to_read = frames_to_render - offset_frames;
+      if (track_buffer.size() < frames_to_read * output_channels) {
+        track_buffer.resize(frames_to_read * output_channels);
+      }
       size_t input_frames_read = 0;
       const size_t frames_read = RenderOfflineTrack(
-          state, track_buffer.data(), frames_to_render, config.include_effects, &input_frames_read);
+          state, track_buffer.data(), frames_to_read, config.include_effects, &input_frames_read);
 
-      if (frames_read > 0) {
-        any_track_active = true;
-        min_frames_read = std::min(min_frames_read, frames_read);
-        state.input_frames_processed += static_cast<int64_t>(
-            input_frames_read > 0 ? input_frames_read : frames_read);
+      if (frames_read == 0) {
+        state.finished = true;
+        continue;
+      }
 
-        for (size_t i = 0; i < frames_read * output_channels; ++i) {
-          buffer[i] += track_buffer[i];
-        }
+      any_track_active = true;
+      state.input_frames_processed += static_cast<int64_t>(
+          input_frames_read > 0 ? input_frames_read : frames_read);
+
+      const size_t output_offset = offset_frames * output_channels;
+      for (size_t i = 0; i < frames_read * output_channels; ++i) {
+        buffer[output_offset + i] += track_buffer[i];
       }
     }
 
-    if (!any_track_active) {
+    if (!any_track_active && !has_future_tracks && has_unknown_duration) {
       break;
     }
 
     // Clamp mixed output to prevent clipping
-    for (size_t i = 0; i < min_frames_read * output_channels; ++i) {
+    for (size_t i = 0; i < frames_to_render * output_channels; ++i) {
       buffer[i] = std::max(-1.0f, std::min(1.0f, buffer[i]));
     }
 
-    size_t frames_rendered = min_frames_read;
-
-    if (frames_rendered == 0) {
-      // End of all tracks
-      break;
-    }
-
     // Write to encoder
-    if (!encoder->Write(buffer.data(), frames_rendered)) {
+    if (!encoder->Write(buffer.data(), frames_to_render)) {
       result.error_message = "Failed to write to encoder";
       LOGE("%s", result.error_message.c_str());
       success = false;
       break;
     }
 
-    int64_t max_input_processed = 0;
-    for (const auto& state : states) {
-      if (state.input_frames_processed > max_input_processed) {
-        max_input_processed = state.input_frames_processed;
-      }
-    }
+    timeline_position += static_cast<int64_t>(frames_to_render);
 
     // Report progress
-    if (progress_callback && total_frames > 0 &&
+    if (progress_callback && !has_unknown_duration && total_output_frames > 0 &&
         !(cancel_flag && cancel_flag->load(std::memory_order_acquire))) {
-      float progress = static_cast<float>(max_input_processed) /
-                       static_cast<float>(total_frames);
+      float progress = static_cast<float>(timeline_position) /
+                       static_cast<float>(total_output_frames);
       progress = std::min(1.0f, std::max(0.0f, progress));
       if (progress >= 1.0f || progress - last_progress >= kProgressStep) {
         last_progress = progress;
         progress_callback(progress);
       }
-    }
-
-    // If we rendered fewer frames than requested, we're at the end
-    if (frames_rendered < frames_to_render) {
-      break;
-    }
-
-    if (total_frames > 0 && max_input_processed >= total_frames) {
-      break;
     }
   }
 

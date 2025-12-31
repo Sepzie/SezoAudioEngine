@@ -214,7 +214,8 @@ Java_com_sezo_audioengine_AudioEngine_nativeRelease(JNIEnv* env [[maybe_unused]]
 
 JNIEXPORT jboolean JNICALL
 Java_com_sezo_audioengine_AudioEngine_nativeLoadTrack(
-    JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]], jlong handle, jstring track_id, jstring file_path) {
+    JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]], jlong handle, jstring track_id,
+    jstring file_path, jdouble start_time_ms) {
   (void)thiz;
   auto* engine = reinterpret_cast<AudioEngine*>(handle);
   if (!engine) {
@@ -224,7 +225,7 @@ Java_com_sezo_audioengine_AudioEngine_nativeLoadTrack(
   std::string id = JNIHelper::JStringToString(env, track_id);
   std::string path = JNIHelper::JStringToString(env, file_path);
 
-  return engine->LoadTrack(id, path) ? JNI_TRUE : JNI_FALSE;
+  return engine->LoadTrack(id, path, start_time_ms) ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jboolean JNICALL
@@ -535,6 +536,18 @@ Java_com_sezo_audioengine_AudioEngine_nativeStopRecording(
   jobject durationObj = env->NewObject(longClass, longInit, result.duration_samples);
   env->CallObjectMethod(resultMap, hashMapPut,
                         env->NewStringUTF("durationSamples"), durationObj);
+
+  // Add startTimeSamples
+  jobject startSamplesObj = env->NewObject(longClass, longInit, result.start_time_samples);
+  env->CallObjectMethod(resultMap, hashMapPut,
+                        env->NewStringUTF("startTimeSamples"), startSamplesObj);
+
+  // Add startTimeMs
+  jclass doubleClass = env->FindClass("java/lang/Double");
+  jmethodID doubleInit = env->GetMethodID(doubleClass, "<init>", "(D)V");
+  jobject startTimeMsObj = env->NewObject(doubleClass, doubleInit, result.start_time_ms);
+  env->CallObjectMethod(resultMap, hashMapPut,
+                        env->NewStringUTF("startTimeMs"), startTimeMsObj);
 
   // Add fileSize
   jobject fileSizeObj = env->NewObject(longClass, longInit, result.file_size);

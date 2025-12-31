@@ -47,7 +47,7 @@ std::vector<std::shared_ptr<Track>> MultiTrackMixer::GetTracks() {
   return tracks_;
 }
 
-void MultiTrackMixer::Mix(float* output, size_t frames) {
+void MultiTrackMixer::Mix(float* output, size_t frames, int64_t timeline_start_sample) {
   // Clear output buffer
   std::memset(output, 0, frames * 2 * sizeof(float));  // Assume stereo
 
@@ -84,18 +84,36 @@ void MultiTrackMixer::Mix(float* output, size_t frames) {
       continue;
     }
 
+    const int64_t track_start = track->GetStartTimeSamples();
+    const int64_t track_frame = timeline_start_sample - track_start;
+
+    if (track_frame < 0 && track_frame + static_cast<int64_t>(frames) <= 0) {
+      continue;
+    }
+
+    size_t offset_frames = 0;
+    if (track_frame < 0) {
+      offset_frames = static_cast<size_t>(-track_frame);
+    }
+
+    const size_t frames_to_read = (offset_frames >= frames) ? 0 : (frames - offset_frames);
+    if (frames_to_read == 0) {
+      continue;
+    }
+
     // Ensure mix buffer is large enough
-    const size_t samples_needed = frames * 2;  // Stereo
+    const size_t samples_needed = frames_to_read * 2;  // Stereo
     if (mix_buffer_.size() < samples_needed) {
       mix_buffer_.resize(samples_needed);
     }
 
     // Read track samples
-    const size_t frames_read = track->ReadSamples(mix_buffer_.data(), frames);
+    track->ReadSamples(mix_buffer_.data(), frames_to_read);
 
-    // Mix into output
-    for (size_t i = 0; i < frames_read * 2; ++i) {
-      output[i] += mix_buffer_[i];
+    // Mix into output at the offset
+    const size_t output_offset = offset_frames * 2;
+    for (size_t i = 0; i < frames_to_read * 2; ++i) {
+      output[output_offset + i] += mix_buffer_[i];
     }
   }
 

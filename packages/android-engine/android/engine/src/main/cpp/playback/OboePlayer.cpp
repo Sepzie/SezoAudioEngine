@@ -117,8 +117,10 @@ oboe::DataCallbackResult OboePlayer::onAudioReady(
     return oboe::DataCallbackResult::Continue;
   }
 
+  const int64_t timeline_start = clock_->GetPosition();
+
   // Mix all tracks
-  mixer_->Mix(output_buffer, num_frames);
+  mixer_->Mix(output_buffer, num_frames, timeline_start);
 
   // Advance master clock
   clock_->Advance(num_frames);

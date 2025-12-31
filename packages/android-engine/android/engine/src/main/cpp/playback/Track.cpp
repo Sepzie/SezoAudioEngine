@@ -229,6 +229,14 @@ int32_t Track::GetChannels() const {
   return is_loaded_ ? decoder_->GetFormat().channels : 0;
 }
 
+void Track::SetStartTimeSamples(int64_t start_time_samples) {
+  start_time_samples_.store(std::max<int64_t>(0, start_time_samples), std::memory_order_release);
+}
+
+int64_t Track::GetStartTimeSamples() const {
+  return start_time_samples_.load(std::memory_order_acquire);
+}
+
 void Track::SetVolume(float volume) {
   volume_.store(std::clamp(volume, 0.0f, 2.0f), std::memory_order_release);
 }

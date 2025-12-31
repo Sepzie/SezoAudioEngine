@@ -66,11 +66,12 @@ class ExpoAudioEngineModule : Module() {
       tracks.forEach { track ->
         val id = track["id"] as? String ?: throw Exception("Missing track id")
         val uri = track["uri"] as? String ?: throw Exception("Missing track uri")
+        val startTimeMs = (track["startTimeMs"] as? Number)?.toDouble() ?: 0.0
 
         Log.d(TAG, "Loading track: id=$id, uri=$uri")
         val filePath = convertUriToPath(uri)
 
-        if (!engine.loadTrack(id, filePath)) {
+        if (!engine.loadTrack(id, filePath, startTimeMs)) {
           throw Exception("Failed to load track: $id from $filePath")
         }
 
@@ -263,6 +264,8 @@ class ExpoAudioEngineModule : Module() {
         mapOf(
           "uri" to "file://${result.outputPath}",
           "duration" to (result.durationSamples / 44.1).toInt(),
+          "startTimeMs" to result.startTimeMs,
+          "startTimeSamples" to result.startTimeSamples,
           "sampleRate" to 44100,
           "channels" to 1,
           "format" to "aac",
@@ -273,6 +276,8 @@ class ExpoAudioEngineModule : Module() {
       mapOf(
         "uri" to "file://${result.outputPath}",
         "duration" to (result.durationSamples / 44.1).toInt(),
+        "startTimeMs" to result.startTimeMs,
+        "startTimeSamples" to result.startTimeSamples,
         "sampleRate" to 44100,
         "channels" to 1,
         "format" to "aac",

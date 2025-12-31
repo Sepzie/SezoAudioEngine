@@ -3,6 +3,7 @@
 #include "Track.h"
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <vector>
@@ -54,8 +55,9 @@ class MultiTrackMixer {
    * Mix all tracks and write to output buffer.
    * @param output Output buffer (stereo interleaved)
    * @param frames Number of frames to render
+   * @param timeline_start_sample Timeline position for the first frame
    */
-  void Mix(float* output, size_t frames);
+  void Mix(float* output, size_t frames, int64_t timeline_start_sample);
 
   /**
    * Set master volume.

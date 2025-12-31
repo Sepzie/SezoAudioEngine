@@ -28,8 +28,9 @@ class AudioEngine {
   }
 
   // Track management
-  fun loadTrack(trackId: String, filePath: String): Boolean {
-    return nativeLoadTrack(nativeHandle, trackId, filePath)
+  @JvmOverloads
+  fun loadTrack(trackId: String, filePath: String, startTimeMs: Double = 0.0): Boolean {
+    return nativeLoadTrack(nativeHandle, trackId, filePath, startTimeMs)
   }
 
   fun unloadTrack(trackId: String): Boolean {
@@ -144,6 +145,8 @@ class AudioEngine {
     val success: Boolean,
     val outputPath: String,
     val durationSamples: Long,
+    val startTimeSamples: Long,
+    val startTimeMs: Double,
     val fileSize: Long,
     val errorMessage: String?
   )
@@ -173,6 +176,8 @@ class AudioEngine {
       success = resultMap["success"] as? Boolean ?: false,
       outputPath = resultMap["outputPath"] as? String ?: "",
       durationSamples = resultMap["durationSamples"] as? Long ?: 0L,
+      startTimeSamples = (resultMap["startTimeSamples"] as? Number)?.toLong() ?: 0L,
+      startTimeMs = (resultMap["startTimeMs"] as? Number)?.toDouble() ?: 0.0,
       fileSize = resultMap["fileSize"] as? Long ?: 0L,
       errorMessage = resultMap["errorMessage"] as? String
     )
@@ -333,7 +338,9 @@ class AudioEngine {
   private external fun nativeInitialize(handle: Long, sampleRate: Int, maxTracks: Int): Boolean
   private external fun nativeRelease(handle: Long)
 
-  private external fun nativeLoadTrack(handle: Long, trackId: String, filePath: String): Boolean
+  private external fun nativeLoadTrack(
+    handle: Long, trackId: String, filePath: String, startTimeMs: Double
+  ): Boolean
   private external fun nativeUnloadTrack(handle: Long, trackId: String): Boolean
   private external fun nativeUnloadAllTracks(handle: Long)
 

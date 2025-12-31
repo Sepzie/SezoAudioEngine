@@ -14,6 +14,7 @@ export interface AudioTrack {
   volume?: number;
   pan?: number;
   muted?: boolean;
+  startTimeMs?: number;
 }
 
 export interface RecordingConfig {
@@ -29,6 +30,8 @@ export interface RecordingConfig {
 export interface RecordingResult {
   uri: string;
   duration: number;
+  startTimeMs: number;
+  startTimeSamples?: number;
   sampleRate: number;
   channels: number;
   format: 'aac' | 'mp3' | 'wav';

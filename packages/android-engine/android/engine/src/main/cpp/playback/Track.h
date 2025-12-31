@@ -5,6 +5,7 @@
 #include "playback/TimeStretch.h"
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <thread>
@@ -61,6 +62,8 @@ class Track {
   int64_t GetDuration() const;
   int32_t GetSampleRate() const;
   int32_t GetChannels() const;
+  void SetStartTimeSamples(int64_t start_time_samples);
+  int64_t GetStartTimeSamples() const;
 
   // Per-track controls
   void SetVolume(float volume);
@@ -99,6 +102,7 @@ class Track {
   std::atomic<bool> muted_{false};
   std::atomic<bool> solo_{false};
   std::atomic<float> pan_{0.0f};
+  std::atomic<int64_t> start_time_samples_{0};
 
   // Phase 2: Real-time effects
   std::unique_ptr<TimeStretch> time_stretcher_;

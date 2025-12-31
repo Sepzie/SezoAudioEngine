@@ -38,6 +38,8 @@ struct RecordingResult {
   bool success = false;
   std::string output_path;
   int64_t duration_samples = 0;
+  int64_t start_time_samples = 0;
+  double start_time_ms = 0.0;
   int64_t file_size = 0;
   std::string error_message;
 };

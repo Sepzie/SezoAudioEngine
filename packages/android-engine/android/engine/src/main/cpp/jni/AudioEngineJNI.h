@@ -48,7 +48,8 @@ Java_com_sezo_audioengine_AudioEngine_nativeRelease(JNIEnv* env, jobject thiz, j
 
 JNIEXPORT jboolean JNICALL
 Java_com_sezo_audioengine_AudioEngine_nativeLoadTrack(
-    JNIEnv* env, jobject thiz, jlong handle, jstring track_id, jstring file_path);
+    JNIEnv* env, jobject thiz, jlong handle, jstring track_id, jstring file_path,
+    jdouble start_time_ms);
 
 JNIEXPORT jboolean JNICALL
 Java_com_sezo_audioengine_AudioEngine_nativeUnloadTrack(

@@ -1,6 +1,7 @@
 #include "AudioEngine.h"
 #include "extraction/ExtractionPipeline.h"
 #include <android/log.h>
+#include <algorithm>
 #include <utility>
 
 #define LOG_TAG "AudioEngine"
@@ -96,7 +97,9 @@ void AudioEngine::Release() {
   LOGD("AudioEngine released");
 }
 
-bool AudioEngine::LoadTrack(const std::string& track_id, const std::string& file_path) {
+bool AudioEngine::LoadTrack(const std::string& track_id,
+                            const std::string& file_path,
+                            double start_time_ms) {
   if (!initialized_) {
     ReportError(core::ErrorCode::kNotInitialized, "AudioEngine not initialized");
     return false;
@@ -127,6 +130,8 @@ bool AudioEngine::LoadTrack(const std::string& track_id, const std::string& file
     return true;
   }
 
+  const int64_t start_time_samples = std::max<int64_t>(0, timing_->MsToSamples(start_time_ms));
+
   // Create and load track
   auto track = std::make_shared<playback::Track>(track_id, file_path);
   if (!track->Load()) {
@@ -134,17 +139,15 @@ bool AudioEngine::LoadTrack(const std::string& track_id, const std::string& file
     ReportError(core::ErrorCode::kDecoderOpenFailed, "Failed to load track: " + file_path);
     return false;
   }
+  track->SetStartTimeSamples(start_time_samples);
 
   // Add to mixer
   mixer_->AddTrack(track);
   tracks_[track_id] = track;
 
-  // Update duration (use longest track)
-  const int64_t track_duration = track->GetDuration();
-  if (track_duration > timing_->GetDurationSamples()) {
-    timing_->SetDuration(track_duration);
-  }
+  RecalculateDuration();
 
+  const int64_t track_duration = track->GetDuration();
   LOGD("Track loaded: id=%s, path=%s, duration=%lld frames",
        track_id.c_str(), file_path.c_str(), static_cast<long long>(track_duration));
   return true;
@@ -159,6 +162,7 @@ bool AudioEngine::UnloadTrack(const std::string& track_id) {
 
   mixer_->RemoveTrack(track_id);
   tracks_.erase(it);
+  RecalculateDuration();
 
   LOGD("Track unloaded: %s", track_id.c_str());
   return true;
@@ -240,7 +244,9 @@ void AudioEngine::Seek(double position_ms) {
   // Seek all tracks
   bool seek_ok = true;
   for (auto& pair : tracks_) {
-    if (!pair.second->Seek(frame)) {
+    const int64_t track_start = pair.second->GetStartTimeSamples();
+    const int64_t track_frame = frame - track_start;
+    if (!pair.second->Seek(std::max<int64_t>(0, track_frame))) {
       seek_ok = false;
     }
   }
@@ -396,10 +402,27 @@ bool AudioEngine::StartRecording(
     recording_pipeline_ = std::make_unique<recording::RecordingPipeline>();
   }
 
+  const auto state = transport_->GetState();
+  const int64_t start_samples =
+      (state == core::PlaybackState::kStopped) ? 0 : clock_->GetPosition();
+  recording_start_samples_.store(start_samples, std::memory_order_release);
+
+  recording::RecordingPipeline::RecordingCallback wrapped_callback = nullptr;
+  if (callback) {
+    wrapped_callback = [this, callback](const recording::RecordingResult& result) {
+      recording::RecordingResult enriched = result;
+      const int64_t start = recording_start_samples_.load(std::memory_order_acquire);
+      enriched.start_time_samples = start;
+      enriched.start_time_ms = timing_ ? timing_->SamplesToMs(start) : 0.0;
+      callback(enriched);
+    };
+  }
+
   // Start recording
-  bool success = recording_pipeline_->StartRecording(output_path, config, callback);
+  bool success = recording_pipeline_->StartRecording(output_path, config, wrapped_callback);
   if (!success) {
     ReportError(core::ErrorCode::kRecordingFailed, "Failed to start recording");
+    recording_start_samples_.store(0, std::memory_order_release);
   } else {
     LOGD("Recording started: %s", output_path.c_str());
   }
@@ -416,6 +439,9 @@ recording::RecordingResult AudioEngine::StopRecording() {
   }
 
   auto result = recording_pipeline_->StopRecording();
+  const int64_t start_samples = recording_start_samples_.load(std::memory_order_acquire);
+  result.start_time_samples = start_samples;
+  result.start_time_ms = timing_ ? timing_->SamplesToMs(start_samples) : 0.0;
   LOGD("Recording stopped: %s, %lld samples",
        result.output_path.c_str(),
        static_cast<long long>(result.duration_samples));
@@ -798,6 +824,27 @@ void AudioEngine::ReportError(core::ErrorCode code, const std::string& message) 
     callback(code, message);
   }
   LOGE("%s", message.c_str());
+}
+
+void AudioEngine::RecalculateDuration() {
+  if (!timing_) {
+    return;
+  }
+
+  int64_t max_end = 0;
+  for (const auto& pair : tracks_) {
+    if (!pair.second || !pair.second->IsLoaded()) {
+      continue;
+    }
+    const int64_t start = pair.second->GetStartTimeSamples();
+    const int64_t duration = pair.second->GetDuration();
+    const int64_t end = start + std::max<int64_t>(0, duration);
+    if (end > max_end) {
+      max_end = end;
+    }
+  }
+
+  timing_->SetDuration(max_end);
 }
 
 }  // namespace sezo

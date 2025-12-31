@@ -97,7 +97,10 @@ bool RecordingPipeline::StartRecording(
 RecordingResult RecordingPipeline::StopRecording() {
   if (!is_recording_.load()) {
     LOGD("Not recording");
-    return RecordingResult{false, "", 0, 0, "Not recording"};
+    RecordingResult result;
+    result.success = false;
+    result.error_message = "Not recording";
+    return result;
   }
 
   is_recording_.store(false);

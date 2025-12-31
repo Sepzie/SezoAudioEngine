@@ -52,7 +52,9 @@ class AudioEngine {
   std::string GetLastErrorMessage() const;
 
   // Track management
-  bool LoadTrack(const std::string& track_id, const std::string& file_path);
+  bool LoadTrack(const std::string& track_id,
+                 const std::string& file_path,
+                 double start_time_ms = 0.0);
   bool UnloadTrack(const std::string& track_id);
   void UnloadAllTracks();
   std::vector<std::string> GetLoadedTrackIds() const;
@@ -189,11 +191,12 @@ class AudioEngine {
       ExtractionProgressCallback progress_callback,
       ExtractionCompletionCallback completion_callback);
 
-  bool CancelExtraction(int64_t job_id);
+ bool CancelExtraction(int64_t job_id);
   void CancelAllExtractions();
   bool IsExtractionRunning() const;
 
  private:
+  void RecalculateDuration();
   void ReportError(core::ErrorCode code, const std::string& message);
   void StartExtractionWorker();
   void StopExtractionWorker();
@@ -226,6 +229,7 @@ class AudioEngine {
 
   // Recording components
   std::unique_ptr<recording::RecordingPipeline> recording_pipeline_;
+  std::atomic<int64_t> recording_start_samples_{0};
 
   // Track management
   std::map<std::string, std::shared_ptr<playback::Track>> tracks_;
