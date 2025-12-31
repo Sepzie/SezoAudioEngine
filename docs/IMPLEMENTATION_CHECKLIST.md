@@ -195,16 +195,16 @@ Rule: After each feature is added, update this checklist to reflect progress.
 
 ## Phase 3: Recording (Week 5-6)
 
-[ ] Android engine: implement microphone capture (Oboe input)
-[ ] Android engine: implement recording buffer
-[ ] Android engine: implement WAV writer (dr_wav)
-[ ] Android engine: implement MediaCodec AAC encoder
-[ ] Android engine: implement bitrate/quality presets
-[ ] Android engine: implement optional LAME MP3 encoder
+[x] Android engine: implement microphone capture (Oboe input)
+[x] Android engine: implement recording buffer
+[x] Android engine: implement WAV writer (dr_wav)
+[x] Android engine: implement MediaCodec AAC encoder
+[x] Android engine: implement bitrate/quality presets
+[x] Android engine: implement optional LAME MP3 encoder
 [ ] Add synchronized recording (timestamps match playback)
 [ ] Implement background encoding thread
 [ ] Add basic DSP (noise gate, normalization)
-[ ] Add to Expo module API
+[x] Add to Expo module API
 [ ] Test recording quality and synchronization
 
 ## Phase 4: Track Management & Polish (Week 7)
@@ -256,8 +256,8 @@ Rule: After each feature is added, update this checklist to reflect progress.
 [x] Audio encoding infrastructure
   - AudioEncoder base class created
   - WAVEncoder implemented using dr_wav
-  - AAC encoder (Android MediaCodec) - NOT YET IMPLEMENTED (pending)
-  - MP3 encoder (LAME) - NOT YET IMPLEMENTED (pending)
+  - AAC encoder (Android MediaCodec) implemented
+  - MP3 encoder (LAME) implemented
 [ ] Test extraction quality and performance - Ready for device testing
 
 ## Phase 7: iOS Implementation (Future)
@@ -293,8 +293,8 @@ Rule: After each feature is added, update this checklist to reflect progress.
 [x] Example app: add playback controls
 [x] Example app: add pitch/speed sliders
 [x] Example app: add per-track controls UI
-[ ] Example app: add recording controls UI
-[ ] Example app: add extraction UI + progress
+[x] Example app: add recording controls UI
+[x] Example app: add extraction UI + progress
 [ ] Example app: add background playback demo
 [x] Example app: add error handling UI
 
