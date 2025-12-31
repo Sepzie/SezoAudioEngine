@@ -28,6 +28,7 @@ interface Track {
   solo: boolean;
   pitch: number;
   speed: number;
+  startTimeMs?: number;
 }
 
 interface ExtractionInfo {
@@ -43,6 +44,8 @@ interface ExtractionInfo {
 interface RecordingInfo {
   uri: string;
   duration: number;
+  startTimeMs?: number;
+  startTimeSamples?: number;
   sampleRate: number;
   channels: number;
   format: string;
@@ -141,6 +144,8 @@ export default function App() {
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractionJobId, setExtractionJobId] = useState<number | null>(null);
   const recordingStartRef = useRef<number | null>(null);
+  const loadedRecordingUris = useRef(new Set<string>());
+  const recordingCountRef = useRef(1);
   const engineAny = AudioEngineModule as Record<string, any>;
   const supportsTrackPitch = typeof engineAny.setTrackPitch === 'function';
   const supportsTrackSpeed = typeof engineAny.setTrackSpeed === 'function';
@@ -230,9 +235,11 @@ export default function App() {
 
     const recordingStoppedSub = AudioEngineModule.addListener('recordingStopped', (event: any) => {
       if (event?.uri) {
-        setLastRecording({
+        handleRecordingResult({
           uri: event.uri,
           duration: event?.duration ?? 0,
+          startTimeMs: event?.startTimeMs ?? 0,
+          startTimeSamples: event?.startTimeSamples,
           sampleRate: event?.sampleRate ?? 44100,
           channels: event?.channels ?? 1,
           format: event?.format ?? recordingFormat,
@@ -251,7 +258,7 @@ export default function App() {
       recordingStartedSub?.remove?.();
       recordingStoppedSub?.remove?.();
     };
-  }, [recordingFormat]);
+  }, [handleRecordingResult, recordingFormat]);
 
   useEffect(() => {
     Animated.stagger(120, [
@@ -349,6 +356,74 @@ export default function App() {
     }
   }, []);
 
+  const appendRecordingTrack = useCallback(
+    async (recording: RecordingInfo) => {
+      if (!recording?.uri) {
+        return;
+      }
+
+      if (loadedRecordingUris.current.has(recording.uri)) {
+        return;
+      }
+
+      if (tracks.length >= 4) {
+        Alert.alert('Track limit reached', 'Unload a track to add this recording.');
+        return;
+      }
+
+      const startTimeMs = typeof recording.startTimeMs === 'number' ? recording.startTimeMs : 0;
+      const trackId = `recording_${Date.now()}`;
+      const trackName = `Recording ${recordingCountRef.current++}`;
+
+      loadedRecordingUris.current.add(recording.uri);
+
+      try {
+        await AudioEngineModule.loadTracks([
+          {
+            id: trackId,
+            uri: recording.uri,
+            volume: 1.0,
+            pan: 0.0,
+            muted: false,
+            startTimeMs,
+          },
+        ]);
+
+        setTracks((prev) => [
+          ...prev,
+          {
+            id: trackId,
+            name: trackName,
+            uri: recording.uri,
+            volume: 1.0,
+            pan: 0.0,
+            muted: false,
+            solo: false,
+            pitch: 0.0,
+            speed: 1.0,
+            startTimeMs,
+          },
+        ]);
+        setDuration(AudioEngineModule.getDuration());
+      } catch (error) {
+        loadedRecordingUris.current.delete(recording.uri);
+        console.warn('[Recording] Auto-load failed', error);
+      }
+    },
+    [tracks.length]
+  );
+
+  const handleRecordingResult = useCallback(
+    (recording: RecordingInfo | null) => {
+      if (!recording?.uri) {
+        return;
+      }
+      setLastRecording(recording);
+      void appendRecordingTrack(recording);
+    },
+    [appendRecordingTrack]
+  );
+
   const handleStartRecording = useCallback(async () => {
     if (!supportsRecording) {
       Alert.alert('Recording unavailable', 'Recording is not supported in this build.');
@@ -401,7 +476,7 @@ export default function App() {
     try {
       setRecordingStatus('Stopping...');
       const result = await AudioEngineModule.stopRecording();
-      setLastRecording(result);
+      handleRecordingResult(result as RecordingInfo);
       recordingStartRef.current = null;
       setRecordingElapsed(0);
       setRecordingLevel(0);
@@ -412,7 +487,7 @@ export default function App() {
       setRecordingStatus('Stop failed');
       Alert.alert('Recording failed', error?.message ?? 'Unable to stop recording.');
     }
-  }, []);
+  }, [handleRecordingResult]);
 
   const handleRecordingVolumeChange = useCallback((value: number) => {
     try {
@@ -469,6 +544,7 @@ export default function App() {
           volume: t.volume,
           pan: t.pan,
           muted: t.muted,
+          startTimeMs: t.startTimeMs,
         }))
       );
 
@@ -899,6 +975,13 @@ export default function App() {
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
+  const formatSeconds = (ms?: number) => {
+    if (typeof ms !== 'number' || Number.isNaN(ms)) {
+      return '0.00s';
+    }
+    return `${(Math.max(0, ms) / 1000).toFixed(2)}s`;
+  };
+
   const heroStyle = {
     opacity: introAnim,
     transform: [
@@ -1326,7 +1409,8 @@ export default function App() {
                   <Text style={styles.detailValue}>
                     {lastRecording.format.toUpperCase()} •{' '}
                     {(lastRecording.fileSize / 1024).toFixed(1)} KB •{' '}
-                    {formatTime(lastRecording.duration)}
+                    {formatTime(lastRecording.duration)} • Start{' '}
+                    {formatSeconds(lastRecording.startTimeMs)}
                   </Text>
                   <Text style={styles.detailPath} numberOfLines={2}>
                     {lastRecording.uri}
@@ -1485,6 +1569,9 @@ export default function App() {
                     <Text style={styles.trackMeta}>
                       Pitch {track.pitch > 0 ? '+' : ''}
                       {track.pitch.toFixed(1)} st | Speed {(track.speed * 100).toFixed(0)}%
+                      {typeof track.startTimeMs === 'number'
+                        ? ` | Start ${formatSeconds(track.startTimeMs)}`
+                        : ''}
                     </Text>
                   </View>
                   <View style={styles.trackButtons}>
