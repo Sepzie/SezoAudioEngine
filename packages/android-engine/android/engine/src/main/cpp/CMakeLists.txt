@@ -75,3 +75,11 @@ target_compile_options(sezo_audio_engine PRIVATE
   -ffast-math
   -O3
 )
+
+option(SEZO_ENABLE_TESTS "Build Sezo Audio Engine tests" OFF)
+if (SEZO_ENABLE_TESTS)
+  add_subdirectory(
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../test/cpp
+    ${CMAKE_CURRENT_BINARY_DIR}/sezo_tests
+  )
+endif()

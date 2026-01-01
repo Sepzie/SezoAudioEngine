@@ -16,6 +16,9 @@
     "build:android-engine": "cd packages/android-engine/android && ./gradlew :engine:build",
     "build:example:android": "yarn workspace sezo-audio-engine-example android",
     "run:example": "yarn workspace sezo-audio-engine-example android",
+    "test": "yarn test:cpp:host",
+    "test:cpp:host": "cmake -S packages/android-engine/android/engine/src/test/cpp -B build/sezo-tests-host && cmake --build build/sezo-tests-host && ctest --test-dir build/sezo-tests-host --output-on-failure",
+    "test:cpp:host:clean": "rm -rf build/sezo-tests-host",
     "clean": "rm -rf packages/expo-module/dist packages/expo-module/example/android/app/build packages/expo-module/example/android/.gradle",
     "rebuild": "yarn clean && yarn dev:example"
   }
