@@ -12,13 +12,22 @@ ctest --test-dir build/sezo-tests-host --output-on-failure
 
 ## Android build
 
-Enable tests in the Android CMake build by setting `SEZO_ENABLE_TESTS=ON`.
-This adds a `sezo_engine_tests` binary to the native build output, which you can
-push to a device and run via `adb`.
+Use the Android test runner script to build with the NDK toolchain and run via adb:
 
+```bash
+bash packages/android-engine/android/engine/src/test/cpp/scripts/run_android_tests.sh
 ```
-# Example: configure externalNativeBuild with -DSEZO_ENABLE_TESTS=ON
+
+Options and env vars:
+
+```bash
+# Example: run on a specific device and ABI
+SEZO_ANDROID_ABI=arm64-v8a SEZO_ANDROID_SERIAL=DEVICE_SERIAL \\
+  bash packages/android-engine/android/engine/src/test/cpp/scripts/run_android_tests.sh
 ```
+
+If exactly one device is connected, the script will auto-select it. With multiple
+devices, set `SEZO_ANDROID_SERIAL` to choose.
 
 ## Notes
 
