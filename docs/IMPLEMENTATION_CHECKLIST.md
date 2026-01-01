@@ -201,11 +201,22 @@ Rule: After each feature is added, update this checklist to reflect progress.
 [x] Android engine: implement MediaCodec AAC encoder
 [x] Android engine: implement bitrate/quality presets
 [x] Android engine: implement optional LAME MP3 encoder
-[ ] Add synchronized recording (timestamps match playback)
+[x] Add synchronized recording (timestamps match playback)
+[x] Add timeline-aligned track offsets (startTimeMs)
+[x] Update offline extraction to respect track offsets
+[x] Expose startTimeMs in RecordingResult + loadTracks
 [ ] Implement background encoding thread
 [ ] Add basic DSP (noise gate, normalization)
 [x] Add to Expo module API
 [ ] Test recording quality and synchronization
+
+## Future Improvements (Post-Phase 3)
+
+[ ] Replace JS polling with native event emission for position/metering
+[ ] Throttle native events and coalesce updates to reduce UI overhead
+[ ] Add AAC decoding so AAC recordings can be loaded as tracks
+[ ] Add debug logging for load failures (file access vs decode)
+[ ] Example app: toggle to enable/disable metering + position updates
 
 ## Phase 4: Track Management & Polish (Week 7)
 
