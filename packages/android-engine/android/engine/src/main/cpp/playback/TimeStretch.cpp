@@ -1,4 +1,5 @@
 #include "TimeStretch.h"
+#include <cstring>
 #include "signalsmith-stretch.h"
 #include <android/log.h>
 #include <algorithm>
