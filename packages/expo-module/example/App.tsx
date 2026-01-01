@@ -115,6 +115,15 @@ const isExtractionCancellationError = (error: any) => {
   );
 };
 
+const isPlayableRecordingUri = (uri: string) => {
+  const lower = uri.toLowerCase();
+  return lower.endsWith('.wav') || lower.endsWith('.mp3');
+};
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const POSITION_POLL_MS = 250;
+const RECORDING_POLL_MS = 200;
+
 export default function App() {
   const [status, setStatus] = useState('Idle');
   const [isPlaying, setIsPlaying] = useState(false);
@@ -126,7 +135,7 @@ export default function App() {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingStatus, setRecordingStatus] = useState('Idle');
-  const [recordingFormat, setRecordingFormat] = useState<'wav' | 'aac' | 'mp3'>('aac');
+  const [recordingFormat, setRecordingFormat] = useState<'wav' | 'aac' | 'mp3'>('wav');
   const [recordingQuality, setRecordingQuality] = useState<'low' | 'medium' | 'high'>(
     'medium'
   );
@@ -143,6 +152,10 @@ export default function App() {
   const [lastExtraction, setLastExtraction] = useState<ExtractionInfo | null>(null);
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractionJobId, setExtractionJobId] = useState<number | null>(null);
+  const positionRef = useRef(0);
+  const durationRef = useRef(0);
+  const recordingLevelRef = useRef(0);
+  const recordingElapsedRef = useRef(0);
   const recordingStartRef = useRef<number | null>(null);
   const loadedRecordingUris = useRef(new Set<string>());
   const recordingCountRef = useRef(1);
@@ -288,8 +301,14 @@ export default function App() {
       try {
         const pos = AudioEngineModule.getCurrentPosition();
         const dur = AudioEngineModule.getDuration();
-        setPosition(pos);
-        setDuration(dur);
+        if (Math.abs(pos - positionRef.current) >= 20) {
+          positionRef.current = pos;
+          setPosition(pos);
+        }
+        if (Math.abs(dur - durationRef.current) >= 20) {
+          durationRef.current = dur;
+          setDuration(dur);
+        }
 
         // Auto-stop at end
         if (pos >= dur && dur > 0) {
@@ -298,13 +317,15 @@ export default function App() {
       } catch (error) {
         console.error('Position update error:', error);
       }
-    }, 100);
+    }, POSITION_POLL_MS);
 
     return () => clearInterval(interval);
-  }, [isPlaying]);
+  }, [handleStop, isPlaying]);
 
   useEffect(() => {
     if (!isRecording) {
+      recordingElapsedRef.current = 0;
+      recordingLevelRef.current = 0;
       setRecordingElapsed(0);
       setRecordingLevel(0);
       recordingStartRef.current = null;
@@ -319,15 +340,22 @@ export default function App() {
       try {
         const level = AudioEngineModule.getInputLevel();
         const clamped = Math.max(0, Math.min(1, level));
-        setRecordingLevel(clamped);
+        if (Math.abs(clamped - recordingLevelRef.current) >= 0.02) {
+          recordingLevelRef.current = clamped;
+          setRecordingLevel(clamped);
+        }
       } catch (error) {
         setRecordingLevel(0);
       }
 
       if (recordingStartRef.current) {
-        setRecordingElapsed(Date.now() - recordingStartRef.current);
+        const elapsed = Date.now() - recordingStartRef.current;
+        if (elapsed - recordingElapsedRef.current >= RECORDING_POLL_MS) {
+          recordingElapsedRef.current = elapsed;
+          setRecordingElapsed(elapsed);
+        }
       }
-    }, 100);
+    }, RECORDING_POLL_MS);
 
     return () => clearInterval(interval);
   }, [isRecording]);
@@ -362,6 +390,12 @@ export default function App() {
         return;
       }
 
+      if (!isPlayableRecordingUri(recording.uri)) {
+        setRecordingStatus('Saved (AAC playback unavailable)');
+        console.warn('[Recording] Auto-load skipped (unsupported format)', recording.uri);
+        return;
+      }
+
       if (loadedRecordingUris.current.has(recording.uri)) {
         return;
       }
@@ -378,16 +412,48 @@ export default function App() {
       loadedRecordingUris.current.add(recording.uri);
 
       try {
-        await AudioEngineModule.loadTracks([
-          {
-            id: trackId,
-            uri: recording.uri,
-            volume: 1.0,
-            pan: 0.0,
-            muted: false,
-            startTimeMs,
-          },
-        ]);
+        let ready = false;
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          const info = await FileSystem.getInfoAsync(recording.uri);
+          if (info.exists && typeof info.size === 'number' && info.size > 44) {
+            ready = true;
+            break;
+          }
+          await wait(150);
+        }
+
+        if (!ready) {
+          setRecordingStatus('Saved (file not ready)');
+          throw new Error('Recording file not ready');
+        }
+
+        let loaded = false;
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          try {
+            await AudioEngineModule.loadTracks([
+              {
+                id: trackId,
+                uri: recording.uri,
+                volume: 1.0,
+                pan: 0.0,
+                muted: false,
+                startTimeMs,
+              },
+            ]);
+            loaded = true;
+            break;
+          } catch (error) {
+            if (attempt < 1) {
+              await wait(200);
+            } else {
+              throw error;
+            }
+          }
+        }
+
+        if (!loaded) {
+          throw new Error('Recording track failed to load');
+        }
 
         setTracks((prev) => [
           ...prev,
@@ -408,6 +474,7 @@ export default function App() {
       } catch (error) {
         loadedRecordingUris.current.delete(recording.uri);
         console.warn('[Recording] Auto-load failed', error);
+        setRecordingStatus('Auto-load failed');
       }
     },
     [tracks.length]
@@ -454,8 +521,15 @@ export default function App() {
       recordingStartRef.current = Date.now();
       setRecordingElapsed(0);
       setRecordingLevel(0);
-      setIsRecording(true);
-      setRecordingStatus('Recording');
+      const isNativeRecording = AudioEngineModule.isRecording();
+      setIsRecording(isNativeRecording);
+      setRecordingStatus(isNativeRecording ? 'Recording' : 'Start failed');
+      if (!isNativeRecording) {
+        recordingStartRef.current = null;
+        setRecordingElapsed(0);
+        setRecordingLevel(0);
+        Alert.alert('Recording failed', 'Recording did not start.');
+      }
     } catch (error: any) {
       console.error('Start recording error:', error);
       setIsRecording(false);
@@ -475,6 +549,12 @@ export default function App() {
   const handleStopRecording = useCallback(async () => {
     try {
       setRecordingStatus('Stopping...');
+      const isNativeRecording = AudioEngineModule.isRecording();
+      if (!isNativeRecording) {
+        setIsRecording(false);
+        setRecordingStatus('Not recording');
+        return;
+      }
       const result = await AudioEngineModule.stopRecording();
       handleRecordingResult(result as RecordingInfo);
       recordingStartRef.current = null;
@@ -484,6 +564,7 @@ export default function App() {
       setRecordingStatus('Recording saved');
     } catch (error: any) {
       console.error('Stop recording error:', error);
+      setIsRecording(false);
       setRecordingStatus('Stop failed');
       Alert.alert('Recording failed', error?.message ?? 'Unable to stop recording.');
     }
@@ -1249,6 +1330,12 @@ export default function App() {
                   </TouchableOpacity>
                 ))}
               </View>
+
+              {recordingFormat === 'aac' && (
+                <Text style={styles.sectionHint}>
+                  AAC recordings cannot be auto-loaded yet. Use WAV/MP3 for timeline placement.
+                </Text>
+              )}
 
               <View style={styles.formatRow}>
                 {(['low', 'medium', 'high'] as const).map((quality) => (
