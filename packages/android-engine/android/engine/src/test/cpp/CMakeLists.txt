@@ -25,10 +25,23 @@ set(SEZO_ENGINE_SOURCES
   "${SEZO_ENGINE_ROOT}/audio/AudioDecoder.cpp"
   "${SEZO_ENGINE_ROOT}/audio/MP3Decoder.cpp"
   "${SEZO_ENGINE_ROOT}/audio/WAVDecoder.cpp"
+  "${SEZO_ENGINE_ROOT}/audio/MP3Encoder.cpp"
+  "${SEZO_ENGINE_ROOT}/audio/WAVEncoder.cpp"
   "${SEZO_ENGINE_ROOT}/playback/TimeStretch.cpp"
   "${SEZO_ENGINE_ROOT}/playback/Track.cpp"
   "${SEZO_ENGINE_ROOT}/playback/MultiTrackMixer.cpp"
 )
+
+if (ANDROID)
+  list(APPEND SEZO_ENGINE_SOURCES
+    "${SEZO_ENGINE_ROOT}/audio/AACEncoder.cpp"
+    "${SEZO_ENGINE_ROOT}/playback/OboePlayer.cpp"
+    "${SEZO_ENGINE_ROOT}/recording/MicrophoneCapture.cpp"
+    "${SEZO_ENGINE_ROOT}/recording/RecordingPipeline.cpp"
+    "${SEZO_ENGINE_ROOT}/extraction/ExtractionPipeline.cpp"
+    "${SEZO_ENGINE_ROOT}/AudioEngine.cpp"
+  )
+endif()
 
 add_executable(sezo_engine_tests
   ${SEZO_TEST_SOURCES}
@@ -57,7 +70,13 @@ target_link_libraries(sezo_engine_tests
 )
 
 if (ANDROID)
-  target_link_libraries(sezo_engine_tests log)
+  add_subdirectory("${SEZO_ENGINE_ROOT}/third_party/oboe" "${CMAKE_BINARY_DIR}/oboe")
+  target_link_libraries(sezo_engine_tests
+    oboe
+    android
+    mediandk
+    log
+  )
 endif()
 
 enable_testing()

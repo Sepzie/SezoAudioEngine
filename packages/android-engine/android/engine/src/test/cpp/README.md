@@ -35,3 +35,4 @@ devices, set `SEZO_ANDROID_SERIAL` to choose.
 - Host builds use a stub `android/log.h` from `stubs/` to avoid NDK headers.
 - Only a subset of engine sources is compiled into the test binary by default;
   add more in `CMakeLists.txt` as coverage expands.
+- Add audio fixtures under `packages/android-engine/android/engine/src/test/cpp/fixtures`.
