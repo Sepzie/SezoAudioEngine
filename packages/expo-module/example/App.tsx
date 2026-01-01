@@ -1,7 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Animated,
-  StyleSheet,
   Text,
   View,
   TouchableOpacity,
@@ -17,63 +16,13 @@ import Slider from '@react-native-community/slider';
 import { Asset } from 'expo-asset';
 import * as FileSystem from 'expo-file-system';
 import * as IntentLauncher from 'expo-intent-launcher';
-
-interface Track {
-  id: string;
-  name: string;
-  uri: string;
-  volume: number;
-  pan: number;
-  muted: boolean;
-  solo: boolean;
-  pitch: number;
-  speed: number;
-  startTimeMs?: number;
-}
-
-interface ExtractionInfo {
-  trackId?: string;
-  uri: string;
-  outputPath?: string;
-  duration: number;
-  format: string;
-  fileSize: number;
-  bitrate?: number;
-}
-
-interface RecordingInfo {
-  uri: string;
-  duration: number;
-  startTimeMs?: number;
-  startTimeSamples?: number;
-  sampleRate: number;
-  channels: number;
-  format: string;
-  fileSize: number;
-  bitrate?: number;
-}
-
-const theme = {
-  colors: {
-    background: '#0b0f10',
-    surface: '#141b1f',
-    surfaceAlt: '#1b252a',
-    surfaceStrong: '#1f2b31',
-    text: '#f5f7f9',
-    textMuted: '#8a949c',
-    accent: '#ffb454',
-    accentStrong: '#ff8a3d',
-    success: '#23d18b',
-    danger: '#ff5d5d',
-    border: '#253038',
-    track: '#2a343a',
-  },
-  radius: {
-    card: 18,
-    pill: 999,
-    button: 12,
-  },
-};
+import CollapsibleSection from './components/CollapsibleSection';
+import LabeledSlider from './components/LabeledSlider';
+import TogglePillGroup from './components/TogglePillGroup';
+import ProgressBar from './components/ProgressBar';
+import TrackCard from './components/TrackCard';
+import { styles, theme } from './ui';
+import { ExtractionInfo, RecordingInfo, Track } from './types';
 
 const getMimeType = (format: string) => {
   switch (format) {
@@ -123,6 +72,24 @@ const isPlayableRecordingUri = (uri: string) => {
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const POSITION_POLL_MS = 250;
 const RECORDING_POLL_MS = 200;
+const AUDIO_FORMAT_OPTIONS = [
+  { value: 'wav', label: 'WAV' },
+  { value: 'aac', label: 'AAC' },
+  { value: 'mp3', label: 'MP3' },
+] as const;
+const RECORDING_QUALITY_OPTIONS = [
+  { value: 'low', label: 'LOW' },
+  { value: 'medium', label: 'MEDIUM' },
+  { value: 'high', label: 'HIGH' },
+] as const;
+const RECORDING_CHANNEL_OPTIONS = [
+  { value: 1, label: 'MONO' },
+  { value: 2, label: 'STEREO' },
+] as const;
+const RECORDING_SAMPLE_RATE_OPTIONS = [
+  { value: 44100, label: '44.1K' },
+  { value: 48000, label: '48K' },
+] as const;
 
 export default function App() {
   const [status, setStatus] = useState('Idle');
@@ -1134,16 +1101,17 @@ export default function App() {
 
         {tracks.length > 0 && (
           <>
-            <Animated.View style={[styles.card, controlsStyle]}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Transport</Text>
+            <CollapsibleSection
+              title="Transport"
+              right={
                 <View style={styles.timePill}>
                   <Text style={styles.timeText}>
                     {formatTime(position)} / {formatTime(duration)}
                   </Text>
                 </View>
-              </View>
-
+              }
+              containerStyle={controlsStyle}
+            >
               <View style={styles.transportRow}>
                 <TouchableOpacity
                   style={[styles.controlButton, isPlaying && styles.controlButtonDisabled]}
@@ -1180,12 +1148,12 @@ export default function App() {
                 maximumTrackTintColor={theme.colors.track}
                 thumbTintColor={theme.colors.accentStrong}
               />
-            </Animated.View>
+            </CollapsibleSection>
 
-            <Animated.View style={[styles.card, controlsStyle]}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Master</Text>
-                <View style={styles.sectionHeaderActions}>
+            <CollapsibleSection
+              title="Master"
+              right={
+                <>
                   <Text style={styles.sectionHint}>Global mix controls</Text>
                   <TouchableOpacity
                     style={styles.iconResetButton}
@@ -1193,143 +1161,83 @@ export default function App() {
                   >
                     <Text style={styles.iconResetText}>↺</Text>
                   </TouchableOpacity>
-                </View>
-              </View>
+                </>
+              }
+              containerStyle={controlsStyle}
+            >
+              <LabeledSlider
+                label="Master Volume"
+                value={masterVolume}
+                minimumValue={0}
+                maximumValue={2.0}
+                formatValue={(value) => `${(value * 100).toFixed(0)}%`}
+                onValueChange={handleMasterVolumeChange}
+                onReset={() => handleMasterVolumeChange(1.0)}
+                minimumTrackTintColor={theme.colors.accent}
+                maximumTrackTintColor={theme.colors.track}
+                thumbTintColor={theme.colors.accentStrong}
+              />
 
-              <View style={styles.controlGroup}>
-                <View style={styles.labelRow}>
-                  <Text style={styles.label}>Master Volume</Text>
-                  <View style={styles.valueRow}>
-                    <Text style={styles.valuePill}>
-                      {(masterVolume * 100).toFixed(0)}%
-                    </Text>
-                    <TouchableOpacity
-                      style={styles.iconResetButton}
-                      onPress={() => handleMasterVolumeChange(1.0)}
-                    >
-                      <Text style={styles.iconResetText}>↺</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-                <Slider
-                  style={styles.slider}
-                  minimumValue={0}
-                  maximumValue={2.0}
-                  value={masterVolume}
-                  onValueChange={handleMasterVolumeChange}
-                  minimumTrackTintColor={theme.colors.accent}
-                  maximumTrackTintColor={theme.colors.track}
-                  thumbTintColor={theme.colors.accentStrong}
-                />
-              </View>
+              <LabeledSlider
+                label="Master Pitch"
+                value={masterPitch}
+                minimumValue={-12.0}
+                maximumValue={12.0}
+                formatValue={(value) => `${value > 0 ? '+' : ''}${value.toFixed(1)} st`}
+                onValueChange={handleMasterPitchChange}
+                onReset={() => handleMasterPitchChange(0.0)}
+                minimumTrackTintColor={theme.colors.accent}
+                maximumTrackTintColor={theme.colors.track}
+                thumbTintColor={theme.colors.accentStrong}
+              />
 
-              <View style={styles.controlGroup}>
-                <View style={styles.labelRow}>
-                  <Text style={styles.label}>Master Pitch</Text>
-                  <View style={styles.valueRow}>
-                    <Text style={styles.valuePill}>
-                      {masterPitch > 0 ? '+' : ''}
-                      {masterPitch.toFixed(1)} st
-                    </Text>
-                    <TouchableOpacity
-                      style={styles.iconResetButton}
-                      onPress={() => handleMasterPitchChange(0.0)}
-                    >
-                      <Text style={styles.iconResetText}>↺</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-                <Slider
-                  style={styles.slider}
-                  minimumValue={-12.0}
-                  maximumValue={12.0}
-                  value={masterPitch}
-                  onValueChange={handleMasterPitchChange}
-                  minimumTrackTintColor={theme.colors.accent}
-                  maximumTrackTintColor={theme.colors.track}
-                  thumbTintColor={theme.colors.accentStrong}
-                />
-              </View>
+              <LabeledSlider
+                label="Master Speed"
+                value={masterSpeed}
+                minimumValue={0.5}
+                maximumValue={2.0}
+                formatValue={(value) => `${(value * 100).toFixed(0)}%`}
+                onValueChange={handleMasterSpeedChange}
+                onReset={() => handleMasterSpeedChange(1.0)}
+                minimumTrackTintColor={theme.colors.accent}
+                maximumTrackTintColor={theme.colors.track}
+                thumbTintColor={theme.colors.accentStrong}
+              />
+            </CollapsibleSection>
 
-              <View style={styles.controlGroup}>
-                <View style={styles.labelRow}>
-                  <Text style={styles.label}>Master Speed</Text>
-                  <View style={styles.valueRow}>
-                    <Text style={styles.valuePill}>
-                      {(masterSpeed * 100).toFixed(0)}%
-                    </Text>
-                    <TouchableOpacity
-                      style={styles.iconResetButton}
-                      onPress={() => handleMasterSpeedChange(1.0)}
-                    >
-                      <Text style={styles.iconResetText}>↺</Text>
-                    </TouchableOpacity>
-                  </View>
+            <CollapsibleSection
+              title="Recording"
+              right={
+                <View
+                  style={[
+                    styles.statusPill,
+                    isRecording && styles.recordingStatusPill,
+                    recordingUnavailable && styles.statusPillDanger,
+                  ]}
+                >
+                  <Text style={styles.statusText}>
+                    {recordingUnavailable
+                      ? 'Unavailable'
+                      : isRecording
+                        ? 'Recording'
+                        : recordingStatus}
+                  </Text>
                 </View>
-                <Slider
-                  style={styles.slider}
-                  minimumValue={0.5}
-                  maximumValue={2.0}
-                  value={masterSpeed}
-                  onValueChange={handleMasterSpeedChange}
-                  minimumTrackTintColor={theme.colors.accent}
-                  maximumTrackTintColor={theme.colors.track}
-                  thumbTintColor={theme.colors.accentStrong}
-                />
-              </View>
-            </Animated.View>
-
-            <Animated.View style={[styles.card, controlsStyle]}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Recording</Text>
-                <View style={styles.sectionHeaderActions}>
-                  <View
-                    style={[
-                      styles.statusPill,
-                      isRecording && styles.recordingStatusPill,
-                      recordingUnavailable && styles.statusPillDanger,
-                    ]}
-                  >
-                    <Text style={styles.statusText}>
-                      {recordingUnavailable
-                        ? 'Unavailable'
-                        : isRecording
-                          ? 'Recording'
-                          : recordingStatus}
-                    </Text>
-                  </View>
-                </View>
-              </View>
-
+              }
+              containerStyle={controlsStyle}
+            >
               {Platform.OS === 'ios' && (
                 <Text style={styles.sectionHint}>
                   Recording is Android-only in this preview build.
                 </Text>
               )}
 
-              <View style={styles.formatRow}>
-                {(['wav', 'aac', 'mp3'] as const).map((format) => (
-                  <TouchableOpacity
-                    key={format}
-                    style={[
-                      styles.formatButton,
-                      recordingFormat === format && styles.formatButtonActive,
-                      (isRecording || recordingUnavailable) && styles.formatButtonDisabled,
-                    ]}
-                    onPress={() => setRecordingFormat(format)}
-                    disabled={isRecording || recordingUnavailable}
-                  >
-                    <Text
-                      style={[
-                        styles.formatButtonText,
-                        recordingFormat === format && styles.formatButtonTextActive,
-                      ]}
-                    >
-                      {format.toUpperCase()}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+              <TogglePillGroup
+                value={recordingFormat}
+                onChange={setRecordingFormat}
+                disabled={isRecording || recordingUnavailable}
+                options={AUDIO_FORMAT_OPTIONS}
+              />
 
               {recordingFormat === 'aac' && (
                 <Text style={styles.sectionHint}>
@@ -1337,116 +1245,43 @@ export default function App() {
                 </Text>
               )}
 
-              <View style={styles.formatRow}>
-                {(['low', 'medium', 'high'] as const).map((quality) => (
-                  <TouchableOpacity
-                    key={quality}
-                    style={[
-                      styles.formatButton,
-                      recordingQuality === quality && styles.formatButtonActive,
-                      (isRecording || recordingUnavailable) && styles.formatButtonDisabled,
-                    ]}
-                    onPress={() => setRecordingQuality(quality)}
-                    disabled={isRecording || recordingUnavailable}
-                  >
-                    <Text
-                      style={[
-                        styles.formatButtonText,
-                        recordingQuality === quality && styles.formatButtonTextActive,
-                      ]}
-                    >
-                      {quality.toUpperCase()}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+              <TogglePillGroup
+                value={recordingQuality}
+                onChange={setRecordingQuality}
+                disabled={isRecording || recordingUnavailable}
+                options={RECORDING_QUALITY_OPTIONS}
+              />
 
-              <View style={styles.formatRow}>
-                {[1, 2].map((channels) => (
-                  <TouchableOpacity
-                    key={channels}
-                    style={[
-                      styles.formatButton,
-                      recordingChannels === channels && styles.formatButtonActive,
-                      (isRecording || recordingUnavailable) && styles.formatButtonDisabled,
-                    ]}
-                    onPress={() => setRecordingChannels(channels as 1 | 2)}
-                    disabled={isRecording || recordingUnavailable}
-                  >
-                    <Text
-                      style={[
-                        styles.formatButtonText,
-                        recordingChannels === channels && styles.formatButtonTextActive,
-                      ]}
-                    >
-                      {channels === 1 ? 'MONO' : 'STEREO'}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+              <TogglePillGroup
+                value={recordingChannels}
+                onChange={(value) => setRecordingChannels(value as 1 | 2)}
+                disabled={isRecording || recordingUnavailable}
+                options={RECORDING_CHANNEL_OPTIONS}
+              />
 
-                {[44100, 48000].map((sampleRate) => (
-                  <TouchableOpacity
-                    key={sampleRate}
-                    style={[
-                      styles.formatButton,
-                      recordingSampleRate === sampleRate && styles.formatButtonActive,
-                      (isRecording || recordingUnavailable) && styles.formatButtonDisabled,
-                    ]}
-                    onPress={() => setRecordingSampleRate(sampleRate as 44100 | 48000)}
-                    disabled={isRecording || recordingUnavailable}
-                  >
-                    <Text
-                      style={[
-                        styles.formatButtonText,
-                        recordingSampleRate === sampleRate && styles.formatButtonTextActive,
-                      ]}
-                    >
-                      {sampleRate === 44100 ? '44.1K' : '48K'}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+              <TogglePillGroup
+                value={recordingSampleRate}
+                onChange={(value) => setRecordingSampleRate(value as 44100 | 48000)}
+                disabled={isRecording || recordingUnavailable}
+                options={RECORDING_SAMPLE_RATE_OPTIONS}
+              />
 
-              <View style={styles.controlGroup}>
-                <View style={styles.labelRow}>
-                  <Text style={styles.label}>Input Gain</Text>
-                  <View style={styles.valueRow}>
-                    <Text style={styles.valuePill}>
-                      {(recordingVolume * 100).toFixed(0)}%
-                    </Text>
-                    <TouchableOpacity
-                      style={[
-                        styles.iconResetButton,
-                        recordingUnavailable && styles.iconResetButtonDisabled,
-                      ]}
-                      onPress={() => handleRecordingVolumeChange(1.0)}
-                      disabled={recordingUnavailable}
-                    >
-                      <Text style={styles.iconResetText}>↺</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-                <Slider
-                  style={styles.slider}
-                  minimumValue={0}
-                  maximumValue={2.0}
-                  value={recordingVolume}
-                  onValueChange={handleRecordingVolumeChange}
-                  disabled={recordingUnavailable}
-                  minimumTrackTintColor={theme.colors.accent}
-                  maximumTrackTintColor={theme.colors.track}
-                  thumbTintColor={theme.colors.accentStrong}
-                />
-              </View>
+              <LabeledSlider
+                label="Input Gain"
+                value={recordingVolume}
+                minimumValue={0}
+                maximumValue={2.0}
+                formatValue={(value) => `${(value * 100).toFixed(0)}%`}
+                onValueChange={handleRecordingVolumeChange}
+                disabled={recordingUnavailable}
+                resetDisabled={recordingUnavailable}
+                onReset={() => handleRecordingVolumeChange(1.0)}
+                minimumTrackTintColor={theme.colors.accent}
+                maximumTrackTintColor={theme.colors.track}
+                thumbTintColor={theme.colors.accentStrong}
+              />
 
-              <View style={styles.progressTrack}>
-                <View
-                  style={[
-                    styles.levelFill,
-                    { width: `${Math.round(recordingLevel * 100)}%` },
-                  ]}
-                />
-              </View>
+              <ProgressBar progress={recordingLevel} fillStyle={styles.levelFill} />
 
               <View style={styles.progressMeta}>
                 <Text style={styles.sectionHint}>
@@ -1520,37 +1355,21 @@ export default function App() {
               ) : (
                 <Text style={styles.sectionHint}>No recordings yet</Text>
               )}
-            </Animated.View>
+            </CollapsibleSection>
 
-            <Animated.View style={[styles.card, controlsStyle]}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Extraction</Text>
-                <Text style={styles.sectionHint}>Offline export</Text>
-              </View>
+            <CollapsibleSection
+              title="Extraction"
+              right={<Text style={styles.sectionHint}>Offline export</Text>}
+              containerStyle={controlsStyle}
+            >
+              <TogglePillGroup
+                value={extractionFormat}
+                onChange={setExtractionFormat}
+                disabled={isExtracting}
+                options={AUDIO_FORMAT_OPTIONS}
+              />
 
               <View style={styles.formatRow}>
-                {(['wav', 'aac', 'mp3'] as const).map((format) => (
-                  <TouchableOpacity
-                    key={format}
-                    style={[
-                      styles.formatButton,
-                      extractionFormat === format && styles.formatButtonActive,
-                      isExtracting && styles.formatButtonDisabled,
-                    ]}
-                    onPress={() => setExtractionFormat(format)}
-                    disabled={isExtracting}
-                  >
-                    <Text
-                      style={[
-                        styles.formatButtonText,
-                        extractionFormat === format && styles.formatButtonTextActive,
-                      ]}
-                    >
-                      {format.toUpperCase()}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-
                 <TouchableOpacity
                   style={[
                     styles.effectsToggle,
@@ -1596,14 +1415,7 @@ export default function App() {
                 </TouchableOpacity>
               </View>
 
-              <View style={styles.progressTrack}>
-                <View
-                  style={[
-                    styles.progressFill,
-                    { width: `${Math.round(extractionProgress * 100)}%` },
-                  ]}
-                />
-              </View>
+              <ProgressBar progress={extractionProgress} />
 
               <View style={styles.progressMeta}>
                 <Text style={styles.sectionHint}>{extractionStatus}</Text>
@@ -1641,604 +1453,33 @@ export default function App() {
               ) : (
                 <Text style={styles.sectionHint}>No exports yet</Text>
               )}
-            </Animated.View>
+            </CollapsibleSection>
 
-            <Animated.View style={[styles.sectionTitleRow, tracksStyle]}>
-              <Text style={styles.sectionTitle}>Tracks</Text>
-              <Text style={styles.sectionHint}>{tracks.length} loaded</Text>
-            </Animated.View>
-
-            {tracks.map((track) => (
-              <Animated.View key={track.id} style={[styles.trackCard, tracksStyle]}>
-                <View style={styles.trackHeader}>
-                  <View>
-                    <Text style={styles.trackName}>{track.name}</Text>
-                    <Text style={styles.trackMeta}>
-                      Pitch {track.pitch > 0 ? '+' : ''}
-                      {track.pitch.toFixed(1)} st | Speed {(track.speed * 100).toFixed(0)}%
-                      {typeof track.startTimeMs === 'number'
-                        ? ` | Start ${formatSeconds(track.startTimeMs)}`
-                        : ''}
-                    </Text>
-                  </View>
-                  <View style={styles.trackButtons}>
-                    <TouchableOpacity
-                      style={[styles.trackButton, track.muted && styles.trackButtonMuted]}
-                      onPress={() => handleTrackMuteToggle(track.id)}
-                    >
-                      <Text style={styles.trackButtonText}>M</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.trackButton, track.solo && styles.trackButtonSolo]}
-                      onPress={() => handleTrackSoloToggle(track.id)}
-                    >
-                      <Text style={styles.trackButtonText}>S</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-
-                <View style={styles.controlGroup}>
-                  <View style={styles.labelRow}>
-                    <Text style={styles.label}>Volume</Text>
-                    <View style={styles.valueRow}>
-                      <Text style={styles.valuePill}>
-                        {(track.volume * 100).toFixed(0)}%
-                      </Text>
-                      <TouchableOpacity
-                        style={styles.iconResetButton}
-                        onPress={() => handleTrackVolumeChange(track.id, 1.0)}
-                      >
-                        <Text style={styles.iconResetText}>↺</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                  <Slider
-                    style={styles.slider}
-                    minimumValue={0}
-                    maximumValue={2.0}
-                    value={track.volume}
-                    onValueChange={(value: number) =>
-                      handleTrackVolumeChange(track.id, value)
-                    }
-                    minimumTrackTintColor={theme.colors.accent}
-                    maximumTrackTintColor={theme.colors.track}
-                    thumbTintColor={theme.colors.accentStrong}
-                  />
-                </View>
-
-                <View style={styles.controlGroup}>
-                  <View style={styles.labelRow}>
-                    <Text style={styles.label}>Pan</Text>
-                    <View style={styles.valueRow}>
-                      <Text style={styles.valuePill}>
-                        {track.pan > 0 ? 'R' : track.pan < 0 ? 'L' : 'C'}{' '}
-                        {Math.abs(track.pan * 100).toFixed(0)}
-                      </Text>
-                      <TouchableOpacity
-                        style={styles.iconResetButton}
-                        onPress={() => handleTrackPanChange(track.id, 0.0)}
-                      >
-                        <Text style={styles.iconResetText}>↺</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                  <Slider
-                    style={styles.slider}
-                    minimumValue={-1.0}
-                    maximumValue={1.0}
-                    value={track.pan}
-                    onValueChange={(value: number) => handleTrackPanChange(track.id, value)}
-                    minimumTrackTintColor={theme.colors.accent}
-                    maximumTrackTintColor={theme.colors.track}
-                    thumbTintColor={theme.colors.accentStrong}
-                  />
-                </View>
-
-                <View style={styles.controlGroup}>
-                  <View style={styles.labelRow}>
-                    <Text style={styles.label}>Pitch</Text>
-                    <View style={styles.valueRow}>
-                      <Text style={styles.valuePill}>
-                        {track.pitch > 0 ? '+' : ''}
-                        {track.pitch.toFixed(1)} st
-                      </Text>
-                      <TouchableOpacity
-                        style={[
-                          styles.iconResetButton,
-                          !supportsTrackPitch && styles.iconResetButtonDisabled,
-                        ]}
-                        onPress={() => handleTrackPitchChange(track.id, 0.0)}
-                        disabled={!supportsTrackPitch}
-                      >
-                        <Text style={styles.iconResetText}>↺</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                  <Slider
-                    style={styles.slider}
-                    minimumValue={-12.0}
-                    maximumValue={12.0}
-                    value={track.pitch}
-                    disabled={!supportsTrackPitch}
-                    onValueChange={(value: number) => handleTrackPitchChange(track.id, value)}
-                    minimumTrackTintColor={
-                      supportsTrackPitch ? theme.colors.accent : theme.colors.track
-                    }
-                    maximumTrackTintColor={theme.colors.track}
-                    thumbTintColor={
-                      supportsTrackPitch ? theme.colors.accentStrong : theme.colors.border
-                    }
-                  />
-                </View>
-
-                <View style={styles.controlGroup}>
-                  <View style={styles.labelRow}>
-                    <Text style={styles.label}>Speed</Text>
-                    <View style={styles.valueRow}>
-                      <Text style={styles.valuePill}>
-                        {(track.speed * 100).toFixed(0)}%
-                      </Text>
-                      <TouchableOpacity
-                        style={[
-                          styles.iconResetButton,
-                          !supportsTrackSpeed && styles.iconResetButtonDisabled,
-                        ]}
-                        onPress={() => handleTrackSpeedChange(track.id, 1.0)}
-                        disabled={!supportsTrackSpeed}
-                      >
-                        <Text style={styles.iconResetText}>↺</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                  <Slider
-                    style={styles.slider}
-                    minimumValue={0.5}
-                    maximumValue={2.0}
-                    value={track.speed}
-                    disabled={!supportsTrackSpeed}
-                    onValueChange={(value: number) => handleTrackSpeedChange(track.id, value)}
-                    minimumTrackTintColor={
-                      supportsTrackSpeed ? theme.colors.accent : theme.colors.track
-                    }
-                    maximumTrackTintColor={theme.colors.track}
-                    thumbTintColor={
-                      supportsTrackSpeed ? theme.colors.accentStrong : theme.colors.border
-                    }
-                  />
-                </View>
-              </Animated.View>
-            ))}
+            <CollapsibleSection
+              title="Tracks"
+              right={<Text style={styles.sectionHint}>{tracks.length} loaded</Text>}
+              variant="plain"
+              containerStyle={tracksStyle}
+            >
+              {tracks.map((track) => (
+                <TrackCard
+                  key={track.id}
+                  track={track}
+                  supportsTrackPitch={supportsTrackPitch}
+                  supportsTrackSpeed={supportsTrackSpeed}
+                  onToggleMute={handleTrackMuteToggle}
+                  onToggleSolo={handleTrackSoloToggle}
+                  onVolumeChange={handleTrackVolumeChange}
+                  onPanChange={handleTrackPanChange}
+                  onPitchChange={handleTrackPitchChange}
+                  onSpeedChange={handleTrackSpeedChange}
+                  formatStartTime={formatSeconds}
+                />
+              ))}
+            </CollapsibleSection>
           </>
         )}
       </ScrollView>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
-  background: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  glowTop: {
-    position: 'absolute',
-    width: 320,
-    height: 320,
-    borderRadius: 160,
-    backgroundColor: 'rgba(255, 180, 84, 0.22)',
-    top: -140,
-    right: -80,
-  },
-  glowBottom: {
-    position: 'absolute',
-    width: 360,
-    height: 360,
-    borderRadius: 180,
-    backgroundColor: 'rgba(35, 209, 139, 0.18)',
-    bottom: -160,
-    left: -120,
-  },
-  content: {
-    padding: 20,
-    paddingTop: 56,
-    paddingBottom: 80,
-  },
-  heroCard: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.radius.card,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    shadowColor: '#000',
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 4,
-  },
-  heroTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 12,
-  },
-  eyebrow: {
-    color: theme.colors.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: 2,
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 6,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: theme.colors.text,
-    fontFamily: 'serif',
-  },
-  subtitle: {
-    color: theme.colors.textMuted,
-    fontSize: 14,
-    marginTop: 12,
-    marginBottom: 16,
-  },
-  statusPill: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: theme.radius.pill,
-    backgroundColor: theme.colors.surfaceAlt,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  statusPillReady: {
-    borderColor: 'rgba(35, 209, 139, 0.6)',
-  },
-  statusPillActive: {
-    backgroundColor: 'rgba(35, 209, 139, 0.2)',
-    borderColor: 'rgba(35, 209, 139, 0.7)',
-  },
-  recordingStatusPill: {
-    backgroundColor: 'rgba(255, 93, 93, 0.18)',
-    borderColor: 'rgba(255, 93, 93, 0.7)',
-  },
-  statusPillDanger: {
-    backgroundColor: 'rgba(255, 93, 93, 0.18)',
-    borderColor: 'rgba(255, 93, 93, 0.7)',
-  },
-  statusText: {
-    color: theme.colors.text,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  primaryButton: {
-    backgroundColor: theme.colors.accent,
-    paddingVertical: 14,
-    borderRadius: theme.radius.button,
-    alignItems: 'center',
-  },
-  primaryButtonText: {
-    color: '#1b1206',
-    fontSize: 16,
-    fontWeight: '700',
-    letterSpacing: 0.3,
-  },
-  card: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.radius.card,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    marginTop: 18,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 3,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  sectionHeaderActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  sectionTitle: {
-    color: theme.colors.text,
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  sectionTitleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 26,
-  },
-  sectionHint: {
-    color: theme.colors.textMuted,
-    fontSize: 12,
-  },
-  timePill: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: theme.radius.pill,
-    backgroundColor: theme.colors.surfaceAlt,
-  },
-  timeText: {
-    color: theme.colors.textMuted,
-    fontSize: 12,
-    fontFamily: 'monospace',
-  },
-  transportRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginBottom: 12,
-  },
-  formatRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 12,
-  },
-  formatButton: {
-    borderRadius: theme.radius.pill,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    backgroundColor: theme.colors.surfaceAlt,
-  },
-  formatButtonActive: {
-    borderColor: theme.colors.accent,
-    backgroundColor: 'rgba(255, 180, 84, 0.18)',
-  },
-  formatButtonDisabled: {
-    opacity: 0.5,
-  },
-  formatButtonText: {
-    color: theme.colors.textMuted,
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 0.4,
-  },
-  formatButtonTextActive: {
-    color: theme.colors.accent,
-  },
-  effectsToggle: {
-    borderRadius: theme.radius.pill,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    backgroundColor: theme.colors.surfaceAlt,
-  },
-  effectsToggleActive: {
-    borderColor: 'rgba(35, 209, 139, 0.7)',
-    backgroundColor: 'rgba(35, 209, 139, 0.2)',
-  },
-  effectsToggleText: {
-    color: theme.colors.text,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  controlButton: {
-    backgroundColor: theme.colors.surfaceStrong,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: theme.radius.button,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    minWidth: 96,
-    alignItems: 'center',
-  },
-  controlButtonDisabled: {
-    opacity: 0.5,
-  },
-  controlButtonText: {
-    color: theme.colors.text,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  recordButton: {
-    backgroundColor: 'rgba(255, 180, 84, 0.18)',
-    borderColor: 'rgba(255, 180, 84, 0.6)',
-  },
-  recordButtonText: {
-    color: theme.colors.accent,
-  },
-  stopButton: {
-    backgroundColor: 'rgba(255, 93, 93, 0.18)',
-    borderColor: 'rgba(255, 93, 93, 0.6)',
-  },
-  stopButtonText: {
-    color: theme.colors.danger,
-  },
-  cancelButton: {
-    backgroundColor: 'rgba(255, 93, 93, 0.15)',
-    borderColor: 'rgba(255, 93, 93, 0.6)',
-  },
-  cancelButtonText: {
-    color: theme.colors.danger,
-  },
-  progressTrack: {
-    height: 8,
-    borderRadius: 999,
-    backgroundColor: theme.colors.track,
-    overflow: 'hidden',
-    marginBottom: 8,
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: 999,
-    backgroundColor: theme.colors.accentStrong,
-  },
-  levelFill: {
-    height: '100%',
-    borderRadius: 999,
-    backgroundColor: theme.colors.success,
-  },
-  progressMeta: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  progressPercent: {
-    color: theme.colors.text,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  extractionDetails: {
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: theme.radius.button,
-    backgroundColor: theme.colors.surfaceAlt,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  detailLabel: {
-    color: theme.colors.textMuted,
-    fontSize: 11,
-    textTransform: 'uppercase',
-    letterSpacing: 1.2,
-    marginBottom: 4,
-  },
-  detailValue: {
-    color: theme.colors.text,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  detailPath: {
-    color: theme.colors.textMuted,
-    fontSize: 12,
-    marginTop: 6,
-    marginBottom: 8,
-  },
-  exportActions: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  resetButton: {
-    backgroundColor: 'rgba(255, 180, 84, 0.15)',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: theme.radius.button,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 180, 84, 0.6)',
-    minWidth: 96,
-    alignItems: 'center',
-  },
-  resetButtonText: {
-    color: theme.colors.accent,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  controlGroup: {
-    marginVertical: 10,
-  },
-  labelRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  valueRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  label: {
-    color: theme.colors.text,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  valuePill: {
-    color: theme.colors.textMuted,
-    fontSize: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: theme.radius.pill,
-    backgroundColor: theme.colors.surfaceAlt,
-    overflow: 'hidden',
-  },
-  iconResetButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: theme.colors.surfaceStrong,
-  },
-  iconResetButtonDisabled: {
-    opacity: 0.4,
-  },
-  iconResetText: {
-    color: theme.colors.text,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  slider: {
-    width: '100%',
-    height: 40,
-  },
-  trackCard: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.radius.card,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    marginTop: 14,
-  },
-  trackHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  trackName: {
-    color: theme.colors.text,
-    fontSize: 17,
-    fontWeight: '700',
-  },
-  trackMeta: {
-    color: theme.colors.textMuted,
-    fontSize: 12,
-    marginTop: 4,
-  },
-  trackButtons: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  trackButton: {
-    backgroundColor: theme.colors.surfaceStrong,
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  trackButtonMuted: {
-    backgroundColor: 'rgba(255, 93, 93, 0.2)',
-    borderColor: 'rgba(255, 93, 93, 0.8)',
-  },
-  trackButtonSolo: {
-    backgroundColor: 'rgba(35, 209, 139, 0.2)',
-    borderColor: 'rgba(35, 209, 139, 0.8)',
-  },
-  trackButtonText: {
-    color: theme.colors.text,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-});
