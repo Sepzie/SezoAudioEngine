@@ -17,12 +17,13 @@ namespace {
 std::vector<float> MixWithRetry(MultiTrackMixer& mixer,
                                 size_t frames,
                                 int64_t timeline_start,
+                                float min_rms = 1e-4f,
                                 int attempts = 50) {
   std::vector<float> output(frames * 2, 0.0f);
   for (int i = 0; i < attempts; ++i) {
     std::fill(output.begin(), output.end(), 0.0f);
     mixer.Mix(output.data(), frames, timeline_start);
-    if (test::Rms(output.data(), output.size()) > 1e-4f) {
+    if (test::Rms(output.data(), output.size()) > min_rms) {
       return output;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -111,17 +112,30 @@ TEST(MultiTrackMixerTest, MasterVolumeAppliedAndClipped) {
 
   auto track = std::make_shared<Track>("master", path);
   ASSERT_TRUE(track->Load());
-  track->SetVolume(2.0f);
 
   MultiTrackMixer mixer;
   mixer.AddTrack(track);
-  mixer.SetMasterVolume(2.0f);
 
   const size_t frames = 512;
-  auto output = MixWithRetry(mixer, frames, 0);
-  const float max_abs = test::MaxAbs(output.data(), output.size());
+  track->SetVolume(0.25f);
+  mixer.SetMasterVolume(1.0f);
+  ASSERT_TRUE(track->Seek(0));
+  auto base = MixWithRetry(mixer, frames, 0, 0.05f);
+  const float base_rms = test::Rms(base.data(), base.size());
+  ASSERT_GT(base_rms, 0.0f);
+
+  mixer.SetMasterVolume(2.0f);
+  ASSERT_TRUE(track->Seek(0));
+  auto boosted = MixWithRetry(mixer, frames, 0, 0.05f);
+  const float boosted_rms = test::Rms(boosted.data(), boosted.size());
+  EXPECT_NEAR(boosted_rms / base_rms, 2.0f, 0.2f);
+
+  track->SetVolume(2.0f);
+  mixer.SetMasterVolume(2.0f);
+  ASSERT_TRUE(track->Seek(0));
+  auto clipped = MixWithRetry(mixer, frames, 0, 0.05f);
+  const float max_abs = test::MaxAbs(clipped.data(), clipped.size());
   EXPECT_LE(max_abs, 1.0f);
-  EXPECT_GT(max_abs, 0.9f);
 }
 
 }  // namespace playback

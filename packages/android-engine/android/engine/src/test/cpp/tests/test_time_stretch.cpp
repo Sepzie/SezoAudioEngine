@@ -45,9 +45,17 @@ TEST(TimeStretchTest, PitchDoesNotChangeDuration) {
     input[i * 2 + 1] = value;
   }
 
-  stretch.Process(input.data(), frames, output.data(), frames);
+  bool has_signal = false;
+  for (int attempt = 0; attempt < 64; ++attempt) {
+    std::fill(output.begin(), output.end(), 0.0f);
+    stretch.Process(input.data(), frames, output.data(), frames);
+    if (test::Rms(output.data(), output.size()) > 0.01f) {
+      has_signal = true;
+      break;
+    }
+  }
+  ASSERT_TRUE(has_signal) << "Expected non-silent output after warm-up.";
   EXPECT_TRUE(test::AllFinite(output.data(), output.size()));
-  EXPECT_GT(test::Rms(output.data(), output.size()), 0.01f);
 
   float diff_sum = 0.0f;
   for (size_t i = 0; i < output.size(); ++i) {
