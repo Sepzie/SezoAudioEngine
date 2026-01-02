@@ -96,7 +96,26 @@ TEST(EncoderTest, Mp3BehaviorDependsOnLame) {
 
 #if defined(__ANDROID__)
 TEST(EncoderTest, AacEncodesWithMediaCodec) {
-  GTEST_SKIP() << "TODO: encode short buffer and verify output file size > 0.";
+  AACEncoder encoder;
+  EncoderConfig config;
+  config.format = EncoderFormat::kAAC;
+  config.sample_rate = 48000;
+  config.channels = 1;
+  config.bitrate = 96000;
+
+  test::ScopedTempFile temp_file(test::MakeTempPath("sezo_aac_", ".aac"));
+  ASSERT_TRUE(encoder.Open(temp_file.path(), config));
+
+  const size_t frames = 1024;
+  std::vector<float> samples(frames);
+  const double kPi = 3.14159265358979323846;
+  for (size_t i = 0; i < frames; ++i) {
+    samples[i] = 0.25f * std::sin(static_cast<float>(2.0 * kPi * 440.0 * i / 48000.0));
+  }
+
+  EXPECT_TRUE(encoder.Write(samples.data(), frames));
+  EXPECT_TRUE(encoder.Close());
+  EXPECT_GT(encoder.GetFileSize(), 0);
 }
 #else
 TEST(EncoderTest, AacSkippedOnHost) {

@@ -175,11 +175,21 @@ run_tests() {
   local libcxx
   libcxx=$(find_libcxx_shared "$ABI" "$API_LEVEL")
 
+  local fixtures_dir="${SRC_DIR}/fixtures"
+  local remote_fixtures="/data/local/tmp/sezo_fixtures"
+  local fixture_env=""
+
   "$ADB_BIN" "${ADB_ARGS[@]}" push "$bin_path" /data/local/tmp/sezo_engine_tests >/dev/null
   "$ADB_BIN" "${ADB_ARGS[@]}" push "$libcxx" /data/local/tmp/libc++_shared.so >/dev/null
   "$ADB_BIN" "${ADB_ARGS[@]}" shell chmod 755 /data/local/tmp/sezo_engine_tests
 
-  "$ADB_BIN" "${ADB_ARGS[@]}" shell "LD_LIBRARY_PATH=/data/local/tmp /data/local/tmp/sezo_engine_tests"
+  if [[ -d "$fixtures_dir" ]]; then
+    "$ADB_BIN" "${ADB_ARGS[@]}" shell "rm -rf ${remote_fixtures} && mkdir -p ${remote_fixtures}"
+    "$ADB_BIN" "${ADB_ARGS[@]}" push "${fixtures_dir}/." "${remote_fixtures}" >/dev/null
+    fixture_env="SEZO_TEST_FIXTURES_DIR=${remote_fixtures}"
+  fi
+
+  "$ADB_BIN" "${ADB_ARGS[@]}" shell "LD_LIBRARY_PATH=/data/local/tmp ${fixture_env} /data/local/tmp/sezo_engine_tests"
 }
 
 case "$MODE" in
