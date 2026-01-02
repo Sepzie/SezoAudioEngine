@@ -1,7 +1,11 @@
 plugins {
   id "com.android.library"
   id "org.jetbrains.kotlin.android"
+  id "maven-publish"
 }
+
+group = "com.github.Sepzie"
+version = System.getenv("VERSION") ?: "0.0.1"
 
 android {
   namespace "com.sezo.audioengine"
@@ -48,9 +52,26 @@ android {
   kotlinOptions {
     jvmTarget = "17"
   }
+
+  publishing {
+    singleVariant("release")
+  }
 }
 
 dependencies {
   implementation "org.jetbrains.kotlin:kotlin-stdlib:1.9.0"
   implementation "androidx.annotation:annotation:1.7.1"
+}
+
+afterEvaluate {
+  publishing {
+    publications {
+      release(MavenPublication) {
+        from components.release
+        groupId = project.group
+        artifactId = "audio-engine"
+        version = project.version
+      }
+    }
+  }
 }

@@ -1,0 +1,5 @@
+jdk:
+  - openjdk17
+install:
+  - cd packages/android-engine/android
+  - ./gradlew :engine:publishToMavenLocal

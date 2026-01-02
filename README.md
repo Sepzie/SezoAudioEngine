@@ -13,4 +13,5 @@ See `docs/IMPLEMENTATION_CHECKLIST.md`.
 
 ## Status
 
-Scaffolded foundation. Core functionality and platform implementations are pending.
+- Android engine: implemented and tested; ready for native integration.
+- Expo module and iOS implementation: in progress.
