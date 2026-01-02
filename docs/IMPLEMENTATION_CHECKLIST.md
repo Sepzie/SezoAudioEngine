@@ -134,13 +134,13 @@ Rule: After each feature is added, update this checklist to reflect progress.
 
 ### Android Engine - Kotlin Layer
 
-[ ] Wire Gradle module publishing (AAR for internal use)
+[x] Wire Gradle module publishing (AAR for internal use)
 [ ] Implement JNI bridge API surface (C++ <-> Kotlin):
-  [ ] Load native library
-  [ ] Define external native methods
-  [ ] Implement native method wrappers
+  [x] Load native library
+  [x] Define external native methods
+  [x] Implement native method wrappers
   [ ] Handle exceptions from native layer
-  [ ] Convert between Kotlin and C++ types
+  [x] Convert between Kotlin and C++ types
 
 [ ] State management:
   [ ] Track loaded tracks in Kotlin
@@ -149,14 +149,14 @@ Rule: After each feature is added, update this checklist to reflect progress.
 
 ### Expo Module - Android Integration
 
-[ ] Link to android-engine package in Gradle
-[ ] Implement ExpoAudioEngineModule methods:
-  [ ] initialize() - call native engine
-  [ ] release() - cleanup
-  [ ] loadTracks() - convert JS tracks to native
-  [ ] play/pause/stop - delegate to engine
-  [ ] Volume controls - delegate to engine
-  [ ] Position/duration getters
+[x] Link to android-engine package in Gradle
+[x] Implement ExpoAudioEngineModule methods:
+  [x] initialize() - call native engine
+  [x] release() - cleanup
+  [x] loadTracks() - convert JS tracks to native
+  [x] play/pause/stop - delegate to engine
+  [x] Volume controls - delegate to engine
+  [x] Position/duration getters
 [ ] Implement event emission for playback state changes
 [ ] Handle file URI conversion (content:// to file path)
 [ ] Add permission checks (RECORD_AUDIO when needed)
@@ -220,9 +220,9 @@ Rule: After each feature is added, update this checklist to reflect progress.
 
 ## Phase 4: Track Management & Polish (Week 7)
 
-[ ] Android engine: implement per-track mute
-[ ] Android engine: implement per-track solo
-[ ] Android engine: implement per-track pan
+[x] Android engine: implement per-track mute
+[x] Android engine: implement per-track solo
+[x] Android engine: implement per-track pan
 [ ] Android engine: implement output level metering
 [ ] Android engine: implement input level metering
 [ ] Android engine: implement track level metering

@@ -43,6 +43,22 @@ Add the dependency (use a git tag like `v0.1.0`):
 implementation("com.github.Sepzie:audio-engine:VERSION")
 ```
 
+## Versioning and Tags
+
+JitPack uses git tags as versions. Recommended format: `vMAJOR.MINOR.PATCH`.
+
+Example release:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Then depend on:
+```gradle
+implementation("com.github.Sepzie:audio-engine:v0.1.0")
+```
+
 ## Local Integration (without publishing)
 
 1. Include the module:
@@ -74,4 +90,4 @@ Set `SEZO_TEST_FIXTURES_DIR` to override fixture lookup if needed.
 
 ## Publishing
 
-Publish target, coordinates, and release automation are TBD.
+JitPack publishing is configured; Maven Central can be added later if needed.

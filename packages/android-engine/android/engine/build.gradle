@@ -71,6 +71,30 @@ afterEvaluate {
         groupId = project.group
         artifactId = "audio-engine"
         version = project.version
+        pom {
+          name = "Sezo Audio Engine"
+          description = "Native Android audio engine for multi-track playback, pitch/speed control, recording, and extraction."
+          url = "https://github.com/Sepzie/SezoAudioEngine"
+          licenses {
+            license {
+              name = "MIT License"
+              url = "https://opensource.org/licenses/MIT"
+              distribution = "repo"
+            }
+          }
+          developers {
+            developer {
+              id = "Sepzie"
+              name = "Sepzie"
+              url = "https://github.com/Sepzie"
+            }
+          }
+          scm {
+            connection = "scm:git:git://github.com/Sepzie/SezoAudioEngine.git"
+            developerConnection = "scm:git:ssh://git@github.com:Sepzie/SezoAudioEngine.git"
+            url = "https://github.com/Sepzie/SezoAudioEngine"
+          }
+        }
       }
     }
   }
