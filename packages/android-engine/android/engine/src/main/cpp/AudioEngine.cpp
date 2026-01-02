@@ -140,6 +140,11 @@ bool AudioEngine::LoadTrack(const std::string& track_id,
     return false;
   }
   track->SetStartTimeSamples(start_time_samples);
+  const int64_t current_frame = clock_->GetPosition();
+  if (current_frame > start_time_samples) {
+    const int64_t track_frame = current_frame - start_time_samples;
+    track->Seek(track_frame);
+  }
 
   // Add to mixer
   mixer_->AddTrack(track);

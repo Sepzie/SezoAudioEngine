@@ -55,8 +55,6 @@ bool RecordingPipeline::StartRecording(
   }
 
   if (actual_sample_rate != config_.sample_rate || actual_channels != config_.channels) {
-    LOGD("Updating recording config to match input stream: %d Hz/%d ch -> %d Hz/%d ch",
-         config_.sample_rate, config_.channels, actual_sample_rate, actual_channels);
     config_.sample_rate = actual_sample_rate;
     config_.channels = actual_channels;
   }

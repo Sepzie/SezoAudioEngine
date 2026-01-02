@@ -43,11 +43,6 @@ bool MicrophoneCapture::Initialize() {
     return false;
   }
 
-  if (actual_sample_rate != sample_rate_ || actual_channels != channel_count_) {
-    LOGD("Input stream config adjusted: requested %d Hz/%d ch, actual %d Hz/%d ch",
-         sample_rate_, channel_count_, actual_sample_rate, actual_channels);
-  }
-
   sample_rate_ = actual_sample_rate;
   channel_count_ = actual_channels;
 
