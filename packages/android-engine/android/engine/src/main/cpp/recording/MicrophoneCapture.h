@@ -74,6 +74,16 @@ class MicrophoneCapture : public oboe::AudioStreamDataCallback {
   float GetInputLevel() const;
 
   /**
+   * Get the actual sample rate of the input stream.
+   */
+  int32_t GetSampleRate() const;
+
+  /**
+   * Get the actual channel count of the input stream.
+   */
+  int32_t GetChannelCount() const;
+
+  /**
    * Set recording volume/gain.
    * @param volume Volume multiplier (0.0 to 2.0)
    */

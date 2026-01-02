@@ -6,7 +6,9 @@ namespace sezo {
 namespace core {
 
 CircularBuffer::CircularBuffer(size_t capacity)
-    : buffer_(std::make_unique<float[]>(capacity)), capacity_(capacity) {}
+    : buffer_(std::make_unique<float[]>(capacity)), capacity_(capacity) {
+  std::memset(buffer_.get(), 0, capacity_ * sizeof(float));
+}
 
 CircularBuffer::~CircularBuffer() = default;
 
@@ -69,6 +71,7 @@ size_t CircularBuffer::FreeSpace() const {
 }
 
 void CircularBuffer::Reset() {
+  std::memset(buffer_.get(), 0, capacity_ * sizeof(float));
   write_pos_.store(0, std::memory_order_release);
   read_pos_.store(0, std::memory_order_release);
 }

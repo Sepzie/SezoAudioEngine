@@ -44,24 +44,41 @@ bool RecordingPipeline::StartRecording(
     return false;
   }
 
+  const int32_t actual_sample_rate = microphone_->GetSampleRate();
+  const int32_t actual_channels = microphone_->GetChannelCount();
+  if (actual_sample_rate <= 0 || actual_channels <= 0) {
+    LOGE("Invalid microphone stream config: %d Hz, %d ch",
+         actual_sample_rate, actual_channels);
+    microphone_->Close();
+    microphone_.reset();
+    return false;
+  }
+
+  if (actual_sample_rate != config_.sample_rate || actual_channels != config_.channels) {
+    LOGD("Updating recording config to match input stream: %d Hz/%d ch -> %d Hz/%d ch",
+         config_.sample_rate, config_.channels, actual_sample_rate, actual_channels);
+    config_.sample_rate = actual_sample_rate;
+    config_.channels = actual_channels;
+  }
+
   // Create encoder based on format
   audio::EncoderConfig encoder_config;
-  encoder_config.sample_rate = config.sample_rate;
-  encoder_config.channels = config.channels;
-  encoder_config.bitrate = config.bitrate;
-  encoder_config.bits_per_sample = config.bits_per_sample;
+  encoder_config.sample_rate = config_.sample_rate;
+  encoder_config.channels = config_.channels;
+  encoder_config.bitrate = config_.bitrate;
+  encoder_config.bits_per_sample = config_.bits_per_sample;
 
-  if (config.format == "aac") {
+  if (config_.format == "aac") {
     encoder_ = std::make_unique<audio::AACEncoder>();
     encoder_config.format = audio::EncoderFormat::kAAC;
-  } else if (config.format == "mp3") {
+  } else if (config_.format == "mp3") {
     encoder_ = std::make_unique<audio::MP3Encoder>();
     encoder_config.format = audio::EncoderFormat::kMP3;
-  } else if (config.format == "wav") {
+  } else if (config_.format == "wav") {
     encoder_ = std::make_unique<audio::WAVEncoder>();
     encoder_config.format = audio::EncoderFormat::kWAV;
   } else {
-    LOGE("Unsupported format: %s", config.format.c_str());
+    LOGE("Unsupported format: %s", config_.format.c_str());
     return false;
   }
 
@@ -89,7 +106,10 @@ bool RecordingPipeline::StartRecording(
   is_recording_.store(true);
   worker_thread_ = std::thread(&RecordingPipeline::RecordingWorkerLoop, this);
   LOGD("Recording started: %s, %d Hz, %d channels, format=%s",
-       output_path.c_str(), config.sample_rate, config.channels, config.format.c_str());
+       output_path.c_str(),
+       config_.sample_rate,
+       config_.channels,
+       config_.format.c_str());
 
   return true;
 }

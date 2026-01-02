@@ -78,6 +78,7 @@ class MultiTrackMixer {
 
   // Temporary mix buffer
   std::vector<float> mix_buffer_;
+  std::vector<float> mono_buffer_;
 };
 
 }  // namespace playback

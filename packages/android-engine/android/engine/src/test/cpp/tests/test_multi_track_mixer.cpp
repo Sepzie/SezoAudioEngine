@@ -54,6 +54,17 @@ float ChannelRms(const std::vector<float>& samples, int channel, int channels) {
   return count == 0 ? 0.0f : static_cast<float>(std::sqrt(sum / static_cast<double>(count)));
 }
 
+float StereoDiffRms(const std::vector<float>& samples) {
+  double sum = 0.0;
+  size_t count = 0;
+  for (size_t i = 0; i + 1 < samples.size(); i += 2) {
+    const double diff = static_cast<double>(samples[i]) - static_cast<double>(samples[i + 1]);
+    sum += diff * diff;
+    ++count;
+  }
+  return count == 0 ? 0.0f : static_cast<float>(std::sqrt(sum / static_cast<double>(count)));
+}
+
 }  // namespace
 
 TEST(MultiTrackMixerTest, SoloOverridesMute) {
@@ -136,6 +147,27 @@ TEST(MultiTrackMixerTest, MasterVolumeAppliedAndClipped) {
   auto clipped = MixWithRetry(mixer, frames, 0, 0.05f);
   const float max_abs = test::MaxAbs(clipped.data(), clipped.size());
   EXPECT_LE(max_abs, 1.0f);
+}
+
+TEST(MultiTrackMixerTest, MonoTrackUpmixesToStereo) {
+  const std::string path = test::FixturePath("mono_1khz_1s.wav");
+  if (!test::FileExists(path)) {
+    GTEST_SKIP() << "Missing fixture: " << path;
+  }
+
+  auto track = std::make_shared<Track>("mono", path);
+  ASSERT_TRUE(track->Load());
+
+  MultiTrackMixer mixer;
+  mixer.AddTrack(track);
+
+  const size_t frames = 512;
+  auto output = MixWithRetry(mixer, frames, 0);
+  const float left_rms = ChannelRms(output, 0, 2);
+  const float right_rms = ChannelRms(output, 1, 2);
+  EXPECT_GT(left_rms, 0.01f);
+  EXPECT_GT(right_rms, 0.01f);
+  EXPECT_LT(StereoDiffRms(output), 1e-3f);
 }
 
 }  // namespace playback

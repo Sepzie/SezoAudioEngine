@@ -11,11 +11,7 @@ namespace sezo {
 namespace recording {
 
 MicrophoneCapture::MicrophoneCapture(int32_t sample_rate, int32_t channel_count)
-    : sample_rate_(sample_rate), channel_count_(channel_count) {
-  // Allocate circular buffer for ~2 seconds of audio
-  size_t buffer_size = sample_rate * channel_count * 2;
-  buffer_ = std::make_unique<core::CircularBuffer>(buffer_size);
-}
+    : sample_rate_(sample_rate), channel_count_(channel_count) {}
 
 MicrophoneCapture::~MicrophoneCapture() {
   Close();
@@ -38,6 +34,28 @@ bool MicrophoneCapture::Initialize() {
     return false;
   }
 
+  const int32_t actual_sample_rate = stream_->getSampleRate();
+  const int32_t actual_channels = stream_->getChannelCount();
+  if (actual_sample_rate <= 0 || actual_channels <= 0) {
+    LOGE("Invalid input stream config: sample rate=%d, channels=%d",
+         actual_sample_rate, actual_channels);
+    stream_.reset();
+    return false;
+  }
+
+  if (actual_sample_rate != sample_rate_ || actual_channels != channel_count_) {
+    LOGD("Input stream config adjusted: requested %d Hz/%d ch, actual %d Hz/%d ch",
+         sample_rate_, channel_count_, actual_sample_rate, actual_channels);
+  }
+
+  sample_rate_ = actual_sample_rate;
+  channel_count_ = actual_channels;
+
+  // Allocate circular buffer for ~2 seconds of audio using actual stream config.
+  const size_t buffer_size =
+      static_cast<size_t>(sample_rate_) * static_cast<size_t>(channel_count_) * 2;
+  buffer_ = std::make_unique<core::CircularBuffer>(buffer_size);
+
   LOGD("Input stream opened: sample rate=%d, channels=%d, buffer size=%d",
        stream_->getSampleRate(),
        stream_->getChannelCount(),
@@ -49,6 +67,10 @@ bool MicrophoneCapture::Initialize() {
 bool MicrophoneCapture::Start() {
   if (!stream_) {
     LOGE("Cannot start: stream not initialized");
+    return false;
+  }
+  if (!buffer_) {
+    LOGE("Cannot start: buffer not initialized");
     return false;
   }
 
@@ -113,16 +135,30 @@ bool MicrophoneCapture::IsCapturing() const {
 }
 
 size_t MicrophoneCapture::ReadData(float* data, size_t frame_count) {
+  if (!buffer_) {
+    return 0;
+  }
   size_t sample_count = frame_count * channel_count_;
   return buffer_->Read(data, sample_count) / channel_count_;
 }
 
 size_t MicrophoneCapture::GetAvailableFrames() const {
+  if (!buffer_) {
+    return 0;
+  }
   return buffer_->Available() / channel_count_;
 }
 
 float MicrophoneCapture::GetInputLevel() const {
   return input_level_.load();
+}
+
+int32_t MicrophoneCapture::GetSampleRate() const {
+  return sample_rate_;
+}
+
+int32_t MicrophoneCapture::GetChannelCount() const {
+  return channel_count_;
 }
 
 void MicrophoneCapture::SetVolume(float volume) {

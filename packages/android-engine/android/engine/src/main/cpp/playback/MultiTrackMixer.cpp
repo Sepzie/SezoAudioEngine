@@ -101,19 +101,38 @@ void MultiTrackMixer::Mix(float* output, size_t frames, int64_t timeline_start_s
       continue;
     }
 
-    // Ensure mix buffer is large enough
-    const size_t samples_needed = frames_to_read * 2;  // Stereo
-    if (mix_buffer_.size() < samples_needed) {
-      mix_buffer_.resize(samples_needed);
+    const int32_t channels = track->GetChannels();
+    if (channels <= 0) {
+      continue;
     }
 
     // Read track samples
-    track->ReadSamples(mix_buffer_.data(), frames_to_read);
+    if (channels == 1) {
+      if (mono_buffer_.size() < frames_to_read) {
+        mono_buffer_.resize(frames_to_read);
+      }
+      track->ReadSamples(mono_buffer_.data(), frames_to_read);
 
-    // Mix into output at the offset
-    const size_t output_offset = offset_frames * 2;
-    for (size_t i = 0; i < frames_to_read * 2; ++i) {
-      output[output_offset + i] += mix_buffer_[i];
+      // Mix mono into stereo output
+      const size_t output_offset = offset_frames * 2;
+      for (size_t i = 0; i < frames_to_read; ++i) {
+        const float sample = mono_buffer_[i];
+        const size_t out_index = output_offset + i * 2;
+        output[out_index] += sample;
+        output[out_index + 1] += sample;
+      }
+    } else if (channels == 2) {
+      const size_t samples_needed = frames_to_read * 2;
+      if (mix_buffer_.size() < samples_needed) {
+        mix_buffer_.resize(samples_needed);
+      }
+      track->ReadSamples(mix_buffer_.data(), frames_to_read);
+
+      // Mix into output at the offset
+      const size_t output_offset = offset_frames * 2;
+      for (size_t i = 0; i < frames_to_read * 2; ++i) {
+        output[output_offset + i] += mix_buffer_[i];
+      }
     }
   }
 
