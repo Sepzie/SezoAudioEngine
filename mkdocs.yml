@@ -1,0 +1,40 @@
+site_name: Sezo Audio Engine
+site_description: Native Android audio engine and Expo module for multi-track playback, pitch/speed control, recording, and extraction.
+repo_url: https://github.com/Sepzie/SezoAudioEngine
+repo_name: Sepzie/SezoAudioEngine
+site_url: https://sepzie.github.io/SezoAudioEngine/
+
+theme:
+  name: readthedocs
+
+markdown_extensions:
+  - admonition
+  - fenced_code
+  - tables
+
+plugins:
+  - search
+
+exclude_docs: |
+  IMPLEMENTATION_CHECKLIST.md
+  implementation_docs/**
+
+nav:
+  - Home: index.md
+  - Common:
+      - Concepts: common/concepts.md
+  - Android Engine:
+      - Overview: android/overview.md
+      - Installation: android/install.md
+      - Usage: android/usage.md
+      - API: android/api.md
+      - Recording: android/recording.md
+      - Extraction: android/extraction.md
+      - Troubleshooting: android/troubleshooting.md
+  - Expo Module:
+      - Overview: expo/overview.md
+      - Installation: expo/install.md
+      - Usage: expo/usage.md
+      - API: expo/api.md
+      - Events: expo/events.md
+      - Troubleshooting: expo/troubleshooting.md
