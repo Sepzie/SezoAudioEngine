@@ -17,6 +17,7 @@ Use the Android Engine directly for native Android apps. Use the Expo Module if 
 - Android Engine docs: `android/overview.md`
 - Expo Module docs: `expo/overview.md`
 - Concepts: `common/concepts.md`
+- JitPack: https://jitpack.io/#Sepzie/SezoAudioEngine
 
 ## Repo Layout
 

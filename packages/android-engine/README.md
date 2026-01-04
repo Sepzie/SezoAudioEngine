@@ -40,8 +40,10 @@ repositories {
 Add the dependency (use a git tag like `v0.1.0`):
 
 ```gradle
-implementation("com.github.Sepzie:audio-engine:VERSION")
+implementation("com.github.Sepzie:SezoAudioEngine:VERSION")
 ```
+
+JitPack page: https://jitpack.io/#Sepzie/SezoAudioEngine
 
 ## Versioning and Tags
 
@@ -56,7 +58,7 @@ git push origin v0.1.0
 
 Then depend on:
 ```gradle
-implementation("com.github.Sepzie:audio-engine:v0.1.0")
+implementation("com.github.Sepzie:SezoAudioEngine:v0.1.0")
 ```
 
 ## Local Integration (without publishing)

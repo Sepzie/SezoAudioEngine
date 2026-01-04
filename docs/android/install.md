@@ -13,10 +13,12 @@ repositories {
 Add the dependency:
 
 ```gradle
-implementation("com.github.Sepzie:audio-engine:VERSION")
+implementation("com.github.Sepzie:SezoAudioEngine:VERSION")
 ```
 
 Replace `VERSION` with a tag like `v0.1.2`.
+
+JitPack page: https://jitpack.io/#Sepzie/SezoAudioEngine
 
 ## Local Module
 
