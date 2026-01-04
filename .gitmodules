@@ -3,7 +3,7 @@
 	url = https://github.com/google/oboe.git
 [submodule "packages/android-engine/android/engine/src/main/cpp/third_party/signalsmith-stretch"]
 	path = packages/android-engine/android/engine/src/main/cpp/third_party/signalsmith-stretch
-	url = https://github.com/Signalsmith-Audio/stretch.git
+	url = https://github.com/Signalsmith-Audio/signalsmith-stretch.git
 [submodule "packages/android-engine/android/engine/src/main/cpp/third_party/signalsmith-linear"]
 	path = packages/android-engine/android/engine/src/main/cpp/third_party/signalsmith-linear
 	url = https://github.com/Signalsmith-Audio/linear.git
