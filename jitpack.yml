@@ -1,5 +1,6 @@
 jdk:
   - openjdk17
 install:
+  - git submodule update --init --recursive
   - cd packages/android-engine/android
   - ./gradlew :engine:publishToMavenLocal
