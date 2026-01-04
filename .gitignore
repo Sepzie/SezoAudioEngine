@@ -8,6 +8,7 @@ build/
 *.iml
 .gradle/
 **/gradle-wrapper.jar
+!packages/android-engine/android/gradle/wrapper/gradle-wrapper.jar
 
 # Android local config
 local.properties
