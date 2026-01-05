@@ -11,6 +11,10 @@ Open-source Expo module for multi-track audio playback, real-time pitch/speed co
 
 See `docs/IMPLEMENTATION_CHECKLIST.md`.
 
+## Documentation
+
+Docs site: https://sepzie.github.io/SezoAudioEngine/
+
 ## Status
 
 - Android engine: implemented and tested; ready for native integration.

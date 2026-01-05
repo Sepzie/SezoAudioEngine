@@ -20,6 +20,6 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install MkDocs
-        run: pip install mkdocs
+        run: pip install mkdocs mkdocs-sitemap
       - name: Publish
         run: mkdocs gh-deploy --force

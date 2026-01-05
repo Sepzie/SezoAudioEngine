@@ -1,0 +1,22 @@
+# Sezo Audio Engine Docs
+
+Core pages:
+- https://sepzie.github.io/SezoAudioEngine/
+- https://sepzie.github.io/SezoAudioEngine/common/concepts/
+
+Android Engine:
+- https://sepzie.github.io/SezoAudioEngine/android/overview/
+- https://sepzie.github.io/SezoAudioEngine/android/install/
+- https://sepzie.github.io/SezoAudioEngine/android/usage/
+- https://sepzie.github.io/SezoAudioEngine/android/api/
+- https://sepzie.github.io/SezoAudioEngine/android/recording/
+- https://sepzie.github.io/SezoAudioEngine/android/extraction/
+- https://sepzie.github.io/SezoAudioEngine/android/troubleshooting/
+
+Expo Module (API mirrors Android; iOS planned):
+- https://sepzie.github.io/SezoAudioEngine/expo/overview/
+- https://sepzie.github.io/SezoAudioEngine/expo/install/
+- https://sepzie.github.io/SezoAudioEngine/expo/usage/
+- https://sepzie.github.io/SezoAudioEngine/expo/api/
+- https://sepzie.github.io/SezoAudioEngine/expo/events/
+- https://sepzie.github.io/SezoAudioEngine/expo/troubleshooting/

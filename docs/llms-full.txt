@@ -1,0 +1,31 @@
+Sezo Audio Engine is a native Android audio engine with an Expo/React Native wrapper.
+
+Android Engine summary:
+- Multi-track playback with sample-accurate synchronization
+- Real-time pitch shifting and time-stretch
+- Per-track controls (volume, pan, mute, solo)
+- Microphone recording (AAC/MP3/WAV)
+- Offline extraction (track or mixdown)
+- Low-latency I/O via Oboe
+
+Android Engine install (JitPack):
+- Repo: https://jitpack.io/#Sepzie/SezoAudioEngine
+- Gradle dependency: com.github.Sepzie:SezoAudioEngine:VERSION
+- Docs: https://sepzie.github.io/SezoAudioEngine/android/install/
+
+Expo Module summary:
+- JS/TS API that mirrors the Android engine
+- Android implementation is functional
+- iOS implementation is planned and will share the same API
+
+Important notes:
+- The engine expects absolute file paths, not content:// URIs
+- Background playback and MediaSession are handled by the host app
+- Recording requires RECORD_AUDIO permission on Android
+
+Primary docs entry points:
+- https://sepzie.github.io/SezoAudioEngine/
+- https://sepzie.github.io/SezoAudioEngine/android/overview/
+- https://sepzie.github.io/SezoAudioEngine/android/api/
+- https://sepzie.github.io/SezoAudioEngine/expo/overview/
+- https://sepzie.github.io/SezoAudioEngine/expo/api/
