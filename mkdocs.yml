@@ -25,6 +25,9 @@ markdown_extensions:
   - fenced_code
   - tables
 
+extra_css:
+  - assets/stylesheets/extra.css
+
 plugins:
   - search
   
@@ -35,6 +38,7 @@ exclude_docs: |
 
 nav:
   - Home: index.md
+  - JitPack: https://jitpack.io/#Sepzie/SezoAudioEngine
   - Common:
       - Concepts: common/concepts.md
   - Android Engine:
