@@ -5,7 +5,20 @@ repo_name: Sepzie/SezoAudioEngine
 site_url: https://sepzie.github.io/SezoAudioEngine/
 
 theme:
-  name: readthedocs
+  name: material
+  font:
+    text: IBM Plex Sans
+    code: IBM Plex Mono
+  palette:
+    - scheme: default
+      primary: teal
+      accent: amber
+  features:
+    - navigation.instant
+    - navigation.tabs
+    - navigation.top
+    - search.highlight
+    - search.suggest
 
 markdown_extensions:
   - admonition
