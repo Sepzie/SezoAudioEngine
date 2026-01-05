@@ -27,9 +27,7 @@ markdown_extensions:
 
 plugins:
   - search
-  - sitemap:
-      changefreq: weekly
-      priority: 0.5
+  
 
 exclude_docs: |
   IMPLEMENTATION_CHECKLIST.md
