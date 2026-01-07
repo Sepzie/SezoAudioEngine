@@ -18,7 +18,8 @@
     "ios": {
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Allow access to the microphone for recording audio."
-      }
+      },
+      "bundleIdentifier": "com.anonymous.sezoaudioengineexample"
     }
   }
 }
