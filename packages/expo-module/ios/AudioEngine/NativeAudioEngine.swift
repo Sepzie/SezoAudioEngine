@@ -14,6 +14,10 @@ final class NativeAudioEngine {
   private var durationMs: Double = 0.0
   private var recordingVolume: Double = 1.0
   private var isInitialized = false
+  private var playbackStartHostTime: UInt64?
+  private var playbackStartPositionMs: Double = 0.0
+  private var activePlaybackCount = 0
+  private var playbackToken = UUID()
 
   func initialize(config: [String: Any]) {
     let parsedConfig = AudioEngineConfig(dictionary: config)
@@ -28,12 +32,17 @@ final class NativeAudioEngine {
   func releaseResources() {
     queue.sync {
       stopEngineIfRunning()
+      stopAllPlayers()
       detachAllTracks()
       tracks.removeAll()
       isPlayingFlag = false
       isRecordingFlag = false
       currentPositionMs = 0.0
       durationMs = 0.0
+      playbackStartHostTime = nil
+      playbackStartPositionMs = 0.0
+      activePlaybackCount = 0
+      playbackToken = UUID()
       isInitialized = false
       sessionManager.deactivate()
     }
@@ -41,7 +50,9 @@ final class NativeAudioEngine {
 
   func loadTracks(_ trackInputs: [[String: Any]]) {
     queue.sync {
+      ensureInitializedIfNeeded()
       stopEngineIfRunning()
+      stopAllPlayers()
       for input in trackInputs {
         guard let track = AudioTrack(input: input) else {
           continue
@@ -71,6 +82,7 @@ final class NativeAudioEngine {
 
   func unloadAllTracks() {
     queue.sync {
+      stopAllPlayers()
       detachAllTracks()
       tracks.removeAll()
       recalculateDuration()
@@ -85,14 +97,23 @@ final class NativeAudioEngine {
 
   func play() {
     queue.sync {
-      startEngineIfNeeded()
+      guard !tracks.isEmpty else { return }
+      ensureInitializedIfNeeded()
+      if isPlayingFlag {
+        return
+      }
+      guard startEngineIfNeeded() else { return }
+      schedulePlayback(at: currentPositionMs)
       isPlayingFlag = true
     }
   }
 
   func pause() {
     queue.sync {
+      guard isPlayingFlag else { return }
+      currentPositionMs = currentPlaybackPositionMs()
       isPlayingFlag = false
+      stopAllPlayers()
       stopEngineIfRunning()
     }
   }
@@ -101,6 +122,9 @@ final class NativeAudioEngine {
     queue.sync {
       isPlayingFlag = false
       currentPositionMs = 0.0
+      playbackStartHostTime = nil
+      playbackStartPositionMs = 0.0
+      playbackToken = UUID()
       stopAllPlayers()
       stopEngineIfRunning()
     }
@@ -109,6 +133,10 @@ final class NativeAudioEngine {
   func seek(positionMs: Double) {
     queue.sync {
       currentPositionMs = max(0.0, positionMs)
+      if isPlayingFlag {
+        guard startEngineIfNeeded() else { return }
+        schedulePlayback(at: currentPositionMs)
+      }
     }
   }
 
@@ -117,7 +145,12 @@ final class NativeAudioEngine {
   }
 
   func getCurrentPosition() -> Double {
-    return queue.sync { currentPositionMs }
+    return queue.sync {
+      if isPlayingFlag {
+        return currentPlaybackPositionMs()
+      }
+      return currentPositionMs
+    }
   }
 
   func getDuration() -> Double {
@@ -318,6 +351,112 @@ final class NativeAudioEngine {
     }
   }
 
+  private func ensureInitializedIfNeeded() {
+    if isInitialized {
+      return
+    }
+    let config = AudioEngineConfig(dictionary: [:])
+    sessionManager.configure(with: config)
+    engine.mainMixerNode.outputVolume = Float(masterVolume)
+    engine.prepare()
+    isInitialized = true
+  }
+
+  private func schedulePlayback(at positionMs: Double) {
+    stopAllPlayers()
+    playbackToken = UUID()
+    activePlaybackCount = 0
+
+    let baseHostTime = mach_absolute_time() + AVAudioTime.hostTime(forSeconds: 0.05)
+    let token = playbackToken
+
+    for track in tracks.values {
+      scheduleTrack(
+        track,
+        baseHostTime: baseHostTime,
+        positionMs: positionMs,
+        token: token
+      )
+    }
+
+    playbackStartHostTime = baseHostTime
+    playbackStartPositionMs = positionMs
+  }
+
+  private func scheduleTrack(
+    _ track: AudioTrack,
+    baseHostTime: UInt64,
+    positionMs: Double,
+    token: UUID
+  ) {
+    let localStartMs = positionMs - track.startTimeMs
+    if localStartMs >= track.durationMs {
+      return
+    }
+
+    let fileOffsetMs = max(0.0, localStartMs)
+    let delayMs = max(0.0, -localStartMs)
+    let sampleRate = track.file.processingFormat.sampleRate
+    if sampleRate <= 0 {
+      return
+    }
+
+    let startFrame = AVAudioFramePosition((fileOffsetMs / 1000.0) * sampleRate)
+    let framesRemaining = track.file.length - startFrame
+    if framesRemaining <= 0 {
+      return
+    }
+
+    let frameCount = AVAudioFrameCount(framesRemaining)
+    activePlaybackCount += 1
+
+    track.playerNode.scheduleSegment(
+      track.file,
+      startingFrame: startFrame,
+      frameCount: frameCount,
+      at: nil
+    ) { [weak self] in
+      self?.queue.async {
+        guard let self = self else { return }
+        if self.playbackToken != token {
+          return
+        }
+        self.activePlaybackCount -= 1
+        if self.activePlaybackCount <= 0 {
+          self.handlePlaybackCompleted()
+        }
+      }
+    }
+
+    let hostTimeDelay = AVAudioTime.hostTime(forSeconds: delayMs / 1000.0)
+    let hostTime = baseHostTime + hostTimeDelay
+    track.playerNode.play(at: AVAudioTime(hostTime: hostTime))
+  }
+
+  private func handlePlaybackCompleted() {
+    if !isPlayingFlag {
+      return
+    }
+    isPlayingFlag = false
+    currentPositionMs = durationMs
+    playbackStartHostTime = nil
+    playbackStartPositionMs = 0.0
+    stopAllPlayers()
+    stopEngineIfRunning()
+  }
+
+  private func currentPlaybackPositionMs() -> Double {
+    guard let startHostTime = playbackStartHostTime else {
+      return currentPositionMs
+    }
+
+    let nowSeconds = AVAudioTime.seconds(forHostTime: mach_absolute_time())
+    let startSeconds = AVAudioTime.seconds(forHostTime: startHostTime)
+    let elapsedMs = max(0.0, (nowSeconds - startSeconds) * 1000.0)
+    let position = playbackStartPositionMs + elapsedMs
+    return min(position, durationMs)
+  }
+
   private func attachTrack(_ track: AudioTrack) {
     if track.isAttached {
       return
@@ -352,13 +491,19 @@ final class NativeAudioEngine {
     }
   }
 
-  private func startEngineIfNeeded() {
+  @discardableResult
+  private func startEngineIfNeeded() -> Bool {
     if !isInitialized {
-      return
+      return false
     }
     if !engine.isRunning {
-      try? engine.start()
+      do {
+        try engine.start()
+      } catch {
+        return false
+      }
     }
+    return engine.isRunning
   }
 
   private func stopEngineIfRunning() {
