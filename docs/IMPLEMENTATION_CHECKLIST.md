@@ -174,6 +174,57 @@ Rule: After each feature is added, update this checklist to reflect progress.
 [ ] Measure audio latency
 [ ] Test error handling (missing files, corrupted files)
 
+## iOS Implementation Plan (Mirrors Android Phases)
+
+### Phase 1: Core Playback Foundation
+
+[ ] Create Swift `AudioEngine` class (non-Expo) to own AVAudioEngine graph
+[ ] Configure `AVAudioSession` for playback + recording as needed
+[ ] Implement track registry (id -> AVAudioFile + AVAudioPlayerNode)
+[ ] Implement multi-track sync using shared start time (`play(at:)`)
+[ ] Implement master clock and position tracking (engine time)
+[ ] Implement load/unload tracks with async file IO
+[ ] Implement play/pause/stop/seek and duration getters
+[ ] Implement per-track controls (volume, pan, mute, solo)
+[ ] Implement master volume
+[ ] Wire Expo module methods to Swift engine
+[ ] Add basic error handling and logging
+[ ] Validate single-track playback on device
+[ ] Validate 2+ track synchronization on device
+
+### Phase 2: Real-Time Effects (Pitch/Speed)
+
+[ ] Implement per-track or master `AVAudioUnitTimePitch`
+[ ] Wire `setPitch`, `setSpeed`, `setTempoAndPitch`
+[ ] Add smooth parameter transitions (ramp or main-thread updates)
+[ ] Validate pitch range (-12 to +12 semitones)
+[ ] Validate speed range (0.5x to 2.0x)
+
+### Phase 3: Recording
+
+[ ] Implement input tap on `engine.inputNode` for capture
+[ ] Write recording to `AVAudioFile` (AAC/M4A or WAV)
+[ ] Implement recording state and metadata output
+[ ] Implement synchronized recording timestamps vs playback
+[ ] Wire `startRecording` / `stopRecording` / `isRecording`
+[ ] Validate recording quality and sync on device
+
+### Phase 4: Extraction (Offline Render)
+
+[ ] Implement offline render pipeline using `enableManualRenderingMode`
+[ ] Apply current pitch/speed and track settings during render
+[ ] Implement progress updates and completion callbacks
+[ ] Wire `extractTrack` and `extractAllTracks`
+[ ] Validate output formats and durations
+
+### Phase 5: Metering & Background Playback
+
+[ ] Implement output level metering (mixer tap)
+[ ] Implement input level metering (input tap)
+[ ] Implement per-track metering (per-node tap)
+[ ] Implement background audio session + now playing info
+[ ] Wire event emissions to JS
+
 ## Phase 2: Real-Time Effects (Week 3-4) ✅ COMPLETED
 
 [x] Android engine: integrate Signalsmith Stretch
