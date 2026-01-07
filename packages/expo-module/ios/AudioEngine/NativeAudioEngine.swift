@@ -1,24 +1,46 @@
 import AVFoundation
 
+/// Swift wrapper around `AVAudioEngine` that backs the Expo module API.
+/// Keeps state on a single serial queue to avoid thread-safety issues.
 final class NativeAudioEngine {
+  /// Serial queue to protect engine state and avoid races with audio callbacks.
   private let queue = DispatchQueue(label: "sezo.audioengine.state")
+  /// Core iOS audio graph.
   private let engine = AVAudioEngine()
+  /// Manages the shared `AVAudioSession` setup.
   private let sessionManager = AudioSessionManager()
+  /// Loaded tracks keyed by their JS `id`.
   private var tracks: [String: AudioTrack] = [:]
+  /// Master controls and global effects.
   private var masterVolume: Double = 1.0
   private var globalPitch: Double = 0.0
   private var globalSpeed: Double = 1.0
+  /// Transport and playback state.
   private var isPlayingFlag = false
   private var isRecordingFlag = false
   private var currentPositionMs: Double = 0.0
   private var durationMs: Double = 0.0
+  /// Recording state and simple metering.
   private var recordingVolume: Double = 1.0
   private var isInitialized = false
   private var playbackStartHostTime: UInt64?
   private var playbackStartPositionMs: Double = 0.0
   private var activePlaybackCount = 0
   private var playbackToken = UUID()
+  private var recordingState: RecordingState?
+  private var inputLevel: Double = 0.0
 
+  /// Bookkeeping for a live recording session.
+  private struct RecordingState {
+    let url: URL
+    let file: AVAudioFile
+    let format: String
+    let sampleRate: Double
+    let channels: Int
+    let startTimeMs: Double
+  }
+
+  /// Initializes the audio session and prepares the engine.
   func initialize(config: [String: Any]) {
     let parsedConfig = AudioEngineConfig(dictionary: config)
     queue.sync {
@@ -29,10 +51,12 @@ final class NativeAudioEngine {
     }
   }
 
+  /// Stops audio, clears state, and releases resources.
   func releaseResources() {
     queue.sync {
       stopEngineIfRunning()
       stopAllPlayers()
+      stopRecordingInternal()
       detachAllTracks()
       tracks.removeAll()
       isPlayingFlag = false
@@ -43,11 +67,13 @@ final class NativeAudioEngine {
       playbackStartPositionMs = 0.0
       activePlaybackCount = 0
       playbackToken = UUID()
+      inputLevel = 0.0
       isInitialized = false
       sessionManager.deactivate()
     }
   }
 
+  /// Loads and attaches tracks into the engine graph.
   func loadTracks(_ trackInputs: [[String: Any]]) {
     queue.sync {
       ensureInitializedIfNeeded()
@@ -70,6 +96,7 @@ final class NativeAudioEngine {
     }
   }
 
+  /// Unloads a single track by ID.
   func unloadTrack(_ trackId: String) {
     queue.sync {
       if let track = tracks.removeValue(forKey: trackId) {
@@ -80,6 +107,7 @@ final class NativeAudioEngine {
     }
   }
 
+  /// Unloads all tracks and clears the graph.
   func unloadAllTracks() {
     queue.sync {
       stopAllPlayers()
@@ -89,12 +117,14 @@ final class NativeAudioEngine {
     }
   }
 
+  /// Returns track metadata for JS.
   func getLoadedTracks() -> [[String: Any]] {
     return queue.sync {
       return tracks.values.map { $0.asDictionary() }
     }
   }
 
+  /// Starts playback from the current position.
   func play() {
     queue.sync {
       guard !tracks.isEmpty else { return }
@@ -108,6 +138,7 @@ final class NativeAudioEngine {
     }
   }
 
+  /// Pauses playback and stores the current position.
   func pause() {
     queue.sync {
       guard isPlayingFlag else { return }
@@ -118,6 +149,7 @@ final class NativeAudioEngine {
     }
   }
 
+  /// Stops playback and resets position to zero.
   func stop() {
     queue.sync {
       isPlayingFlag = false
@@ -130,6 +162,7 @@ final class NativeAudioEngine {
     }
   }
 
+  /// Seeks to a position in milliseconds.
   func seek(positionMs: Double) {
     queue.sync {
       currentPositionMs = max(0.0, positionMs)
@@ -140,10 +173,12 @@ final class NativeAudioEngine {
     }
   }
 
+  /// Returns whether playback is active.
   func isPlaying() -> Bool {
     return queue.sync { isPlayingFlag }
   }
 
+  /// Returns the current playback position in milliseconds.
   func getCurrentPosition() -> Double {
     return queue.sync {
       if isPlayingFlag {
@@ -153,10 +188,12 @@ final class NativeAudioEngine {
     }
   }
 
+  /// Returns the total duration across tracks in milliseconds.
   func getDuration() -> Double {
     return queue.sync { durationMs }
   }
 
+  /// Per-track volume (0.0 - 2.0).
   func setTrackVolume(trackId: String, volume: Double) {
     queue.sync {
       guard let track = tracks[trackId] else { return }
@@ -165,6 +202,7 @@ final class NativeAudioEngine {
     }
   }
 
+  /// Per-track mute toggle.
   func setTrackMuted(trackId: String, muted: Bool) {
     queue.sync {
       guard let track = tracks[trackId] else { return }
@@ -173,6 +211,7 @@ final class NativeAudioEngine {
     }
   }
 
+  /// Per-track solo toggle.
   func setTrackSolo(trackId: String, solo: Bool) {
     queue.sync {
       guard let track = tracks[trackId] else { return }
@@ -181,6 +220,7 @@ final class NativeAudioEngine {
     }
   }
 
+  /// Per-track stereo pan (-1.0 left, 1.0 right).
   func setTrackPan(trackId: String, pan: Double) {
     queue.sync {
       guard let track = tracks[trackId] else { return }
@@ -189,6 +229,7 @@ final class NativeAudioEngine {
     }
   }
 
+  /// Per-track pitch in semitones.
   func setTrackPitch(trackId: String, semitones: Double) {
     queue.sync {
       guard let track = tracks[trackId] else { return }
@@ -197,12 +238,14 @@ final class NativeAudioEngine {
     }
   }
 
+  /// Reads the current pitch for a track.
   func getTrackPitch(trackId: String) -> Double {
     return queue.sync {
       return tracks[trackId]?.pitch ?? 0.0
     }
   }
 
+  /// Per-track time-stretch rate (1.0 = normal).
   func setTrackSpeed(trackId: String, rate: Double) {
     queue.sync {
       guard let track = tracks[trackId] else { return }
@@ -211,12 +254,14 @@ final class NativeAudioEngine {
     }
   }
 
+  /// Reads the current speed for a track.
   func getTrackSpeed(trackId: String) -> Double {
     return queue.sync {
       return tracks[trackId]?.speed ?? 1.0
     }
   }
 
+  /// Master volume for the whole engine.
   func setMasterVolume(_ volume: Double) {
     queue.sync {
       masterVolume = volume
@@ -224,10 +269,12 @@ final class NativeAudioEngine {
     }
   }
 
+  /// Reads the master volume.
   func getMasterVolume() -> Double {
     return queue.sync { masterVolume }
   }
 
+  /// Global pitch applied to all tracks.
   func setPitch(_ semitones: Double) {
     queue.sync {
       globalPitch = semitones
@@ -235,10 +282,12 @@ final class NativeAudioEngine {
     }
   }
 
+  /// Reads global pitch.
   func getPitch() -> Double {
     return queue.sync { globalPitch }
   }
 
+  /// Global speed applied to all tracks.
   func setSpeed(_ rate: Double) {
     queue.sync {
       globalSpeed = rate
@@ -246,10 +295,12 @@ final class NativeAudioEngine {
     }
   }
 
+  /// Reads global speed.
   func getSpeed() -> Double {
     return queue.sync { globalSpeed }
   }
 
+  /// Sets global tempo (speed) and pitch together.
   func setTempoAndPitch(tempo: Double, pitch: Double) {
     queue.sync {
       globalSpeed = tempo
@@ -258,92 +309,211 @@ final class NativeAudioEngine {
     }
   }
 
+  /// Starts recording from the input node into AAC or WAV.
   func startRecording(config: [String: Any]?) {
     queue.sync {
-      _ = config
-      isRecordingFlag = true
+      guard !isRecordingFlag else { return }
+      ensureInitializedIfNeeded()
+
+      let inputNode = engine.inputNode
+      let inputFormat = inputNode.outputFormat(forBus: 0)
+      let requestedFormat = config?["format"] as? String ?? "aac"
+      let channels = config?["channels"] as? Int ?? Int(inputFormat.channelCount)
+      let sampleRate = config?["sampleRate"] as? Double ?? inputFormat.sampleRate
+      let bitrate = resolveBitrate(config: config)
+      let formatInfo = resolveRecordingFormat(requestedFormat: requestedFormat)
+      let outputURL = resolveOutputURL(
+        prefix: "recording",
+        fileExtension: formatInfo.fileExtension,
+        outputDir: config?["outputDir"] as? String
+      )
+
+      let settings: [String: Any]
+      if formatInfo.format == "wav" {
+        settings = [
+          AVFormatIDKey: kAudioFormatLinearPCM,
+          AVSampleRateKey: sampleRate,
+          AVNumberOfChannelsKey: channels,
+          AVLinearPCMBitDepthKey: 16,
+          AVLinearPCMIsBigEndianKey: false,
+          AVLinearPCMIsFloatKey: false
+        ]
+      } else {
+        settings = [
+          AVFormatIDKey: kAudioFormatMPEG4AAC,
+          AVSampleRateKey: sampleRate,
+          AVNumberOfChannelsKey: channels,
+          AVEncoderBitRateKey: bitrate
+        ]
+      }
+
+      do {
+        let file = try AVAudioFile(forWriting: outputURL, settings: settings)
+        let startTimeMs = isPlayingFlag ? currentPlaybackPositionMs() : 0.0
+        recordingState = RecordingState(
+          url: outputURL,
+          file: file,
+          format: formatInfo.format,
+          sampleRate: sampleRate,
+          channels: channels,
+          startTimeMs: startTimeMs
+        )
+
+        guard startEngineIfNeeded() else {
+          recordingState = nil
+          return
+        }
+
+        inputNode.removeTap(onBus: 0)
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
+          guard let self = self else { return }
+          self.queue.async {
+            guard let state = self.recordingState else { return }
+            self.applyRecordingGain(buffer: buffer)
+            self.updateInputLevel(buffer: buffer)
+            do {
+              try state.file.write(from: buffer)
+            } catch {
+              return
+            }
+          }
+        }
+
+        isRecordingFlag = true
+      } catch {
+        recordingState = nil
+      }
     }
   }
 
+  /// Stops recording and returns metadata about the output file.
   func stopRecording() -> [String: Any] {
     return queue.sync {
-      isRecordingFlag = false
+      guard let state = recordingState else {
+        isRecordingFlag = false
+        return [
+          "uri": "",
+          "duration": 0,
+          "startTimeMs": 0,
+          "sampleRate": 44100,
+          "channels": 1,
+          "format": "aac",
+          "fileSize": 0
+        ]
+      }
+
+      stopRecordingInternal()
+
+      let durationMs = (Double(state.file.length) / state.sampleRate) * 1000.0
+      let fileSize = resolveFileSize(url: state.url)
       return [
-        "uri": "",
-        "duration": 0,
-        "startTimeMs": 0,
-        "sampleRate": 44100,
-        "channels": 1,
-        "format": "aac",
-        "fileSize": 0
+        "uri": state.url.absoluteString,
+        "duration": durationMs,
+        "startTimeMs": state.startTimeMs,
+        "startTimeSamples": Int64(state.startTimeMs / 1000.0 * state.sampleRate),
+        "sampleRate": state.sampleRate,
+        "channels": state.channels,
+        "format": state.format,
+        "fileSize": fileSize
       ]
     }
   }
 
+  /// Returns whether recording is active.
   func isRecording() -> Bool {
     return queue.sync { isRecordingFlag }
   }
 
+  /// Applies a simple gain to recorded input before writing.
   func setRecordingVolume(_ volume: Double) {
     queue.sync {
       recordingVolume = volume
     }
   }
 
+  /// Offline export for a single track.
   func extractTrack(trackId: String, config: [String: Any]?) -> [String: Any] {
     return queue.sync {
-      _ = config
-      return [
-        "trackId": trackId,
-        "uri": "",
-        "duration": 0,
-        "format": "aac",
-        "fileSize": 0
-      ]
+      guard let track = tracks[trackId] else {
+        return [
+          "trackId": trackId,
+          "uri": "",
+          "duration": 0,
+          "format": "aac",
+          "fileSize": 0
+        ]
+      }
+
+      let durationMs = track.startTimeMs + track.durationMs
+      return renderOffline(
+        tracksToRender: [track],
+        totalDurationMs: durationMs,
+        config: config,
+        trackId: trackId
+      )
     }
   }
 
+  /// Offline export for all tracks (one file per track).
   func extractAllTracks(config: [String: Any]?) -> [[String: Any]] {
     return queue.sync {
-      _ = config
-      return []
+      var results: [[String: Any]] = []
+      for track in tracks.values {
+        let durationMs = track.startTimeMs + track.durationMs
+        let result = renderOffline(
+          tracksToRender: [track],
+          totalDurationMs: durationMs,
+          config: config,
+          trackId: track.id
+        )
+        results.append(result)
+      }
+      return results
     }
   }
 
+  /// Placeholder for cancelation (not implemented yet).
   func cancelExtraction(jobId: Double?) -> Bool {
     _ = jobId
     return false
   }
 
+  /// Returns the last computed input RMS level.
   func getInputLevel() -> Double {
-    return 0.0
+    return inputLevel
   }
 
+  /// Output metering placeholder.
   func getOutputLevel() -> Double {
     return 0.0
   }
 
+  /// Per-track metering placeholder.
   func getTrackLevel(trackId: String) -> Double {
     _ = trackId
     return 0.0
   }
 
+  /// Background playback placeholder (to be implemented).
   func enableBackgroundPlayback(metadata: [String: Any]) {
     queue.sync {
       _ = metadata
     }
   }
 
+  /// Now Playing updates placeholder (to be implemented).
   func updateNowPlayingInfo(metadata: [String: Any]) {
     queue.sync {
       _ = metadata
     }
   }
 
+  /// Background playback teardown placeholder.
   func disableBackgroundPlayback() {
     queue.sync { }
   }
 
+  /// Updates cached total duration based on track offsets.
   private func recalculateDuration() {
     durationMs = tracks.values.reduce(0.0) { current, track in
       let endMs = track.startTimeMs + track.durationMs
@@ -351,6 +521,7 @@ final class NativeAudioEngine {
     }
   }
 
+  /// Ensures the engine and session are initialized before use.
   private func ensureInitializedIfNeeded() {
     if isInitialized {
       return
@@ -362,6 +533,7 @@ final class NativeAudioEngine {
     isInitialized = true
   }
 
+  /// Schedules all tracks from a given position with shared host time.
   private func schedulePlayback(at positionMs: Double) {
     stopAllPlayers()
     playbackToken = UUID()
@@ -383,6 +555,7 @@ final class NativeAudioEngine {
     playbackStartPositionMs = positionMs
   }
 
+  /// Schedules a single track into the realtime engine.
   private func scheduleTrack(
     _ track: AudioTrack,
     baseHostTime: UInt64,
@@ -433,6 +606,45 @@ final class NativeAudioEngine {
     track.playerNode.play(at: AVAudioTime(hostTime: hostTime))
   }
 
+  /// Schedules a single track for offline rendering.
+  private func scheduleTrackForManualRendering(
+    _ track: AudioTrack,
+    positionMs: Double,
+    sampleRate: Double
+  ) {
+    let localStartMs = positionMs - track.startTimeMs
+    if localStartMs >= track.durationMs {
+      return
+    }
+
+    let fileOffsetMs = max(0.0, localStartMs)
+    let delayMs = max(0.0, -localStartMs)
+    let trackSampleRate = track.file.processingFormat.sampleRate
+    if trackSampleRate <= 0 {
+      return
+    }
+
+    let startFrame = AVAudioFramePosition((fileOffsetMs / 1000.0) * trackSampleRate)
+    let framesRemaining = track.file.length - startFrame
+    if framesRemaining <= 0 {
+      return
+    }
+
+    let frameCount = AVAudioFrameCount(framesRemaining)
+    let startSample = AVAudioFramePosition((delayMs / 1000.0) * sampleRate)
+    let startTime = AVAudioTime(sampleTime: startSample, atRate: sampleRate)
+
+    track.playerNode.scheduleSegment(
+      track.file,
+      startingFrame: startFrame,
+      frameCount: frameCount,
+      at: startTime,
+      completionHandler: nil
+    )
+    track.playerNode.play()
+  }
+
+  /// Handles end-of-playback cleanup once all tracks finish.
   private func handlePlaybackCompleted() {
     if !isPlayingFlag {
       return
@@ -445,6 +657,7 @@ final class NativeAudioEngine {
     stopEngineIfRunning()
   }
 
+  /// Computes playback position from host time.
   private func currentPlaybackPositionMs() -> Double {
     guard let startHostTime = playbackStartHostTime else {
       return currentPositionMs
@@ -457,6 +670,273 @@ final class NativeAudioEngine {
     return min(position, durationMs)
   }
 
+  /// Stops the input tap and clears recording state.
+  private func stopRecordingInternal() {
+    engine.inputNode.removeTap(onBus: 0)
+    recordingState = nil
+    isRecordingFlag = false
+  }
+
+  /// Maps requested output formats to supported formats.
+  private func resolveRecordingFormat(requestedFormat: String) -> (format: String, fileExtension: String) {
+    if requestedFormat == "wav" {
+      return ("wav", "wav")
+    }
+    if requestedFormat == "mp3" {
+      return ("aac", "m4a")
+    }
+    return ("aac", "m4a")
+  }
+
+  /// Resolves output bitrate from config or quality preset.
+  private func resolveBitrate(config: [String: Any]?) -> Int {
+    if let bitrate = config?["bitrate"] as? Int {
+      return bitrate
+    }
+    if let quality = config?["quality"] as? String {
+      switch quality {
+      case "low":
+        return 64_000
+      case "high":
+        return 192_000
+      default:
+        return 128_000
+      }
+    }
+    return 128_000
+  }
+
+  /// Builds a file URL for recording/extraction output.
+  private func resolveOutputURL(prefix: String, fileExtension: String, outputDir: String?) -> URL {
+    let baseURL: URL
+    if let outputDir = outputDir {
+      baseURL = URL(fileURLWithPath: outputDir, isDirectory: true)
+    } else {
+      baseURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("sezo-audio-output", isDirectory: true)
+    }
+
+    try? FileManager.default.createDirectory(at: baseURL, withIntermediateDirectories: true)
+    let filename = "\(prefix)-\(UUID().uuidString).\(fileExtension)"
+    return baseURL.appendingPathComponent(filename)
+  }
+
+  /// Returns file size for output metadata.
+  private func resolveFileSize(url: URL) -> Int {
+    let path = url.path
+    let attributes = try? FileManager.default.attributesOfItem(atPath: path)
+    return attributes?[.size] as? Int ?? 0
+  }
+
+  /// Applies a simple pre-recording gain to the input buffer.
+  private func applyRecordingGain(buffer: AVAudioPCMBuffer) {
+    let gain = Float(recordingVolume)
+    if gain == 1.0 {
+      return
+    }
+    let frameLength = Int(buffer.frameLength)
+    let channelCount = Int(buffer.format.channelCount)
+
+    switch buffer.format.commonFormat {
+    case .pcmFormatFloat32:
+      guard let channelData = buffer.floatChannelData else { return }
+      for channel in 0..<channelCount {
+        let samples = channelData[channel]
+        for i in 0..<frameLength {
+          samples[i] *= gain
+        }
+      }
+    case .pcmFormatInt16:
+      guard let channelData = buffer.int16ChannelData else { return }
+      for channel in 0..<channelCount {
+        let samples = channelData[channel]
+        for i in 0..<frameLength {
+          let scaled = Float(samples[i]) * gain
+          let clamped = max(Float(Int16.min), min(Float(Int16.max), scaled))
+          samples[i] = Int16(clamped)
+        }
+      }
+    default:
+      break
+    }
+  }
+
+  /// Updates `inputLevel` using RMS from the first channel.
+  private func updateInputLevel(buffer: AVAudioPCMBuffer) {
+    guard let channelData = buffer.floatChannelData else { return }
+    let frameLength = Int(buffer.frameLength)
+    if frameLength == 0 {
+      return
+    }
+    let samples = channelData[0]
+    var sum: Float = 0.0
+    for i in 0..<frameLength {
+      let value = samples[i]
+      sum += value * value
+    }
+    let rms = sqrt(sum / Float(frameLength))
+    inputLevel = Double(rms)
+  }
+
+  /// Renders one or more tracks offline into a file.
+  private func renderOffline(
+    tracksToRender: [AudioTrack],
+    totalDurationMs: Double,
+    config: [String: Any]?,
+    trackId: String
+  ) -> [String: Any] {
+    ensureInitializedIfNeeded()
+    stopEngineIfRunning()
+    stopAllPlayers()
+
+    let renderFormat = engine.mainMixerNode.outputFormat(forBus: 0)
+    let formatInfo = resolveRecordingFormat(requestedFormat: config?["format"] as? String ?? "aac")
+    let outputURL = resolveOutputURL(
+      prefix: "extract-\(trackId)",
+      fileExtension: formatInfo.fileExtension,
+      outputDir: config?["outputDir"] as? String
+    )
+    let bitrate = resolveBitrate(config: config)
+
+    let settings: [String: Any]
+    if formatInfo.format == "wav" {
+      settings = [
+        AVFormatIDKey: kAudioFormatLinearPCM,
+        AVSampleRateKey: renderFormat.sampleRate,
+        AVNumberOfChannelsKey: renderFormat.channelCount,
+        AVLinearPCMBitDepthKey: 16,
+        AVLinearPCMIsBigEndianKey: false,
+        AVLinearPCMIsFloatKey: false
+      ]
+    } else {
+      settings = [
+        AVFormatIDKey: kAudioFormatMPEG4AAC,
+        AVSampleRateKey: renderFormat.sampleRate,
+        AVNumberOfChannelsKey: renderFormat.channelCount,
+        AVEncoderBitRateKey: bitrate
+      ]
+    }
+
+    let includeEffects = config?["includeEffects"] as? Bool ?? true
+    let originalState = snapshotTrackState()
+    applyExtractionMixOverrides(tracksToRender: tracksToRender, includeEffects: includeEffects)
+
+    do {
+      try engine.enableManualRenderingMode(
+        .offline,
+        format: renderFormat,
+        maximumFrameCount: 4096
+      )
+
+      for track in tracksToRender {
+        scheduleTrackForManualRendering(
+          track,
+          positionMs: 0.0,
+          sampleRate: renderFormat.sampleRate
+        )
+      }
+
+      try engine.start()
+
+      let outputFile = try AVAudioFile(forWriting: outputURL, settings: settings)
+      let totalFrames = AVAudioFramePosition((totalDurationMs / 1000.0) * renderFormat.sampleRate)
+
+      while engine.manualRenderingSampleTime < totalFrames {
+        let remaining = totalFrames - engine.manualRenderingSampleTime
+        let frameCount = AVAudioFrameCount(min(Int(4096), Int(remaining)))
+        guard let buffer = AVAudioPCMBuffer(
+          pcmFormat: renderFormat,
+          frameCapacity: frameCount
+        ) else {
+          break
+        }
+
+        let status = try engine.renderOffline(frameCount, to: buffer)
+        switch status {
+        case .success:
+          try outputFile.write(from: buffer)
+        case .insufficientDataFromInputNode:
+          continue
+        case .cannotDoInCurrentContext:
+          continue
+        case .error:
+          break
+        @unknown default:
+          break
+        }
+      }
+
+      engine.stop()
+      engine.disableManualRenderingMode()
+    } catch {
+      engine.disableManualRenderingMode()
+      restoreTrackState(originalState)
+      return [
+        "trackId": trackId,
+        "uri": "",
+        "duration": 0,
+        "format": formatInfo.format,
+        "fileSize": 0
+      ]
+    }
+
+    restoreTrackState(originalState)
+    let fileSize = resolveFileSize(url: outputURL)
+    return [
+      "trackId": trackId,
+      "uri": outputURL.absoluteString,
+      "duration": totalDurationMs,
+      "format": formatInfo.format,
+      "bitrate": bitrate,
+      "fileSize": fileSize
+    ]
+  }
+
+  /// Snapshot of track parameters so offline render can override safely.
+  private func snapshotTrackState() -> [String: (Double, Double, Bool, Bool, Double, Double)] {
+    var snapshot: [String: (Double, Double, Bool, Bool, Double, Double)] = [:]
+    for (trackId, track) in tracks {
+      snapshot[trackId] = (track.volume, track.pan, track.muted, track.solo, track.pitch, track.speed)
+    }
+    return snapshot
+  }
+
+  /// Restores track parameters after offline render.
+  private func restoreTrackState(_ snapshot: [String: (Double, Double, Bool, Bool, Double, Double)]) {
+    for (trackId, values) in snapshot {
+      guard let track = tracks[trackId] else { continue }
+      track.volume = values.0
+      track.pan = values.1
+      track.muted = values.2
+      track.solo = values.3
+      track.pitch = values.4
+      track.speed = values.5
+    }
+    applyMixingForAllTracks()
+    applyPitchSpeedForAllTracks()
+  }
+
+  /// Applies extraction-specific overrides (mute others, optional effects).
+  private func applyExtractionMixOverrides(tracksToRender: [AudioTrack], includeEffects: Bool) {
+    let allowedIds = Set(tracksToRender.map { $0.id })
+    for track in tracks.values {
+      if !allowedIds.contains(track.id) {
+        track.volume = 0.0
+        track.muted = true
+      } else {
+        track.muted = false
+      }
+
+      if !includeEffects {
+        track.pitch = 0.0
+        track.speed = 1.0
+      }
+    }
+    applyMixingForAllTracks()
+    applyPitchSpeedForAllTracks()
+  }
+
+  /// Attaches a track's nodes into the engine graph.
   private func attachTrack(_ track: AudioTrack) {
     if track.isAttached {
       return
@@ -470,6 +950,7 @@ final class NativeAudioEngine {
     applyPitchSpeed(for: track)
   }
 
+  /// Detaches a track's nodes from the engine graph.
   private func detachTrack(_ track: AudioTrack) {
     if !track.isAttached {
       return
@@ -479,18 +960,21 @@ final class NativeAudioEngine {
     track.isAttached = false
   }
 
+  /// Detaches all tracks from the engine.
   private func detachAllTracks() {
     for track in tracks.values {
       detachTrack(track)
     }
   }
 
+  /// Stops all player nodes.
   private func stopAllPlayers() {
     for track in tracks.values {
       track.playerNode.stop()
     }
   }
 
+  /// Starts the AVAudioEngine if it is not already running.
   @discardableResult
   private func startEngineIfNeeded() -> Bool {
     if !isInitialized {
@@ -506,12 +990,14 @@ final class NativeAudioEngine {
     return engine.isRunning
   }
 
+  /// Stops the AVAudioEngine if running.
   private func stopEngineIfRunning() {
     if engine.isRunning {
       engine.stop()
     }
   }
 
+  /// Applies volume/pan/solo rules to every track.
   private func applyMixingForAllTracks() {
     let soloActive = isSoloActive()
     for track in tracks.values {
@@ -519,6 +1005,7 @@ final class NativeAudioEngine {
     }
   }
 
+  /// Applies volume/pan to a single track.
   private func applyMixing(for track: AudioTrack, soloActive: Bool) {
     let shouldMute = track.muted || (soloActive && !track.solo)
     let volume = shouldMute ? 0.0 : track.volume
@@ -526,12 +1013,14 @@ final class NativeAudioEngine {
     track.playerNode.pan = Float(track.pan)
   }
 
+  /// Applies pitch/speed updates to all tracks.
   private func applyPitchSpeedForAllTracks() {
     for track in tracks.values {
       applyPitchSpeed(for: track)
     }
   }
 
+  /// Combines per-track and global pitch/speed and applies to the unit.
   private func applyPitchSpeed(for track: AudioTrack) {
     let combinedPitch = track.pitch + globalPitch
     let combinedSpeed = track.speed * globalSpeed
@@ -539,6 +1028,7 @@ final class NativeAudioEngine {
     track.timePitch.rate = Float(combinedSpeed)
   }
 
+  /// Returns true when any track is soloed.
   private func isSoloActive() -> Bool {
     return tracks.values.contains { $0.solo }
   }
