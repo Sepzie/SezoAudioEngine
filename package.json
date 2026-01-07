@@ -10,13 +10,12 @@
     "node": ">=18"
   },
   "scripts": {
-    "dev:example": "yarn build:expo-module && yarn build:android-engine && yarn run:example",
+    "dev:example:android": "yarn build:expo-module && yarn run:example:android",
     "dev:example:ios": "yarn build:expo-module && yarn run:example:ios",
     "build:expo-module": "yarn workspace sezo-audio-engine build",
     "build:android-engine": "cd packages/android-engine/android && ./gradlew :engine:build",
-    "build:example:android": "yarn workspace sezo-audio-engine-example android",
-    "build:example:ios": "yarn workspace sezo-audio-engine-example ios",
-    "run:example": "yarn workspace sezo-audio-engine-example android",
+    "start:example": "yarn workspace sezo-audio-engine-example start",
+    "run:example:android": "yarn workspace sezo-audio-engine-example android",
     "run:example:ios": "yarn workspace sezo-audio-engine-example ios",
     "test": "yarn test:cpp:host",
     "test:cpp:host": "cmake -S packages/android-engine/android/engine/src/test/cpp -B build/sezo-tests-host && cmake --build build/sezo-tests-host && ctest --test-dir build/sezo-tests-host --output-on-failure",
@@ -24,7 +23,6 @@
     "test:cpp:android": "bash packages/android-engine/android/engine/src/test/cpp/scripts/run_android_tests.sh",
     "test:cpp:android:build": "bash packages/android-engine/android/engine/src/test/cpp/scripts/run_android_tests.sh --build-only",
     "test:cpp:android:run": "bash packages/android-engine/android/engine/src/test/cpp/scripts/run_android_tests.sh --run-only",
-    "clean": "rm -rf packages/expo-module/dist packages/expo-module/example/android/app/build packages/expo-module/example/android/.gradle",
-    "rebuild": "yarn clean && yarn dev:example"
+    "clean": "rm -rf packages/expo-module/dist packages/expo-module/example/android/app/build packages/expo-module/example/android/.gradle"
   }
 }
