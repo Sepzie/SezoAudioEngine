@@ -66,6 +66,14 @@ const isExtractionCancellationError = (error: any) => {
 
 const isPlayableRecordingUri = (uri: string) => {
   const lower = uri.toLowerCase();
+  if (Platform.OS === 'ios') {
+    return (
+      lower.endsWith('.wav') ||
+      lower.endsWith('.mp3') ||
+      lower.endsWith('.m4a') ||
+      lower.endsWith('.aac')
+    );
+  }
   return lower.endsWith('.wav') || lower.endsWith('.mp3');
 };
 
@@ -130,7 +138,7 @@ export default function App() {
   const supportsTrackPitch = typeof engineAny.setTrackPitch === 'function';
   const supportsTrackSpeed = typeof engineAny.setTrackSpeed === 'function';
   const supportsRecording = typeof engineAny.startRecording === 'function';
-  const recordingUnavailable = !supportsRecording || Platform.OS === 'ios';
+  const recordingUnavailable = !supportsRecording;
   const introAnim = useState(() => new Animated.Value(0))[0];
   const controlsAnim = useState(() => new Animated.Value(0))[0];
   const tracksAnim = useState(() => new Animated.Value(0))[0];
@@ -464,11 +472,6 @@ export default function App() {
       return;
     }
 
-    if (Platform.OS === 'ios') {
-      Alert.alert('Recording unavailable', 'Recording is Android-only for now.');
-      return;
-    }
-
     const granted = await requestRecordingPermission();
     if (!granted) {
       setRecordingStatus('Permission denied');
@@ -478,10 +481,15 @@ export default function App() {
 
     try {
       setRecordingStatus('Starting...');
+      const effectiveFormat =
+        Platform.OS === 'ios' && recordingFormat === 'mp3' ? 'aac' : recordingFormat;
+      if (Platform.OS === 'ios' && recordingFormat === 'mp3') {
+        Alert.alert('MP3 not supported on iOS', 'Recording will be saved as AAC (m4a).');
+      }
       await AudioEngineModule.startRecording({
         sampleRate: recordingSampleRate,
         channels: recordingChannels,
-        format: recordingFormat,
+        format: effectiveFormat,
         quality: recordingQuality,
       });
       AudioEngineModule.setRecordingVolume(recordingVolume);
@@ -786,9 +794,12 @@ export default function App() {
           type: getMimeType(lastExtraction.format),
           flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
         });
-      } else {
-        await Linking.openURL(openUri);
+        return;
       }
+      await Share.share({
+        message: lastExtraction.uri,
+        url: lastExtraction.uri,
+      });
     } catch (error) {
       console.warn('[Extraction] Open export failed', error);
       Alert.alert('Unable to open file', lastExtraction.uri);
@@ -836,9 +847,12 @@ export default function App() {
           type: getMimeType(lastRecording.format),
           flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
         });
-      } else {
-        await Linking.openURL(openUri);
+        return;
       }
+      await Share.share({
+        message: lastRecording.uri,
+        url: lastRecording.uri,
+      });
     } catch (error) {
       console.warn('[Recording] Open recording failed', error);
       Alert.alert('Unable to open file', lastRecording.uri);
@@ -1226,12 +1240,6 @@ export default function App() {
               }
               containerStyle={controlsStyle}
             >
-              {Platform.OS === 'ios' && (
-                <Text style={styles.sectionHint}>
-                  Recording is Android-only in this preview build.
-                </Text>
-              )}
-
               <TogglePillGroup
                 value={recordingFormat}
                 onChange={setRecordingFormat}
@@ -1239,9 +1247,15 @@ export default function App() {
                 options={AUDIO_FORMAT_OPTIONS}
               />
 
-              {recordingFormat === 'aac' && (
+              {recordingFormat === 'aac' && Platform.OS === 'android' && (
                 <Text style={styles.sectionHint}>
                   AAC recordings cannot be auto-loaded yet. Use WAV/MP3 for timeline placement.
+                </Text>
+              )}
+
+              {recordingFormat === 'mp3' && Platform.OS === 'ios' && (
+                <Text style={styles.sectionHint}>
+                  iOS saves MP3 recordings as AAC (m4a).
                 </Text>
               )}
 
