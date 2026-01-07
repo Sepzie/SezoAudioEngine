@@ -611,23 +611,23 @@ final class NativeAudioEngine {
     _ track: AudioTrack,
     positionMs: Double,
     sampleRate: Double
-  ) {
+  ) -> Bool {
     let localStartMs = positionMs - track.startTimeMs
     if localStartMs >= track.durationMs {
-      return
+      return false
     }
 
     let fileOffsetMs = max(0.0, localStartMs)
     let delayMs = max(0.0, -localStartMs)
     let trackSampleRate = track.file.processingFormat.sampleRate
     if trackSampleRate <= 0 {
-      return
+      return false
     }
 
     let startFrame = AVAudioFramePosition((fileOffsetMs / 1000.0) * trackSampleRate)
     let framesRemaining = track.file.length - startFrame
     if framesRemaining <= 0 {
-      return
+      return false
     }
 
     let frameCount = AVAudioFrameCount(framesRemaining)
@@ -641,7 +641,7 @@ final class NativeAudioEngine {
       at: startTime,
       completionHandler: nil
     )
-    track.playerNode.play()
+    return true
   }
 
   /// Handles end-of-playback cleanup once all tracks finish.
@@ -828,15 +828,22 @@ final class NativeAudioEngine {
         maximumFrameCount: 4096
       )
 
+      var scheduledTracks: [AudioTrack] = []
       for track in tracksToRender {
-        scheduleTrackForManualRendering(
+        let scheduled = scheduleTrackForManualRendering(
           track,
           positionMs: 0.0,
           sampleRate: renderFormat.sampleRate
         )
+        if scheduled {
+          scheduledTracks.append(track)
+        }
       }
 
       try engine.start()
+      for track in scheduledTracks {
+        track.playerNode.play()
+      }
 
       let outputFile = try AVAudioFile(forWriting: outputURL, settings: settings)
       let totalFrames = AVAudioFramePosition((totalDurationMs / 1000.0) * renderFormat.sampleRate)
