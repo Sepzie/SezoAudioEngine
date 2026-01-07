@@ -1,97 +1,77 @@
 import AVFoundation
 
 final class NativeAudioEngine {
-  private struct TrackState {
-    let id: String
-    let uri: String
-    var volume: Double
-    var pan: Double
-    var muted: Bool
-    var solo: Bool
-    var pitch: Double
-    var speed: Double
-    var startTimeMs: Double
-    var durationMs: Double
-
-    func asDictionary() -> [String: Any] {
-      return [
-        "id": id,
-        "uri": uri,
-        "volume": volume,
-        "pan": pan,
-        "muted": muted,
-        "startTimeMs": startTimeMs
-      ]
-    }
-  }
-
   private let queue = DispatchQueue(label: "sezo.audioengine.state")
-  private var tracks: [String: TrackState] = [:]
+  private let engine = AVAudioEngine()
+  private let sessionManager = AudioSessionManager()
+  private var tracks: [String: AudioTrack] = [:]
   private var masterVolume: Double = 1.0
-  private var pitch: Double = 0.0
-  private var speed: Double = 1.0
+  private var globalPitch: Double = 0.0
+  private var globalSpeed: Double = 1.0
   private var isPlayingFlag = false
   private var isRecordingFlag = false
   private var currentPositionMs: Double = 0.0
   private var durationMs: Double = 0.0
   private var recordingVolume: Double = 1.0
+  private var isInitialized = false
 
   func initialize(config: [String: Any]) {
+    let parsedConfig = AudioEngineConfig(dictionary: config)
     queue.sync {
-      _ = config
+      sessionManager.configure(with: parsedConfig)
+      engine.mainMixerNode.outputVolume = Float(masterVolume)
+      engine.prepare()
+      isInitialized = true
     }
   }
 
   func releaseResources() {
     queue.sync {
+      stopEngineIfRunning()
+      detachAllTracks()
       tracks.removeAll()
       isPlayingFlag = false
       isRecordingFlag = false
       currentPositionMs = 0.0
       durationMs = 0.0
+      isInitialized = false
+      sessionManager.deactivate()
     }
   }
 
   func loadTracks(_ trackInputs: [[String: Any]]) {
     queue.sync {
+      stopEngineIfRunning()
       for input in trackInputs {
-        guard let id = input["id"] as? String,
-              let uri = input["uri"] as? String else {
+        guard let track = AudioTrack(input: input) else {
           continue
         }
-        let volume = input["volume"] as? Double ?? 1.0
-        let pan = input["pan"] as? Double ?? 0.0
-        let muted = input["muted"] as? Bool ?? false
-        let solo = input["solo"] as? Bool ?? false
-        let startTimeMs = input["startTimeMs"] as? Double ?? 0.0
-        let durationMs = resolveDurationMs(uri: uri)
-        let track = TrackState(
-          id: id,
-          uri: uri,
-          volume: volume,
-          pan: pan,
-          muted: muted,
-          solo: solo,
-          pitch: 0.0,
-          speed: 1.0,
-          startTimeMs: startTimeMs,
-          durationMs: durationMs
-        )
-        tracks[id] = track
+        if let existing = tracks[track.id] {
+          detachTrack(existing)
+        }
+        attachTrack(track)
+        tracks[track.id] = track
       }
+      applyMixingForAllTracks()
+      applyPitchSpeedForAllTracks()
       recalculateDuration()
+      engine.prepare()
     }
   }
 
   func unloadTrack(_ trackId: String) {
     queue.sync {
-      tracks.removeValue(forKey: trackId)
+      if let track = tracks.removeValue(forKey: trackId) {
+        detachTrack(track)
+      }
+      applyMixingForAllTracks()
       recalculateDuration()
     }
   }
 
   func unloadAllTracks() {
     queue.sync {
+      detachAllTracks()
       tracks.removeAll()
       recalculateDuration()
     }
@@ -105,6 +85,7 @@ final class NativeAudioEngine {
 
   func play() {
     queue.sync {
+      startEngineIfNeeded()
       isPlayingFlag = true
     }
   }
@@ -112,6 +93,7 @@ final class NativeAudioEngine {
   func pause() {
     queue.sync {
       isPlayingFlag = false
+      stopEngineIfRunning()
     }
   }
 
@@ -119,6 +101,8 @@ final class NativeAudioEngine {
     queue.sync {
       isPlayingFlag = false
       currentPositionMs = 0.0
+      stopAllPlayers()
+      stopEngineIfRunning()
     }
   }
 
@@ -142,41 +126,41 @@ final class NativeAudioEngine {
 
   func setTrackVolume(trackId: String, volume: Double) {
     queue.sync {
-      guard var track = tracks[trackId] else { return }
+      guard let track = tracks[trackId] else { return }
       track.volume = volume
-      tracks[trackId] = track
+      applyMixingForAllTracks()
     }
   }
 
   func setTrackMuted(trackId: String, muted: Bool) {
     queue.sync {
-      guard var track = tracks[trackId] else { return }
+      guard let track = tracks[trackId] else { return }
       track.muted = muted
-      tracks[trackId] = track
+      applyMixingForAllTracks()
     }
   }
 
   func setTrackSolo(trackId: String, solo: Bool) {
     queue.sync {
-      guard var track = tracks[trackId] else { return }
+      guard let track = tracks[trackId] else { return }
       track.solo = solo
-      tracks[trackId] = track
+      applyMixingForAllTracks()
     }
   }
 
   func setTrackPan(trackId: String, pan: Double) {
     queue.sync {
-      guard var track = tracks[trackId] else { return }
+      guard let track = tracks[trackId] else { return }
       track.pan = pan
-      tracks[trackId] = track
+      applyMixingForAllTracks()
     }
   }
 
   func setTrackPitch(trackId: String, semitones: Double) {
     queue.sync {
-      guard var track = tracks[trackId] else { return }
+      guard let track = tracks[trackId] else { return }
       track.pitch = semitones
-      tracks[trackId] = track
+      applyPitchSpeed(for: track)
     }
   }
 
@@ -188,9 +172,9 @@ final class NativeAudioEngine {
 
   func setTrackSpeed(trackId: String, rate: Double) {
     queue.sync {
-      guard var track = tracks[trackId] else { return }
+      guard let track = tracks[trackId] else { return }
       track.speed = rate
-      tracks[trackId] = track
+      applyPitchSpeed(for: track)
     }
   }
 
@@ -203,6 +187,7 @@ final class NativeAudioEngine {
   func setMasterVolume(_ volume: Double) {
     queue.sync {
       masterVolume = volume
+      engine.mainMixerNode.outputVolume = Float(volume)
     }
   }
 
@@ -212,28 +197,31 @@ final class NativeAudioEngine {
 
   func setPitch(_ semitones: Double) {
     queue.sync {
-      pitch = semitones
+      globalPitch = semitones
+      applyPitchSpeedForAllTracks()
     }
   }
 
   func getPitch() -> Double {
-    return queue.sync { pitch }
+    return queue.sync { globalPitch }
   }
 
   func setSpeed(_ rate: Double) {
     queue.sync {
-      speed = rate
+      globalSpeed = rate
+      applyPitchSpeedForAllTracks()
     }
   }
 
   func getSpeed() -> Double {
-    return queue.sync { speed }
+    return queue.sync { globalSpeed }
   }
 
   func setTempoAndPitch(tempo: Double, pitch: Double) {
     queue.sync {
-      self.speed = tempo
-      self.pitch = pitch
+      globalSpeed = tempo
+      globalPitch = pitch
+      applyPitchSpeedForAllTracks()
     }
   }
 
@@ -330,29 +318,83 @@ final class NativeAudioEngine {
     }
   }
 
-  private func resolveDurationMs(uri: String) -> Double {
-    guard let url = resolveURL(uri: uri), url.isFileURL else {
-      return 0.0
+  private func attachTrack(_ track: AudioTrack) {
+    if track.isAttached {
+      return
     }
-    do {
-      let file = try AVAudioFile(forReading: url)
-      let sampleRate = file.processingFormat.sampleRate
-      if sampleRate <= 0 {
-        return 0.0
-      }
-      return (Double(file.length) / sampleRate) * 1000.0
-    } catch {
-      return 0.0
+    engine.attach(track.playerNode)
+    engine.attach(track.timePitch)
+    engine.connect(track.playerNode, to: track.timePitch, format: track.file.processingFormat)
+    engine.connect(track.timePitch, to: engine.mainMixerNode, format: track.file.processingFormat)
+    track.isAttached = true
+    applyMixing(for: track, soloActive: isSoloActive())
+    applyPitchSpeed(for: track)
+  }
+
+  private func detachTrack(_ track: AudioTrack) {
+    if !track.isAttached {
+      return
+    }
+    engine.detach(track.playerNode)
+    engine.detach(track.timePitch)
+    track.isAttached = false
+  }
+
+  private func detachAllTracks() {
+    for track in tracks.values {
+      detachTrack(track)
     }
   }
 
-  private func resolveURL(uri: String) -> URL? {
-    if uri.hasPrefix("file://") {
-      return URL(string: uri)
+  private func stopAllPlayers() {
+    for track in tracks.values {
+      track.playerNode.stop()
     }
-    if uri.hasPrefix("/") {
-      return URL(fileURLWithPath: uri)
+  }
+
+  private func startEngineIfNeeded() {
+    if !isInitialized {
+      return
     }
-    return URL(string: uri)
+    if !engine.isRunning {
+      try? engine.start()
+    }
+  }
+
+  private func stopEngineIfRunning() {
+    if engine.isRunning {
+      engine.stop()
+    }
+  }
+
+  private func applyMixingForAllTracks() {
+    let soloActive = isSoloActive()
+    for track in tracks.values {
+      applyMixing(for: track, soloActive: soloActive)
+    }
+  }
+
+  private func applyMixing(for track: AudioTrack, soloActive: Bool) {
+    let shouldMute = track.muted || (soloActive && !track.solo)
+    let volume = shouldMute ? 0.0 : track.volume
+    track.playerNode.volume = Float(volume)
+    track.playerNode.pan = Float(track.pan)
+  }
+
+  private func applyPitchSpeedForAllTracks() {
+    for track in tracks.values {
+      applyPitchSpeed(for: track)
+    }
+  }
+
+  private func applyPitchSpeed(for track: AudioTrack) {
+    let combinedPitch = track.pitch + globalPitch
+    let combinedSpeed = track.speed * globalSpeed
+    track.timePitch.pitch = Float(combinedPitch * 100.0)
+    track.timePitch.rate = Float(combinedSpeed)
+  }
+
+  private func isSoloActive() -> Bool {
+    return tracks.values.contains { $0.solo }
   }
 }
