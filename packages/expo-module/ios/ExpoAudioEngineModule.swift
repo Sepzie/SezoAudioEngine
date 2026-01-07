@@ -1,73 +1,144 @@
 import ExpoModulesCore
 
 public class ExpoAudioEngineModule: Module {
+  private let engine = NativeAudioEngine()
+
   public func definition() -> ModuleDefinition {
     Name("ExpoAudioEngineModule")
 
-    AsyncFunction("initialize") { (_: [String: Any]) in }
-    AsyncFunction("release") { }
-    AsyncFunction("loadTracks") { (_: [[String: Any]]) in }
-    AsyncFunction("unloadTrack") { (_: String) in }
-    AsyncFunction("unloadAllTracks") { }
-    Function("getLoadedTracks") { return [[String: Any]]() }
+    AsyncFunction("initialize") { (config: [String: Any]) in
+      engine.initialize(config: config)
+    }
+    AsyncFunction("release") {
+      engine.releaseResources()
+    }
+    AsyncFunction("loadTracks") { (tracks: [[String: Any]]) in
+      engine.loadTracks(tracks)
+    }
+    AsyncFunction("unloadTrack") { (trackId: String) in
+      engine.unloadTrack(trackId)
+    }
+    AsyncFunction("unloadAllTracks") {
+      engine.unloadAllTracks()
+    }
+    Function("getLoadedTracks") {
+      return engine.getLoadedTracks()
+    }
 
-    Function("play") { }
-    Function("pause") { }
-    Function("stop") { }
-    Function("seek") { (_: Double) in }
-    Function("isPlaying") { return false }
-    Function("getCurrentPosition") { return 0.0 }
-    Function("getDuration") { return 0.0 }
+    Function("play") {
+      engine.play()
+    }
+    Function("pause") {
+      engine.pause()
+    }
+    Function("stop") {
+      engine.stop()
+    }
+    Function("seek") { (positionMs: Double) in
+      engine.seek(positionMs: positionMs)
+    }
+    Function("isPlaying") {
+      return engine.isPlaying()
+    }
+    Function("getCurrentPosition") {
+      return engine.getCurrentPosition()
+    }
+    Function("getDuration") {
+      return engine.getDuration()
+    }
 
-    Function("setTrackVolume") { (_: String, _: Double) in }
-    Function("setTrackMuted") { (_: String, _: Bool) in }
-    Function("setTrackSolo") { (_: String, _: Bool) in }
-    Function("setTrackPan") { (_: String, _: Double) in }
+    Function("setTrackVolume") { (trackId: String, volume: Double) in
+      engine.setTrackVolume(trackId: trackId, volume: volume)
+    }
+    Function("setTrackMuted") { (trackId: String, muted: Bool) in
+      engine.setTrackMuted(trackId: trackId, muted: muted)
+    }
+    Function("setTrackSolo") { (trackId: String, solo: Bool) in
+      engine.setTrackSolo(trackId: trackId, solo: solo)
+    }
+    Function("setTrackPan") { (trackId: String, pan: Double) in
+      engine.setTrackPan(trackId: trackId, pan: pan)
+    }
+    Function("setTrackPitch") { (trackId: String, semitones: Double) in
+      engine.setTrackPitch(trackId: trackId, semitones: semitones)
+    }
+    Function("getTrackPitch") { (trackId: String) in
+      return engine.getTrackPitch(trackId: trackId)
+    }
+    Function("setTrackSpeed") { (trackId: String, rate: Double) in
+      engine.setTrackSpeed(trackId: trackId, rate: rate)
+    }
+    Function("getTrackSpeed") { (trackId: String) in
+      return engine.getTrackSpeed(trackId: trackId)
+    }
 
-    Function("setMasterVolume") { (_: Double) in }
-    Function("getMasterVolume") { return 1.0 }
+    Function("setMasterVolume") { (volume: Double) in
+      engine.setMasterVolume(volume)
+    }
+    Function("getMasterVolume") {
+      return engine.getMasterVolume()
+    }
 
-    Function("setPitch") { (_: Double) in }
-    Function("getPitch") { return 0.0 }
-    Function("setSpeed") { (_: Double) in }
-    Function("getSpeed") { return 1.0 }
-    Function("setTempoAndPitch") { (_: Double, _: Double) in }
+    Function("setPitch") { (semitones: Double) in
+      engine.setPitch(semitones)
+    }
+    Function("getPitch") {
+      return engine.getPitch()
+    }
+    Function("setSpeed") { (rate: Double) in
+      engine.setSpeed(rate)
+    }
+    Function("getSpeed") {
+      return engine.getSpeed()
+    }
+    Function("setTempoAndPitch") { (tempo: Double, pitch: Double) in
+      engine.setTempoAndPitch(tempo: tempo, pitch: pitch)
+    }
 
-    AsyncFunction("startRecording") { (_: [String: Any]?) in }
+    AsyncFunction("startRecording") { (config: [String: Any]?) in
+      engine.startRecording(config: config)
+    }
     AsyncFunction("stopRecording") {
-      return [
-        "uri": "",
-        "duration": 0,
-        "sampleRate": 44100,
-        "channels": 1,
-        "format": "aac",
-        "fileSize": 0
-      ]
+      return engine.stopRecording()
     }
-    Function("isRecording") { return false }
-    Function("setRecordingVolume") { (_: Double) in }
-
-    AsyncFunction("extractTrack") { (_: String, _: [String: Any]?) in
-      return [
-        "trackId": "",
-        "uri": "",
-        "duration": 0,
-        "format": "aac",
-        "fileSize": 0
-      ]
+    Function("isRecording") {
+      return engine.isRecording()
+    }
+    Function("setRecordingVolume") { (volume: Double) in
+      engine.setRecordingVolume(volume)
     }
 
-    AsyncFunction("extractAllTracks") { (_: [String: Any]?) in
-      return [[String: Any]]()
+    AsyncFunction("extractTrack") { (trackId: String, config: [String: Any]?) in
+      return engine.extractTrack(trackId: trackId, config: config)
     }
 
-    Function("getInputLevel") { return 0.0 }
-    Function("getOutputLevel") { return 0.0 }
-    Function("getTrackLevel") { (_: String) in return 0.0 }
+    AsyncFunction("extractAllTracks") { (config: [String: Any]?) in
+      return engine.extractAllTracks(config: config)
+    }
 
-    AsyncFunction("enableBackgroundPlayback") { (_: [String: Any]) in }
-    Function("updateNowPlayingInfo") { (_: [String: Any]) in }
-    AsyncFunction("disableBackgroundPlayback") { }
+    Function("cancelExtraction") { (jobId: Double?) in
+      return engine.cancelExtraction(jobId: jobId)
+    }
+
+    Function("getInputLevel") {
+      return engine.getInputLevel()
+    }
+    Function("getOutputLevel") {
+      return engine.getOutputLevel()
+    }
+    Function("getTrackLevel") { (trackId: String) in
+      return engine.getTrackLevel(trackId: trackId)
+    }
+
+    AsyncFunction("enableBackgroundPlayback") { (metadata: [String: Any]) in
+      engine.enableBackgroundPlayback(metadata: metadata)
+    }
+    Function("updateNowPlayingInfo") { (metadata: [String: Any]) in
+      engine.updateNowPlayingInfo(metadata: metadata)
+    }
+    AsyncFunction("disableBackgroundPlayback") {
+      engine.disableBackgroundPlayback()
+    }
 
     Events(
       "playbackStateChange",
