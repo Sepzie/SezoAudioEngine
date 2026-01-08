@@ -1,6 +1,6 @@
 {
   "name": "sezo-audio-engine",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Cross-platform Expo module for the Sezo Audio Engine with iOS implementation and background playback.",
   "license": "MIT",
   "author": "Sezo",
@@ -34,7 +34,10 @@
     }
   },
   "files": [
-    "android",
+    "android/src",
+    "android/cpp",
+    "android/build.gradle",
+    "android/settings.gradle",
     "ios",
     "dist",
     "expo-module.config.json",
