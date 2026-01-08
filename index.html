@@ -78,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#sezo-audio-engine" class="md-skip">
+        <a href="#repo-layout" class="md-skip">
           Skip to content
         </a>
       
@@ -363,8 +363,6 @@
       <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
       
       
-        
-      
       
         <label class="md-nav__link md-nav__link--active" for="__toc">
           
@@ -407,36 +405,12 @@
   
   
   
-    
-  
   
     <label class="md-nav__title" for="__toc">
       <span class="md-nav__icon md-icon"></span>
       Table of contents
     </label>
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#status" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Status
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#quick-links" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Quick Links
-      
-    </span>
-  </a>
-  
-</li>
       
         <li class="md-nav__item">
   <a href="#repo-layout" class="md-nav__link">
@@ -1075,36 +1049,12 @@
   
   
   
-    
-  
   
     <label class="md-nav__title" for="__toc">
       <span class="md-nav__icon md-icon"></span>
       Table of contents
     </label>
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#status" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Status
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#quick-links" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Quick Links
-      
-    </span>
-  </a>
-  
-</li>
       
         <li class="md-nav__item">
   <a href="#repo-layout" class="md-nav__link">
@@ -1148,25 +1098,40 @@
   
 
 
-<h1 id="sezo-audio-engine">Sezo Audio Engine</h1>
-<p>Sezo Audio Engine ships two packages in one repo:</p>
-<ul>
-<li><strong>Android Engine</strong>: a native Android AAR (C++/Kotlin) for low-latency, multi-track audio.</li>
-<li><strong>Expo Module</strong>: a JavaScript/TypeScript API that wraps the native engine for Expo/React Native.</li>
-</ul>
-<p>Use the Android Engine directly for native Android apps. Use the Expo Module if you want a cross-platform JS API.</p>
-<h2 id="status">Status</h2>
-<ul>
-<li>Android Engine: production-ready for Android.</li>
-<li>Expo Module: production-ready for iOS and Android.</li>
-</ul>
-<h2 id="quick-links">Quick Links</h2>
-<ul>
-<li><a href="android/overview/">Android Engine docs</a></li>
-<li><a href="expo/overview/">Expo Module docs</a></li>
-<li><a href="common/concepts/">Concepts</a></li>
-<li><a href="https://jitpack.io/#Sepzie/SezoAudioEngine">JitPack</a></li>
-</ul>
+<div class="hero">
+  <h1>Sezo Audio Engine</h1>
+  <p>Low-latency, multi-track audio for Android with an Expo-friendly API surface. Use the native engine directly or ship through Expo and add iOS later with the same interface.</p>
+  <div class="hero-cta">
+    <a class="md-button md-button--primary" href="android/overview/">Android Engine</a>
+    <a class="md-button" href="expo/overview/">Expo Module</a>
+    <a class="md-button" href="https://jitpack.io/#Sepzie/SezoAudioEngine">JitPack</a>
+  </div>
+  <div class="hero-meta">Status: Android engine ready. Expo module Android ready, iOS planned.</div>
+</div>
+
+<div class="grid cards">
+  <div class="card">
+    <h3>Android Engine</h3>
+    <p>Native AAR with playback, pitch/speed, recording, and extraction.</p>
+    <p><a href="android/install/">Install and usage</a></p>
+  </div>
+  <div class="card">
+    <h3>Expo Module</h3>
+    <p>JS/TS API that mirrors the native engine for Expo projects.</p>
+    <p><a href="expo/install/">Install and usage</a></p>
+  </div>
+  <div class="card">
+    <h3>Concepts</h3>
+    <p>Timing, tracks, formats, and threading basics.</p>
+    <p><a href="common/concepts/">Read concepts</a></p>
+  </div>
+  <div class="card">
+    <h3>API Reference</h3>
+    <p>Detailed API surface for Android and Expo.</p>
+    <p><a href="android/api/">Android API</a> | <a href="expo/api/">Expo API</a></p>
+  </div>
+</div>
+
 <h2 id="repo-layout">Repo Layout</h2>
 <ul>
 <li><code>packages/android-engine</code>: native engine</li>
@@ -1233,6 +1198,8 @@
     
     
       <script src="assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="assets/javascripts/external-links.js"></script>
       
     
   </body>
