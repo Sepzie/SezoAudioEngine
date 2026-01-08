@@ -10,4 +10,6 @@ Ensure `RECORD_AUDIO` permission is granted at runtime.
 
 ## Background playback
 
-The background playback helpers are currently no-ops. Implement MediaSession and a foreground service at the app layer for now.
+If background playback does not continue, confirm the app is configured with
+`UIBackgroundModes: ["audio"]` (iOS) and that notification permissions are
+granted (Android).

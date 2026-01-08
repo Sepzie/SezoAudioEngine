@@ -99,12 +99,12 @@ audioEngine.setRecordingVolume(volume: number): void
 - [ ] Add recovery for interrupted recordings
 
 ### Documentation
-- [ ] Add recording example to example app UI
-- [ ] Document microphone permission setup
+- [x] Add recording example to example app UI
+- [x] Document microphone permission setup
 - [ ] Add troubleshooting guide for common issues
 
 ### iOS Implementation
-- [ ] Implement iOS recording using AVAudioEngine
+- [x] Implement iOS recording using AVAudioEngine
 - [ ] Match Android API exactly
 - [ ] Test cross-platform parity
 

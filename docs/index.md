@@ -10,7 +10,7 @@ Use the Android Engine directly for native Android apps. Use the Expo Module if 
 ## Status
 
 - Android Engine: production-ready for Android.
-- Expo Module: Android implementation is functional; iOS is planned and will share the same API surface.
+- Expo Module: production-ready for iOS and Android.
 
 ## Quick Links
 
