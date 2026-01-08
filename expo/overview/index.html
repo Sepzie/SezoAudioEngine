@@ -877,21 +877,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#status" class="md-nav__link">
+  <a href="#capabilities" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Status
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#limitations" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Limitations
+        Capabilities
       
     </span>
   </a>
@@ -1092,21 +1081,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#status" class="md-nav__link">
+  <a href="#capabilities" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Status
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#limitations" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Limitations
+        Capabilities
       
     </span>
   </a>
@@ -1134,21 +1112,17 @@
 
 
 <h1 id="expo-module-overview">Expo Module Overview</h1>
-<p>The Expo module exposes the audio engine to JavaScript via Expo Modules. The Android implementation is functional today. The iOS implementation is planned and will mirror the same API surface.</p>
+<p>The Expo module exposes the audio engine to JavaScript via Expo Modules, providing a single, cross-platform API for iOS and Android.</p>
 <h2 id="when-to-use-it">When to Use It</h2>
 <ul>
 <li>You want a React Native/Expo API for audio playback and recording.</li>
-<li>You prefer a single, cross-platform API for Android now and iOS later.</li>
+<li>You prefer a single, cross-platform API for iOS and Android.</li>
 </ul>
-<h2 id="status">Status</h2>
+<h2 id="capabilities">Capabilities</h2>
 <ul>
-<li>Android: implemented and tested</li>
-<li>iOS: stubbed, API compatibility planned</li>
-</ul>
-<h2 id="limitations">Limitations</h2>
-<ul>
-<li>Background playback helpers are currently no-ops.</li>
-<li><code>content://</code> URIs are not supported on Android yet (copy to a file path first).</li>
+<li>Multi-track playback with sync, pitch, and speed control.</li>
+<li>Recording, extraction, and metering APIs.</li>
+<li>Background playback with Now Playing controls.</li>
 </ul>
 
 

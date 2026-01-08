@@ -916,6 +916,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#ios-infoplist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        iOS Info.plist
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#expo-config" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1103,6 +1114,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#ios-infoplist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        iOS Info.plist
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#expo-config" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1142,6 +1164,19 @@
 <h2 id="android-permissions">Android Permissions</h2>
 <p>If you use recording, add:</p>
 <pre><code class="language-xml">&lt;uses-permission android:name=&quot;android.permission.RECORD_AUDIO&quot; /&gt;
+</code></pre>
+<h2 id="ios-infoplist">iOS Info.plist</h2>
+<p>If you use recording or background playback, add:</p>
+<pre><code class="language-json">{
+  &quot;expo&quot;: {
+    &quot;ios&quot;: {
+      &quot;infoPlist&quot;: {
+        &quot;NSMicrophoneUsageDescription&quot;: &quot;Allow access to the microphone for recording audio.&quot;,
+        &quot;UIBackgroundModes&quot;: [&quot;audio&quot;]
+      }
+    }
+  }
+}
 </code></pre>
 <h2 id="expo-config">Expo Config</h2>
 <p>The module is built with Expo Modules and is auto-registered by <code>expo-module.config.json</code>.</p>

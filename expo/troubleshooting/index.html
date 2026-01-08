@@ -1137,7 +1137,9 @@
 <h2 id="recording-errors">Recording errors</h2>
 <p>Ensure <code>RECORD_AUDIO</code> permission is granted at runtime.</p>
 <h2 id="background-playback">Background playback</h2>
-<p>The background playback helpers are currently no-ops. Implement MediaSession and a foreground service at the app layer for now.</p>
+<p>If background playback does not continue, confirm the app is configured with
+<code>UIBackgroundModes: ["audio"]</code> (iOS) and that notification permissions are
+granted (Android).</p>
 
 
 
