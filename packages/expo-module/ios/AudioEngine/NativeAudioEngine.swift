@@ -534,6 +534,11 @@ final class NativeAudioEngine {
     } else {
       sessionManager.configure(with: config)
     }
+    let outputFormat = engine.outputNode.inputFormat(forBus: 0)
+    if outputFormat.sampleRate > 0 && outputFormat.channelCount > 0 {
+      engine.disconnectNodeOutput(engine.mainMixerNode)
+      engine.connect(engine.mainMixerNode, to: engine.outputNode, format: outputFormat)
+    }
     engine.mainMixerNode.outputVolume = Float(masterVolume)
     engine.prepare()
     isInitialized = true
@@ -958,7 +963,7 @@ final class NativeAudioEngine {
     engine.attach(track.playerNode)
     engine.attach(track.timePitch)
     engine.connect(track.playerNode, to: track.timePitch, format: track.file.processingFormat)
-    engine.connect(track.timePitch, to: engine.mainMixerNode, format: track.file.processingFormat)
+    engine.connect(track.timePitch, to: engine.mainMixerNode, format: nil)
     track.isAttached = true
     applyMixing(for: track, soloActive: isSoloActive())
     applyPitchSpeed(for: track)

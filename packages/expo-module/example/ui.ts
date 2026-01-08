@@ -95,9 +95,11 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
+    alignItems: 'stretch',
   },
   heroActionButton: {
-    flex: 1,
+    flexGrow: 1,
+    flexBasis: 0,
     minWidth: 140,
   },
   statusPill: {
