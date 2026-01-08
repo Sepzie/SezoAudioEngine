@@ -21,6 +21,7 @@ import LabeledSlider from './components/LabeledSlider';
 import TogglePillGroup from './components/TogglePillGroup';
 import ProgressBar from './components/ProgressBar';
 import TrackCard from './components/TrackCard';
+import TestLabScreen from './TestLabScreen';
 import { styles, theme } from './ui';
 import { ExtractionInfo, RecordingInfo, Track } from './types';
 
@@ -129,6 +130,8 @@ const BACKGROUND_OPTIONS = [
 
 export default function App() {
   const [status, setStatus] = useState('Idle');
+  const [engineReady, setEngineReady] = useState(false);
+  const [activeScreen, setActiveScreen] = useState<'playground' | 'testLab'>('playground');
   const [isPlaying, setIsPlaying] = useState(false);
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -190,12 +193,14 @@ export default function App() {
       .then(() => {
         if (mounted) {
           setStatus('Ready');
+          setEngineReady(true);
           setRecordingStatus('Ready');
         }
       })
       .catch((error) => {
         if (mounted) {
           setStatus('Init failed');
+          setEngineReady(false);
           console.error('Init error:', error);
         }
       });
@@ -207,6 +212,71 @@ export default function App() {
       AudioEngineModule.release().catch(() => {});
     };
   }, []);
+
+  const handleOpenTestLab = useCallback(() => {
+    setActiveScreen('testLab');
+  }, []);
+
+  const handleCloseTestLab = useCallback(() => {
+    setActiveScreen('playground');
+  }, []);
+
+  const captureEngineSnapshot = useCallback(() => {
+    return {
+      tracks,
+      masterVolume,
+      masterPitch,
+      masterSpeed,
+    };
+  }, [masterPitch, masterSpeed, masterVolume, tracks]);
+
+  const restoreEngineSnapshot = useCallback(
+    async (snapshot: {
+      tracks: Track[];
+      masterVolume: number;
+      masterPitch: number;
+      masterSpeed: number;
+    }) => {
+      try {
+        AudioEngineModule.stop();
+        AudioEngineModule.unloadAllTracks();
+        if (snapshot.tracks.length > 0) {
+          await AudioEngineModule.loadTracks(
+            snapshot.tracks.map((track) => ({
+              id: track.id,
+              uri: track.uri,
+              volume: track.volume,
+              pan: track.pan,
+              muted: track.muted,
+              startTimeMs: track.startTimeMs,
+            }))
+          );
+
+          snapshot.tracks.forEach((track) => {
+            AudioEngineModule.setTrackVolume(track.id, track.volume);
+            AudioEngineModule.setTrackPan(track.id, track.pan);
+            AudioEngineModule.setTrackMuted(track.id, track.muted);
+            AudioEngineModule.setTrackSolo(track.id, track.solo);
+            if (supportsTrackPitch) {
+              engineAny.setTrackPitch(track.id, track.pitch);
+            }
+            if (supportsTrackSpeed) {
+              engineAny.setTrackSpeed(track.id, track.speed);
+            }
+          });
+        }
+        AudioEngineModule.setMasterVolume(snapshot.masterVolume);
+        AudioEngineModule.setPitch(snapshot.masterPitch);
+        AudioEngineModule.setSpeed(snapshot.masterSpeed);
+        setDuration(AudioEngineModule.getDuration());
+        setPosition(AudioEngineModule.getCurrentPosition());
+        setIsPlaying(false);
+      } catch (error) {
+        console.warn('[TestLab] Restore snapshot failed', error);
+      }
+    },
+    [engineAny, supportsTrackPitch, supportsTrackSpeed]
+  );
 
   useEffect(() => {
     const progressSub = AudioEngineModule.addListener('extractionProgress', (event: any) => {
@@ -1309,48 +1379,61 @@ export default function App() {
         <View style={styles.glowTop} />
         <View style={styles.glowBottom} />
       </View>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Animated.View style={[styles.heroCard, heroStyle]}>
-          <View style={styles.heroTopRow}>
-            <View>
-              <Text style={styles.eyebrow}>Sezo Audio Engine</Text>
-              <Text style={styles.title}>Phase 3 Playground</Text>
+      {activeScreen === 'testLab' ? (
+        <TestLabScreen
+          engineReady={engineReady}
+          onBack={handleCloseTestLab}
+          captureSnapshot={captureEngineSnapshot}
+          restoreSnapshot={restoreEngineSnapshot}
+        />
+      ) : (
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <Animated.View style={[styles.heroCard, heroStyle]}>
+            <View style={styles.heroTopRow}>
+              <View>
+                <Text style={styles.eyebrow}>Sezo Audio Engine</Text>
+                <Text style={styles.title}>Phase 3 Playground</Text>
+              </View>
+              <View
+                style={[
+                  styles.statusPill,
+                  status === 'Ready' && styles.statusPillReady,
+                  status === 'Playing' && styles.statusPillActive,
+                  status === 'Init failed' && styles.statusPillDanger,
+                ]}
+              >
+                <Text style={styles.statusText}>{status}</Text>
+              </View>
             </View>
-            <View
-              style={[
-                styles.statusPill,
-                status === 'Ready' && styles.statusPillReady,
-                status === 'Playing' && styles.statusPillActive,
-                status === 'Init failed' && styles.statusPillDanger,
-              ]}
-            >
-              <Text style={styles.statusText}>{status}</Text>
+            <Text style={styles.subtitle}>
+              Playback, mixing, and live recording built for real-time audio apps.
+            </Text>
+
+            <View style={styles.heroActions}>
+              <TouchableOpacity style={styles.resetButton} onPress={handleOpenTestLab}>
+                <Text style={styles.resetButtonText}>Test Lab</Text>
+              </TouchableOpacity>
+              {tracks.length === 0 && (
+                <TouchableOpacity style={styles.primaryButton} onPress={loadTracks}>
+                  <Text style={styles.primaryButtonText}>Load Tracks</Text>
+                </TouchableOpacity>
+              )}
             </View>
-          </View>
-          <Text style={styles.subtitle}>
-            Playback, mixing, and live recording built for real-time audio apps.
-          </Text>
+          </Animated.View>
 
-          {tracks.length === 0 && (
-            <TouchableOpacity style={styles.primaryButton} onPress={loadTracks}>
-              <Text style={styles.primaryButtonText}>Load Tracks</Text>
-            </TouchableOpacity>
-          )}
-        </Animated.View>
-
-        {tracks.length > 0 && (
-          <>
-            <CollapsibleSection
-              title="Transport"
-              right={
-                <View style={styles.timePill}>
-                  <Text style={styles.timeText}>
-                    {formatTime(position)} / {formatTime(duration)}
-                  </Text>
-                </View>
-              }
-              containerStyle={controlsStyle}
-            >
+          {tracks.length > 0 && (
+            <>
+              <CollapsibleSection
+                title="Transport"
+                right={
+                  <View style={styles.timePill}>
+                    <Text style={styles.timeText}>
+                      {formatTime(position)} / {formatTime(duration)}
+                    </Text>
+                  </View>
+                }
+                containerStyle={controlsStyle}
+              >
               <View style={styles.transportRow}>
                 <TouchableOpacity
                   style={[styles.controlButton, isPlaying && styles.controlButtonDisabled]}
@@ -1798,6 +1881,7 @@ export default function App() {
           </>
         )}
       </ScrollView>
+      )}
     </View>
   );
 }

@@ -91,6 +91,11 @@ export const styles = StyleSheet.create({
     marginTop: 12,
     marginBottom: 16,
   },
+  heroActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
   statusPill: {
     paddingVertical: 6,
     paddingHorizontal: 12,
@@ -303,6 +308,12 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 10,
   },
+  testSummaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 8,
+  },
   progressPercent: {
     color: theme.colors.text,
     fontSize: 12,
@@ -430,6 +441,51 @@ export const styles = StyleSheet.create({
     color: theme.colors.text,
     fontSize: 14,
     fontWeight: '600',
+  },
+  testList: {
+    gap: 12,
+  },
+  testRow: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: theme.radius.button,
+    backgroundColor: theme.colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  testRowHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+  },
+  testName: {
+    color: theme.colors.text,
+    fontSize: 14,
+    fontWeight: '700',
+    flexShrink: 1,
+  },
+  testError: {
+    color: theme.colors.danger,
+    fontSize: 12,
+    marginTop: 6,
+  },
+  metricRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginTop: 6,
+  },
+  metricKey: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
+  },
+  metricValue: {
+    color: theme.colors.text,
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'right',
+    flexShrink: 1,
   },
   slider: {
     width: '100%',
