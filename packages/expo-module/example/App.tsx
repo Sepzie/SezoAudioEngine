@@ -1410,11 +1410,17 @@ export default function App() {
             </Text>
 
             <View style={styles.heroActions}>
-              <TouchableOpacity style={styles.resetButton} onPress={handleOpenTestLab}>
+              <TouchableOpacity
+                style={[styles.resetButton, styles.heroActionButton]}
+                onPress={handleOpenTestLab}
+              >
                 <Text style={styles.resetButtonText}>Test Lab</Text>
               </TouchableOpacity>
               {tracks.length === 0 && (
-                <TouchableOpacity style={styles.primaryButton} onPress={loadTracks}>
+                <TouchableOpacity
+                  style={[styles.primaryButton, styles.heroActionButton]}
+                  onPress={loadTracks}
+                >
                   <Text style={styles.primaryButtonText}>Load Tracks</Text>
                 </TouchableOpacity>
               )}

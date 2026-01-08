@@ -408,8 +408,6 @@ const TestLabScreen = ({
             AudioEngineModule.play();
             await wait(200);
             await AudioEngineModule.startRecording({
-              sampleRate: 44100,
-              channels: 1,
               format: 'wav',
               quality: 'medium',
             });
@@ -594,7 +592,11 @@ const TestLabScreen = ({
         </Text>
         <View style={styles.heroActions}>
           <TouchableOpacity
-            style={[styles.primaryButton, (!engineReady || isRunning) && styles.controlButtonDisabled]}
+            style={[
+              styles.primaryButton,
+              styles.heroActionButton,
+              (!engineReady || isRunning) && styles.controlButtonDisabled,
+            ]}
             onPress={runAllTests}
             disabled={!engineReady || isRunning}
           >
@@ -603,7 +605,11 @@ const TestLabScreen = ({
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.resetButton, (!report || isRunning) && styles.controlButtonDisabled]}
+            style={[
+              styles.resetButton,
+              styles.heroActionButton,
+              (!report || isRunning) && styles.controlButtonDisabled,
+            ]}
             onPress={handleShareReport}
             disabled={!report || isRunning}
           >

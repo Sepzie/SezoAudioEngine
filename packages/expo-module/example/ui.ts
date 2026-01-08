@@ -96,6 +96,10 @@ export const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 12,
   },
+  heroActionButton: {
+    flex: 1,
+    minWidth: 140,
+  },
   statusPill: {
     paddingVertical: 6,
     paddingHorizontal: 12,
