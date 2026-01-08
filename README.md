@@ -1,6 +1,6 @@
 # Sezo Audio Engine
 
-Open-source audio engine for Expo and Android. Offers multi-track playbackm real-time pitch/speed control, and synchronized recording.
+Open-source audio engine for Expo and Android. Offers multi-track playback real-time pitch/speed control, and synchronized recording.
 
 ## Repository Layout
 
