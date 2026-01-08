@@ -1,4 +1,6 @@
 import AVFoundation
+import MediaPlayer
+import UIKit
 
 /// Swift wrapper around `AVAudioEngine` that backs the Expo module API.
 /// Keeps state on a single serial queue to avoid thread-safety issues.
@@ -29,6 +31,12 @@ final class NativeAudioEngine {
   private var playbackToken = UUID()
   private var recordingState: RecordingState?
   private var inputLevel: Double = 0.0
+  private var backgroundPlaybackEnabled = false
+  private var nowPlayingMetadata: [String: Any] = [:]
+  private var playCommandTarget: Any?
+  private var pauseCommandTarget: Any?
+  private var toggleCommandTarget: Any?
+  private var lastConfig = AudioEngineConfig(dictionary: [:])
 
   /// Bookkeeping for a live recording session.
   private struct RecordingState {
@@ -44,6 +52,7 @@ final class NativeAudioEngine {
   func initialize(config: [String: Any]) {
     let parsedConfig = AudioEngineConfig(dictionary: config)
     queue.sync {
+      lastConfig = parsedConfig
       sessionManager.configure(with: parsedConfig)
       engine.mainMixerNode.outputVolume = Float(masterVolume)
       engine.prepare()
@@ -126,51 +135,22 @@ final class NativeAudioEngine {
 
   /// Starts playback from the current position.
   func play() {
-    queue.sync {
-      guard !tracks.isEmpty else { return }
-      ensureInitializedIfNeeded()
-      if isPlayingFlag {
-        return
-      }
-      guard startEngineIfNeeded() else { return }
-      schedulePlayback(at: currentPositionMs)
-      isPlayingFlag = true
-    }
+    queue.sync { playInternal() }
   }
 
   /// Pauses playback and stores the current position.
   func pause() {
-    queue.sync {
-      guard isPlayingFlag else { return }
-      currentPositionMs = currentPlaybackPositionMs()
-      isPlayingFlag = false
-      stopAllPlayers()
-      stopEngineIfRunning()
-    }
+    queue.sync { pauseInternal() }
   }
 
   /// Stops playback and resets position to zero.
   func stop() {
-    queue.sync {
-      isPlayingFlag = false
-      currentPositionMs = 0.0
-      playbackStartHostTime = nil
-      playbackStartPositionMs = 0.0
-      playbackToken = UUID()
-      stopAllPlayers()
-      stopEngineIfRunning()
-    }
+    queue.sync { stopInternal() }
   }
 
   /// Seeks to a position in milliseconds.
   func seek(positionMs: Double) {
-    queue.sync {
-      currentPositionMs = max(0.0, positionMs)
-      if isPlayingFlag {
-        guard startEngineIfNeeded() else { return }
-        schedulePlayback(at: currentPositionMs)
-      }
-    }
+    queue.sync { seekInternal(positionMs: positionMs) }
   }
 
   /// Returns whether playback is active.
@@ -497,20 +477,31 @@ final class NativeAudioEngine {
   /// Background playback placeholder (to be implemented).
   func enableBackgroundPlayback(metadata: [String: Any]) {
     queue.sync {
-      _ = metadata
+      backgroundPlaybackEnabled = true
+      nowPlayingMetadata.merge(metadata) { _, new in new }
+      sessionManager.enableBackgroundPlayback(with: lastConfig)
+      configureRemoteCommandsIfNeeded()
+      updateNowPlayingInfoInternal()
     }
   }
 
   /// Now Playing updates placeholder (to be implemented).
   func updateNowPlayingInfo(metadata: [String: Any]) {
     queue.sync {
-      _ = metadata
+      nowPlayingMetadata.merge(metadata) { _, new in new }
+      updateNowPlayingInfoInternal()
     }
   }
 
   /// Background playback teardown placeholder.
   func disableBackgroundPlayback() {
-    queue.sync { }
+    queue.sync {
+      backgroundPlaybackEnabled = false
+      nowPlayingMetadata.removeAll()
+      removeRemoteCommands()
+      MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+      sessionManager.configure(with: lastConfig)
+    }
   }
 
   /// Updates cached total duration based on track offsets.
@@ -526,8 +517,12 @@ final class NativeAudioEngine {
     if isInitialized {
       return
     }
-    let config = AudioEngineConfig(dictionary: [:])
-    sessionManager.configure(with: config)
+    let config = lastConfig
+    if backgroundPlaybackEnabled {
+      sessionManager.enableBackgroundPlayback(with: config)
+    } else {
+      sessionManager.configure(with: config)
+    }
     engine.mainMixerNode.outputVolume = Float(masterVolume)
     engine.prepare()
     isInitialized = true
@@ -655,6 +650,7 @@ final class NativeAudioEngine {
     playbackStartPositionMs = 0.0
     stopAllPlayers()
     stopEngineIfRunning()
+    updateNowPlayingInfoInternal()
   }
 
   /// Computes playback position from host time.
@@ -1038,5 +1034,147 @@ final class NativeAudioEngine {
   /// Returns true when any track is soloed.
   private func isSoloActive() -> Bool {
     return tracks.values.contains { $0.solo }
+  }
+
+  /// Internal play logic (expects to run on the queue).
+  private func playInternal() {
+    guard !tracks.isEmpty else { return }
+    ensureInitializedIfNeeded()
+    if isPlayingFlag {
+      return
+    }
+    guard startEngineIfNeeded() else { return }
+    schedulePlayback(at: currentPositionMs)
+    isPlayingFlag = true
+    updateNowPlayingInfoInternal()
+  }
+
+  /// Internal pause logic (expects to run on the queue).
+  private func pauseInternal() {
+    guard isPlayingFlag else { return }
+    currentPositionMs = currentPlaybackPositionMs()
+    isPlayingFlag = false
+    stopAllPlayers()
+    stopEngineIfRunning()
+    updateNowPlayingInfoInternal()
+  }
+
+  /// Internal stop logic (expects to run on the queue).
+  private func stopInternal() {
+    isPlayingFlag = false
+    currentPositionMs = 0.0
+    playbackStartHostTime = nil
+    playbackStartPositionMs = 0.0
+    playbackToken = UUID()
+    stopAllPlayers()
+    stopEngineIfRunning()
+    updateNowPlayingInfoInternal()
+  }
+
+  /// Internal seek logic (expects to run on the queue).
+  private func seekInternal(positionMs: Double) {
+    currentPositionMs = max(0.0, positionMs)
+    if isPlayingFlag {
+      guard startEngineIfNeeded() else { return }
+      schedulePlayback(at: currentPositionMs)
+    }
+    updateNowPlayingInfoInternal()
+  }
+
+  /// Updates Now Playing info based on stored metadata and playback state.
+  private func updateNowPlayingInfoInternal() {
+    guard backgroundPlaybackEnabled else { return }
+
+    var info: [String: Any] = [:]
+    if let title = nowPlayingMetadata["title"] as? String {
+      info[MPMediaItemPropertyTitle] = title
+    }
+    if let artist = nowPlayingMetadata["artist"] as? String {
+      info[MPMediaItemPropertyArtist] = artist
+    }
+    if let album = nowPlayingMetadata["album"] as? String {
+      info[MPMediaItemPropertyAlbumTitle] = album
+    }
+    if let artwork = resolveArtwork(metadata: nowPlayingMetadata) {
+      info[MPMediaItemPropertyArtwork] = artwork
+    }
+
+    let elapsedSeconds = (isPlayingFlag ? currentPlaybackPositionMs() : currentPositionMs) / 1000.0
+    info[MPMediaItemPropertyPlaybackDuration] = durationMs / 1000.0
+    info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsedSeconds
+    info[MPNowPlayingInfoPropertyPlaybackRate] = isPlayingFlag ? 1.0 : 0.0
+
+    MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+  }
+
+  /// Registers basic play/pause remote command handlers.
+  private func configureRemoteCommandsIfNeeded() {
+    guard playCommandTarget == nil else { return }
+    let commandCenter = MPRemoteCommandCenter.shared()
+
+    playCommandTarget = commandCenter.playCommand.addTarget { [weak self] _ in
+      self?.queue.async { self?.playInternal() }
+      return .success
+    }
+    pauseCommandTarget = commandCenter.pauseCommand.addTarget { [weak self] _ in
+      self?.queue.async { self?.pauseInternal() }
+      return .success
+    }
+    toggleCommandTarget = commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
+      self?.queue.async {
+        guard let self = self else { return }
+        if self.isPlayingFlag {
+          self.pauseInternal()
+        } else {
+          self.playInternal()
+        }
+      }
+      return .success
+    }
+
+    commandCenter.playCommand.isEnabled = true
+    commandCenter.pauseCommand.isEnabled = true
+    commandCenter.togglePlayPauseCommand.isEnabled = true
+  }
+
+  /// Removes remote command handlers.
+  private func removeRemoteCommands() {
+    let commandCenter = MPRemoteCommandCenter.shared()
+    if let target = playCommandTarget {
+      commandCenter.playCommand.removeTarget(target)
+    }
+    if let target = pauseCommandTarget {
+      commandCenter.pauseCommand.removeTarget(target)
+    }
+    if let target = toggleCommandTarget {
+      commandCenter.togglePlayPauseCommand.removeTarget(target)
+    }
+    playCommandTarget = nil
+    pauseCommandTarget = nil
+    toggleCommandTarget = nil
+  }
+
+  /// Resolves artwork from a local file path or file URL.
+  private func resolveArtwork(metadata: [String: Any]) -> MPMediaItemArtwork? {
+    guard let artworkValue = metadata["artwork"] as? String else {
+      return nil
+    }
+
+    let url: URL?
+    if artworkValue.hasPrefix("file://") {
+      url = URL(string: artworkValue)
+    } else if artworkValue.hasPrefix("/") {
+      url = URL(fileURLWithPath: artworkValue)
+    } else {
+      url = nil
+    }
+
+    guard let imageURL = url,
+          let data = try? Data(contentsOf: imageURL),
+          let image = UIImage(data: data) else {
+      return nil
+    }
+
+    return MPMediaItemArtwork(boundsSize: image.size) { _ in image }
   }
 }

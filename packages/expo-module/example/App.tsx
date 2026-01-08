@@ -98,6 +98,10 @@ const RECORDING_SAMPLE_RATE_OPTIONS = [
   { value: 44100, label: '44.1K' },
   { value: 48000, label: '48K' },
 ] as const;
+const BACKGROUND_OPTIONS = [
+  { value: 1, label: 'ON' },
+  { value: 0, label: 'OFF' },
+] as const;
 
 export default function App() {
   const [status, setStatus] = useState('Idle');
@@ -127,6 +131,7 @@ export default function App() {
   const [lastExtraction, setLastExtraction] = useState<ExtractionInfo | null>(null);
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractionJobId, setExtractionJobId] = useState<number | null>(null);
+  const [backgroundEnabled, setBackgroundEnabled] = useState<0 | 1>(0);
   const positionRef = useRef(0);
   const durationRef = useRef(0);
   const recordingLevelRef = useRef(0);
@@ -139,6 +144,7 @@ export default function App() {
   const supportsTrackSpeed = typeof engineAny.setTrackSpeed === 'function';
   const supportsRecording = typeof engineAny.startRecording === 'function';
   const recordingUnavailable = !supportsRecording;
+  const canUseBackground = Platform.OS === 'ios';
   const introAnim = useState(() => new Animated.Value(0))[0];
   const controlsAnim = useState(() => new Animated.Value(0))[0];
   const tracksAnim = useState(() => new Animated.Value(0))[0];
@@ -296,6 +302,19 @@ export default function App() {
 
     return () => clearInterval(interval);
   }, [handleStop, isPlaying]);
+
+  useEffect(() => {
+    if (!canUseBackground || backgroundEnabled === 0) {
+      return;
+    }
+    const title = tracks[0]?.name ?? 'Sezo Audio Engine';
+    const artist = 'Sezo Audio Engine';
+    try {
+      AudioEngineModule.updateNowPlayingInfo({ title, artist });
+    } catch (error) {
+      console.warn('[Background] Now playing update failed', error);
+    }
+  }, [backgroundEnabled, canUseBackground, tracks]);
 
   useEffect(() => {
     if (!isRecording) {
@@ -553,6 +572,27 @@ export default function App() {
       console.error('Recording volume error:', error);
     }
   }, []);
+
+  const handleBackgroundToggle = useCallback(
+    (value: 0 | 1) => {
+      setBackgroundEnabled(value);
+      if (!canUseBackground) {
+        return;
+      }
+      try {
+        if (value === 1) {
+          const title = tracks[0]?.name ?? 'Sezo Audio Engine';
+          const artist = 'Sezo Audio Engine';
+          AudioEngineModule.enableBackgroundPlayback({ title, artist });
+        } else {
+          AudioEngineModule.disableBackgroundPlayback();
+        }
+      } catch (error) {
+        console.warn('[Background] Toggle failed', error);
+      }
+    },
+    [canUseBackground, tracks]
+  );
 
   const loadTracks = useCallback(async () => {
     try {
@@ -1216,6 +1256,25 @@ export default function App() {
                 minimumTrackTintColor={theme.colors.accent}
                 maximumTrackTintColor={theme.colors.track}
                 thumbTintColor={theme.colors.accentStrong}
+              />
+            </CollapsibleSection>
+
+            <CollapsibleSection
+              title="Background Playback"
+              right={<Text style={styles.sectionHint}>Lock screen controls</Text>}
+              containerStyle={controlsStyle}
+            >
+              {!canUseBackground && (
+                <Text style={styles.sectionHint}>
+                  Background playback is iOS-only for now.
+                </Text>
+              )}
+
+              <TogglePillGroup
+                value={backgroundEnabled}
+                onChange={(value) => handleBackgroundToggle(value as 0 | 1)}
+                disabled={!canUseBackground}
+                options={BACKGROUND_OPTIONS}
               />
             </CollapsibleSection>
 

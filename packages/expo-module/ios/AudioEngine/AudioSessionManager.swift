@@ -29,6 +29,32 @@ final class AudioSessionManager {
     try? session.setActive(true)
   }
 
+  func enableBackgroundPlayback(with config: AudioEngineConfig) {
+    do {
+      try session.setCategory(
+        .playback,
+        mode: .default,
+        options: [.allowBluetooth, .allowAirPlay]
+      )
+    } catch {
+      return
+    }
+
+    if let sampleRate = config.sampleRate {
+      try? session.setPreferredSampleRate(sampleRate)
+    }
+
+    if let bufferSize = config.bufferSize {
+      let sampleRate = config.sampleRate ?? session.sampleRate
+      if sampleRate > 0 {
+        let duration = bufferSize / sampleRate
+        try? session.setPreferredIOBufferDuration(duration)
+      }
+    }
+
+    try? session.setActive(true)
+  }
+
   func deactivate() {
     try? session.setActive(false, options: .notifyOthersOnDeactivation)
   }
