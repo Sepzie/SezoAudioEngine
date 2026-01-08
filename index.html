@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Native Android audio engine and Expo module for multi-track playback, pitch/speed control, recording, and extraction.">
+        <meta name="description" content="Low-latency audio for Android and iOS with the Android package and Expo module.">
       
       
       
@@ -14,7 +14,7 @@
       
       
       
-        <link rel="next" href="common/concepts/">
+        <link rel="next" href="packages/">
       
       
         
@@ -231,17 +231,18 @@
   
   
   
-    <li class="md-tabs__item">
-      <a href="https://jitpack.io/#Sepzie/SezoAudioEngine" class="md-tabs__link">
-        
-  
-  
     
+    
+      <li class="md-tabs__item">
+        <a href="packages/" class="md-tabs__link">
+          
   
-  JitPack
+  
+  Packages
 
-      </a>
-    </li>
+        </a>
+      </li>
+    
   
 
       
@@ -250,18 +251,17 @@
   
   
   
-    
-    
-      <li class="md-tabs__item">
-        <a href="common/concepts/" class="md-tabs__link">
-          
+    <li class="md-tabs__item">
+      <a href="features/" class="md-tabs__link">
+        
   
   
-  Common
+    
+  
+  Features
 
-        </a>
-      </li>
-    
+      </a>
+    </li>
   
 
       
@@ -277,7 +277,7 @@
           
   
   
-  Android Engine
+  Android Package
 
         </a>
       </li>
@@ -448,33 +448,6 @@
   
   
   
-    <li class="md-nav__item">
-      <a href="https://jitpack.io/#Sepzie/SezoAudioEngine" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    JitPack
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
     
     
     
@@ -487,17 +460,17 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
         
           
-          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
             
   
   
   <span class="md-ellipsis">
     
   
-    Common
+    Packages
   
 
     
@@ -508,12 +481,12 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_3">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
             <span class="md-nav__icon md-icon"></span>
             
   
-    Common
+    Packages
   
 
           </label>
@@ -526,14 +499,70 @@
   
   
     <li class="md-nav__item">
-      <a href="common/concepts/" class="md-nav__link">
+      <a href="packages/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Concepts
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://jitpack.io/#Sepzie/SezoAudioEngine" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JitPack (Android package)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://www.npmjs.com/package/sezo-audio-engine" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    NPM (Expo module)
   
 
     
@@ -550,6 +579,33 @@
           </ul>
         </nav>
       
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -582,7 +638,7 @@
   <span class="md-ellipsis">
     
   
-    Android Engine
+    Android Package
   
 
     
@@ -598,7 +654,7 @@
             <span class="md-nav__icon md-icon"></span>
             
   
-    Android Engine
+    Android Package
   
 
           </label>
@@ -1100,30 +1156,31 @@
 
 <div class="hero">
   <h1>Sezo Audio Engine</h1>
-  <p>Low-latency, multi-track audio for Android with an Expo-friendly API surface. Use the native engine directly or ship through Expo and add iOS later with the same interface.</p>
+  <p>Low-latency, multi-track audio for Android and iOS. Use the Android package for native apps or the Expo module for a cross-platform JS/TS API with full iOS support and background playback.</p>
   <div class="hero-cta">
-    <a class="md-button md-button--primary" href="android/overview/">Android Engine</a>
-    <a class="md-button" href="expo/overview/">Expo Module</a>
-    <a class="md-button" href="https://jitpack.io/#Sepzie/SezoAudioEngine">JitPack</a>
+    <a class="md-button" href="android/overview/">Android package</a>
+    <a class="md-button" href="expo/overview/">Expo module</a>
   </div>
-  <div class="hero-meta">Status: Android engine ready. Expo module Android ready, iOS planned.</div>
+  <div class="hero-meta">Status: Android and iOS implemented. Expo module adds background playback.</div>
 </div>
 
 <div class="grid cards">
   <div class="card">
-    <h3>Android Engine</h3>
-    <p>Native AAR with playback, pitch/speed, recording, and extraction.</p>
+    <h3>Android package</h3>
+    <p>Native AAR for Android apps with playback, pitch/speed, recording, and extraction.</p>
     <p><a href="android/install/">Install and usage</a></p>
+    <p><a href="https://jitpack.io/#Sepzie/SezoAudioEngine">JitPack package</a></p>
   </div>
   <div class="card">
-    <h3>Expo Module</h3>
-    <p>JS/TS API that mirrors the native engine for Expo projects.</p>
+    <h3>Expo module</h3>
+    <p>Cross-platform JS/TS API with full iOS support and background playback.</p>
     <p><a href="expo/install/">Install and usage</a></p>
+    <p><a href="https://www.npmjs.com/package/sezo-audio-engine">NPM package</a></p>
   </div>
   <div class="card">
-    <h3>Concepts</h3>
-    <p>Timing, tracks, formats, and threading basics.</p>
-    <p><a href="common/concepts/">Read concepts</a></p>
+    <h3>Features</h3>
+    <p>Multi-track playback, pitch/speed, recording, extraction, and background playback.</p>
+    <p><a href="features/">Explore features</a></p>
   </div>
   <div class="card">
     <h3>API Reference</h3>
@@ -1134,8 +1191,8 @@
 
 <h2 id="repo-layout">Repo Layout</h2>
 <ul>
-<li><code>packages/android-engine</code>: native engine</li>
-<li><code>packages/expo-module</code>: Expo module wrapper and example app</li>
+<li><code>packages/android-engine</code>: Android package native engine (AAR)</li>
+<li><code>packages/expo-module</code>: Expo module and example app</li>
 </ul>
 <h2 id="support">Support</h2>
 <p>Open a GitHub issue for bugs or feature requests.</p>

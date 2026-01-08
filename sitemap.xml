@@ -5,6 +5,10 @@
          <lastmod>2026-01-08</lastmod>
     </url>
     <url>
+         <loc>https://sepzie.github.io/SezoAudioEngine/features/</loc>
+         <lastmod>2026-01-08</lastmod>
+    </url>
+    <url>
          <loc>https://sepzie.github.io/SezoAudioEngine/android/api/</loc>
          <lastmod>2026-01-08</lastmod>
     </url>
@@ -33,10 +37,6 @@
          <lastmod>2026-01-08</lastmod>
     </url>
     <url>
-         <loc>https://sepzie.github.io/SezoAudioEngine/common/concepts/</loc>
-         <lastmod>2026-01-08</lastmod>
-    </url>
-    <url>
          <loc>https://sepzie.github.io/SezoAudioEngine/expo/api/</loc>
          <lastmod>2026-01-08</lastmod>
     </url>
@@ -58,6 +58,10 @@
     </url>
     <url>
          <loc>https://sepzie.github.io/SezoAudioEngine/expo/usage/</loc>
+         <lastmod>2026-01-08</lastmod>
+    </url>
+    <url>
+         <loc>https://sepzie.github.io/SezoAudioEngine/packages/</loc>
          <lastmod>2026-01-08</lastmod>
     </url>
 </urlset>
