@@ -296,10 +296,21 @@ final class NativeAudioEngine {
       ensureInitializedIfNeeded()
 
       let inputNode = engine.inputNode
-      let inputFormat = inputNode.outputFormat(forBus: 0)
+      let inputFormat = inputNode.inputFormat(forBus: 0)
+      let session = AVAudioSession.sharedInstance()
+      let fallbackSampleRate = session.sampleRate > 0 ? session.sampleRate : 44100
+      let fallbackChannels = max(1, session.inputNumberOfChannels)
+      let safeSampleRate = inputFormat.sampleRate > 0 ? inputFormat.sampleRate : fallbackSampleRate
+      let safeChannels = inputFormat.channelCount > 0 ? Int(inputFormat.channelCount) : fallbackChannels
+      guard let tapFormat = AVAudioFormat(
+        standardFormatWithSampleRate: safeSampleRate,
+        channels: AVAudioChannelCount(safeChannels)
+      ) else {
+        return
+      }
       let requestedFormat = config?["format"] as? String ?? "aac"
-      let channels = config?["channels"] as? Int ?? Int(inputFormat.channelCount)
-      let sampleRate = config?["sampleRate"] as? Double ?? inputFormat.sampleRate
+      let channels = safeChannels
+      let sampleRate = safeSampleRate
       let bitrate = resolveBitrate(config: config)
       let formatInfo = resolveRecordingFormat(requestedFormat: requestedFormat)
       let outputURL = resolveOutputURL(
@@ -345,7 +356,7 @@ final class NativeAudioEngine {
         }
 
         inputNode.removeTap(onBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: tapFormat) { [weak self] buffer, _ in
           guard let self = self else { return }
           self.queue.async {
             guard let state = self.recordingState else { return }
