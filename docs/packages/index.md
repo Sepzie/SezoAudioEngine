@@ -2,12 +2,12 @@
 
 Sezo ships two packages. Pick the one you need below.
 
-## Sezo Android
+## Android package
 
 - JitPack: https://jitpack.io/#Sepzie/SezoAudioEngine
 - Docs: https://sepzie.github.io/SezoAudioEngine/android/overview/
 
-## Sezo Expo
+## Expo module
 
 - NPM (coming soon): https://www.npmjs.com/package/sezo-audio-engine
 - Docs: https://sepzie.github.io/SezoAudioEngine/expo/overview/

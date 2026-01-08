@@ -1,18 +1,44 @@
 {
   "name": "sezo-audio-engine",
   "version": "0.0.1",
+  "description": "Cross-platform Expo module for the Sezo Audio Engine with iOS implementation and background playback.",
+  "license": "MIT",
+  "author": "Sezo",
+  "homepage": "https://sepzie.github.io/SezoAudioEngine/expo/overview/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Sepzie/SezoAudioEngine.git",
+    "directory": "packages/expo-module"
+  },
+  "bugs": {
+    "url": "https://github.com/Sepzie/SezoAudioEngine/issues"
+  },
+  "keywords": [
+    "expo",
+    "react-native",
+    "audio",
+    "android",
+    "ios",
+    "multitrack",
+    "playback",
+    "recording",
+    "sezo"
+  ],
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
     "android",
     "ios",
     "dist",
-    "expo-module.config.json"
+    "expo-module.config.json",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "clean": "rm -rf dist",
-    "test": "echo \"TODO: add tests\""
+    "test": "echo \"TODO: add tests\"",
+    "prepublishOnly": "npm run build"
   },
   "peerDependencies": {
     "expo": ">=51.0.0 <54.0.0",

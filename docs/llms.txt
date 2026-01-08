@@ -4,7 +4,7 @@ Core pages:
 - https://sepzie.github.io/SezoAudioEngine/
 - https://sepzie.github.io/SezoAudioEngine/features/
 
-Sezo Android:
+Android package:
 - https://sepzie.github.io/SezoAudioEngine/android/overview/
 - https://sepzie.github.io/SezoAudioEngine/android/install/
 - https://sepzie.github.io/SezoAudioEngine/android/usage/
@@ -13,7 +13,7 @@ Sezo Android:
 - https://sepzie.github.io/SezoAudioEngine/android/extraction/
 - https://sepzie.github.io/SezoAudioEngine/android/troubleshooting/
 
-Sezo Expo (cross-platform API with iOS implementation and background playback):
+Expo module (cross-platform API with iOS implementation and background playback):
 - https://sepzie.github.io/SezoAudioEngine/expo/overview/
 - https://sepzie.github.io/SezoAudioEngine/expo/install/
 - https://sepzie.github.io/SezoAudioEngine/expo/usage/

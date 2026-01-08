@@ -1,6 +1,6 @@
-Sezo Audio Engine ships two packages: Sezo Android (native AAR) and Sezo Expo (cross-platform JS/TS API with full iOS implementation and background playback).
+Sezo Audio Engine ships two packages: an Android package (native AAR) and an Expo module (cross-platform JS/TS API with full iOS implementation and background playback).
 
-Sezo Android summary:
+Android package summary:
 - Multi-track playback with sample-accurate synchronization
 - Real-time pitch shifting and time-stretch
 - Per-track controls (volume, pan, mute, solo)
@@ -8,12 +8,12 @@ Sezo Android summary:
 - Offline extraction (track or mixdown)
 - Low-latency I/O via Oboe
 
-Sezo Android install (JitPack):
+Android package install (JitPack):
 - Repo: https://jitpack.io/#Sepzie/SezoAudioEngine
 - Gradle dependency: com.github.Sepzie:SezoAudioEngine:VERSION
 - Docs: https://sepzie.github.io/SezoAudioEngine/android/install/
 
-Sezo Expo summary:
+Expo module summary:
 - JS/TS API for Expo/React Native
 - Android and iOS implementations
 - Background playback support

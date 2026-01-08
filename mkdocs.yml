@@ -1,5 +1,5 @@
 site_name: Sezo Audio Engine
-site_description: Low-latency audio for Android and iOS with Sezo Android and Sezo Expo packages.
+site_description: Low-latency audio for Android and iOS with the Android package and Expo module.
 repo_url: https://github.com/Sepzie/SezoAudioEngine
 repo_name: Sepzie/SezoAudioEngine
 site_url: https://sepzie.github.io/SezoAudioEngine/
@@ -43,10 +43,10 @@ nav:
   - Home: index.md
   - Packages:
       - Overview: packages/index.md
-      - JitPack (Sezo Android): https://jitpack.io/#Sepzie/SezoAudioEngine
-      - NPM (Sezo Expo, coming soon): https://www.npmjs.com/package/sezo-audio-engine
+      - JitPack (Android package): https://jitpack.io/#Sepzie/SezoAudioEngine
+      - NPM (Expo module, coming soon): https://www.npmjs.com/package/sezo-audio-engine
   - Features: features.md
-  - Sezo Android:
+  - Android Package:
       - Overview: android/overview.md
       - Installation: android/install.md
       - Usage: android/usage.md
@@ -54,7 +54,7 @@ nav:
       - Recording: android/recording.md
       - Extraction: android/extraction.md
       - Troubleshooting: android/troubleshooting.md
-  - Sezo Expo:
+  - Expo Module:
       - Overview: expo/overview.md
       - Installation: expo/install.md
       - Usage: expo/usage.md

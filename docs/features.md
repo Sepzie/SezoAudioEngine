@@ -1,13 +1,13 @@
 # Features
 
-Sezo Audio Engine ships as two packages: Sezo Android for native apps and Sezo Expo for cross-platform apps with a full iOS implementation and background playback.
+Sezo Audio Engine ships as two packages: an Android package for native apps and an Expo module for cross-platform apps with a full iOS implementation and background playback.
 
 ## Feature Highlights
 
 - Low-latency, multi-track playback with sample-accurate sync
 - Pitch and speed control
 - Recording and extraction
-- Background playback (Sezo Expo)
+- Background playback (Expo module)
 - Cross-platform JS/TS API with Android and iOS parity
 
 ## Core Concepts
