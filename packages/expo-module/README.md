@@ -49,3 +49,4 @@ See the docs for full API details and examples.
 
 - Overview: https://sepzie.github.io/SezoAudioEngine/expo/overview/
 - Install: https://sepzie.github.io/SezoAudioEngine/expo/install/
+- API: https://sepzie.github.io/SezoAudioEngine/expo/api/

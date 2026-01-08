@@ -19,7 +19,7 @@
     <h3>Expo module</h3>
     <p>Cross-platform JS/TS API with full iOS support and background playback.</p>
     <p><a href="expo/install/">Install and usage</a></p>
-    <p><a href="https://www.npmjs.com/package/sezo-audio-engine">NPM package (coming soon)</a></p>
+    <p><a href="https://www.npmjs.com/package/sezo-audio-engine">NPM package</a></p>
   </div>
   <div class="card">
     <h3>Features</h3>

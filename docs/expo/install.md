@@ -8,7 +8,7 @@ When published to npm:
 npm install sezo-audio-engine
 ```
 
-NPM package (coming soon): https://www.npmjs.com/package/sezo-audio-engine
+NPM package: https://www.npmjs.com/package/sezo-audio-engine
 
 Until then, install from a git URL or a local workspace path.
 

@@ -9,5 +9,5 @@ Sezo ships two packages. Pick the one you need below.
 
 ## Expo module
 
-- NPM (coming soon): https://www.npmjs.com/package/sezo-audio-engine
+- NPM: https://www.npmjs.com/package/sezo-audio-engine
 - Docs: https://sepzie.github.io/SezoAudioEngine/expo/overview/
