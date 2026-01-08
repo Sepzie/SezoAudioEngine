@@ -1,23 +1,36 @@
-# Sezo Audio Engine
+<div class="hero">
+  <h1>Sezo Audio Engine</h1>
+  <p>Low-latency, multi-track audio for Android with an Expo-friendly API surface. Use the native engine directly or ship through Expo and add iOS later with the same interface.</p>
+  <div class="hero-cta">
+    <a class="md-button md-button--primary" href="android/overview/">Android Engine</a>
+    <a class="md-button" href="expo/overview/">Expo Module</a>
+    <a class="md-button" href="https://jitpack.io/#Sepzie/SezoAudioEngine">JitPack</a>
+  </div>
+  <div class="hero-meta">Status: Android engine ready. Expo module Android ready, iOS planned.</div>
+</div>
 
-Sezo Audio Engine ships two packages in one repo:
-
-- **Android Engine**: a native Android AAR (C++/Kotlin) for low-latency, multi-track audio.
-- **Expo Module**: a JavaScript/TypeScript API that wraps the native engine for Expo/React Native.
-
-Use the Android Engine directly for native Android apps. Use the Expo Module if you want a cross-platform JS API.
-
-## Status
-
-- Android Engine: production-ready for Android.
-- Expo Module: production-ready for iOS and Android.
-
-## Quick Links
-
-- [Android Engine docs](android/overview.md)
-- [Expo Module docs](expo/overview.md)
-- [Concepts](common/concepts.md)
-- [JitPack](https://jitpack.io/#Sepzie/SezoAudioEngine)
+<div class="grid cards">
+  <div class="card">
+    <h3>Android Engine</h3>
+    <p>Native AAR with playback, pitch/speed, recording, and extraction.</p>
+    <p><a href="android/install/">Install and usage</a></p>
+  </div>
+  <div class="card">
+    <h3>Expo Module</h3>
+    <p>JS/TS API that mirrors the native engine for Expo projects.</p>
+    <p><a href="expo/install/">Install and usage</a></p>
+  </div>
+  <div class="card">
+    <h3>Concepts</h3>
+    <p>Timing, tracks, formats, and threading basics.</p>
+    <p><a href="common/concepts/">Read concepts</a></p>
+  </div>
+  <div class="card">
+    <h3>API Reference</h3>
+    <p>Detailed API surface for Android and Expo.</p>
+    <p><a href="android/api/">Android API</a> | <a href="expo/api/">Expo API</a></p>
+  </div>
+</div>
 
 ## Repo Layout
 

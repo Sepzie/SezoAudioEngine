@@ -1,0 +1,63 @@
+:root {
+  --sezo-hero-bg: radial-gradient(1200px 500px at 10% -10%, #d9f3ee 0%, #ffffff 55%);
+  --sezo-card-border: rgba(0, 0, 0, 0.08);
+}
+
+.hero {
+  margin: 1rem 0 2rem;
+  padding: 2rem 2.5rem;
+  border-radius: 18px;
+  background: var(--sezo-hero-bg);
+  border: 1px solid var(--sezo-card-border);
+}
+
+.hero h1 {
+  font-size: clamp(1.9rem, 1.4rem + 2vw, 3rem);
+  margin-bottom: 0.5rem;
+}
+
+.hero p {
+  max-width: 48rem;
+  font-size: 1rem;
+}
+
+.hero-cta {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+}
+
+.hero-meta {
+  margin-top: 0.75rem;
+  font-size: 0.9rem;
+  opacity: 0.8;
+}
+
+.grid.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.grid.cards .card {
+  border: 1px solid var(--sezo-card-border);
+  border-radius: 14px;
+  padding: 1rem 1.2rem;
+  background: #fff;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+}
+
+.grid.cards .card h3 {
+  margin-top: 0;
+}
+
+.md-typeset a.md-button.md-button--primary {
+  box-shadow: none;
+}
+
+@media (max-width: 600px) {
+  .hero {
+    padding: 1.5rem;
+  }
+}

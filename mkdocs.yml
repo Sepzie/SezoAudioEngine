@@ -28,6 +28,9 @@ markdown_extensions:
 extra_css:
   - assets/stylesheets/extra.css
 
+extra_javascript:
+  - assets/javascripts/external-links.js
+
 plugins:
   - search
   
