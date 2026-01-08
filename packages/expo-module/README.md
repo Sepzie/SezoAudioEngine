@@ -37,6 +37,14 @@ iOS recording or background playback:
 }
 ```
 
+## Usage
+
+```ts
+import { AudioEngineModule } from 'sezo-audio-engine';
+```
+
+See the docs for full API details and examples.
+
 ## Docs
 
 - Overview: https://sepzie.github.io/SezoAudioEngine/expo/overview/
