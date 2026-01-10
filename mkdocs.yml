@@ -42,7 +42,6 @@ exclude_docs: |
 nav:
   - Home: index.md
   - Packages:
-      - Overview: packages/index.md
       - JitPack (Android package): https://jitpack.io/#Sepzie/SezoAudioEngine
       - NPM (Expo module): https://www.npmjs.com/package/sezo-audio-engine
   - Features: features.md
