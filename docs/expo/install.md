@@ -20,6 +20,28 @@ If you use recording, add:
 <uses-permission android:name="android.permission.RECORD_AUDIO" />
 ```
 
+## Android Engine Dependency
+
+The Expo module links to the Android engine from JitPack by default. Add the JitPack repository to your app:
+
+```gradle
+// android/build.gradle
+allprojects {
+  repositories {
+    maven { url "https://www.jitpack.io" }
+  }
+}
+```
+
+Optionally pin the engine version in `android/gradle.properties`:
+
+```properties
+sezoAudioEngineVersion=v0.1.3
+```
+
+If you want to build from source instead, include the local engine module in
+`android/settings.gradle` and it will be picked up automatically.
+
 ## iOS Info.plist
 
 If you use recording or background playback, add:
