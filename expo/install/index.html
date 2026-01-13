@@ -972,6 +972,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#android-engine-dependency" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Android Engine Dependency
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#ios-infoplist" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1170,6 +1181,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#android-engine-dependency" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Android Engine Dependency
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#ios-infoplist" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1222,6 +1244,20 @@
 <p>If you use recording, add:</p>
 <pre><code class="language-xml">&lt;uses-permission android:name=&quot;android.permission.RECORD_AUDIO&quot; /&gt;
 </code></pre>
+<h2 id="android-engine-dependency">Android Engine Dependency</h2>
+<p>The Expo module links to the Android engine from JitPack by default. Add the JitPack repository to your app:</p>
+<pre><code class="language-gradle">// android/build.gradle
+allprojects {
+  repositories {
+    maven { url &quot;https://www.jitpack.io&quot; }
+  }
+}
+</code></pre>
+<p>Optionally pin the engine version in <code>android/gradle.properties</code>:</p>
+<pre><code class="language-properties">sezoAudioEngineVersion=v0.1.3
+</code></pre>
+<p>If you want to build from source instead, include the local engine module in
+<code>android/settings.gradle</code> and it will be picked up automatically.</p>
 <h2 id="ios-infoplist">iOS Info.plist</h2>
 <p>If you use recording or background playback, add:</p>
 <pre><code class="language-json">{
