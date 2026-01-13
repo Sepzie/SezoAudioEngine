@@ -2,15 +2,13 @@
 
 ## Package Install
 
-When published to npm:
+Install from npm:
 
 ```bash
 npm install sezo-audio-engine
 ```
 
 NPM package: https://www.npmjs.com/package/sezo-audio-engine
-
-Until then, install from a git URL or a local workspace path.
 
 ## Android Permissions
 
