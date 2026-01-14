@@ -168,16 +168,42 @@ const buildTestTracks = (fixtures: TestFixtures, includeTone: boolean) => {
   ];
 };
 
-const prepareTracks = async (fixtures: TestFixtures, includeTone: boolean) => {
+const loadTestSession = async (fixtures: TestFixtures) => {
   AudioEngineModule.stop();
   AudioEngineModule.unloadAllTracks();
   AudioEngineModule.setMasterVolume(1.0);
   AudioEngineModule.setPitch(0.0);
   AudioEngineModule.setSpeed(1.0);
   await wait(120);
-  const tracks = buildTestTracks(fixtures, includeTone);
+  const tracks = buildTestTracks(fixtures, true);
   await AudioEngineModule.loadTracks(tracks);
   return tracks;
+};
+
+const resetTestState = (toneEnabled: boolean) => {
+  try {
+    AudioEngineModule.stop();
+    AudioEngineModule.seek(0);
+    AudioEngineModule.setMasterVolume(1.0);
+    AudioEngineModule.setPitch(0.0);
+    AudioEngineModule.setSpeed(1.0);
+
+    const baseTrackIds = ['test_track1', 'test_track2', 'test_tone'];
+    for (const trackId of baseTrackIds) {
+      AudioEngineModule.setTrackVolume(trackId, 1.0);
+      AudioEngineModule.setTrackPan(trackId, 0.0);
+      AudioEngineModule.setTrackMuted(trackId, false);
+      AudioEngineModule.setTrackSolo(trackId, false);
+    }
+    AudioEngineModule.setTrackMuted('test_tone', !toneEnabled);
+    if (!toneEnabled) {
+      AudioEngineModule.setTrackVolume('test_tone', 0.0);
+    } else {
+      AudioEngineModule.setTrackVolume('test_tone', 0.9);
+    }
+  } catch (error) {
+    console.warn('[TestLab] Reset state failed', error);
+  }
 };
 
 const samplePositionDrift = async (durationMs: number, intervalMs: number) => {
@@ -303,12 +329,15 @@ const TestLabScreen = ({
         setFixtures(resolvedFixtures);
       }
 
+      await loadTestSession(resolvedFixtures);
+      await wait(120);
+
       const tests = [
         {
           id: 'load_playback',
           name: 'Load & Playback Smoke',
           run: async () => {
-            await prepareTracks(resolvedFixtures, true);
+            resetTestState(true);
             AudioEngineModule.play();
             await wait(2000);
             const playingDuring = AudioEngineModule.isPlaying();
@@ -332,7 +361,7 @@ const TestLabScreen = ({
           id: 'sync_drift',
           name: 'Multi-Track Sync Drift',
           run: async () => {
-            await prepareTracks(resolvedFixtures, false);
+            resetTestState(false);
             AudioEngineModule.seek(0);
             AudioEngineModule.play();
             const maxDriftMs = await samplePositionDrift(5000, 100);
@@ -349,7 +378,7 @@ const TestLabScreen = ({
           id: 'seek_accuracy',
           name: 'Seek Accuracy',
           run: async () => {
-            await prepareTracks(resolvedFixtures, false);
+            resetTestState(false);
             AudioEngineModule.seek(5000);
             AudioEngineModule.play();
             await wait(1000);
@@ -369,7 +398,7 @@ const TestLabScreen = ({
           id: 'pitch_speed',
           name: 'Pitch/Speed Sanity',
           run: async () => {
-            await prepareTracks(resolvedFixtures, true);
+            resetTestState(true);
             AudioEngineModule.setPitch(3.0);
             AudioEngineModule.setSpeed(1.25);
             AudioEngineModule.play();
@@ -404,7 +433,7 @@ const TestLabScreen = ({
                 error: 'Microphone permission denied',
               };
             }
-            await prepareTracks(resolvedFixtures, false);
+            resetTestState(false);
             AudioEngineModule.play();
             await wait(200);
             await AudioEngineModule.startRecording({
@@ -450,7 +479,7 @@ const TestLabScreen = ({
           id: 'extraction_output',
           name: 'Extraction Output',
           run: async () => {
-            await prepareTracks(resolvedFixtures, false);
+            resetTestState(false);
             const originalDuration = AudioEngineModule.getDuration();
             const aacResult = await AudioEngineModule.extractTrack('test_track1', {
               format: 'aac',
