@@ -95,8 +95,17 @@ public class ExpoAudioEngineModule: Module {
       engine.setTempoAndPitch(tempo: tempo, pitch: pitch)
     }
 
-    AsyncFunction("startRecording") { (config: [String: Any]?) in
-      engine.startRecording(config: config)
+    AsyncFunction("startRecording") { (config: [String: Any]?) throws in
+      let didStart = engine.startRecording(config: config)
+      if !didStart {
+        throw NSError(
+          domain: "ExpoAudioEngine",
+          code: 1,
+          userInfo: [
+            NSLocalizedDescriptionKey: "Failed to start recording. Audio input format is invalid or the audio session is not ready."
+          ]
+        )
+      }
     }
     AsyncFunction("stopRecording") {
       return engine.stopRecording()

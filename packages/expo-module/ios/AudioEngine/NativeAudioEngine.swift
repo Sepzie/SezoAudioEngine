@@ -290,16 +290,27 @@ final class NativeAudioEngine {
   }
 
   /// Starts recording from the input node into AAC or WAV.
-  func startRecording(config: [String: Any]?) {
-    queue.sync {
-      guard !isRecordingFlag else { return }
+  @discardableResult
+  func startRecording(config: [String: Any]?) -> Bool {
+    return queue.sync {
+      guard !isRecordingFlag else { return true }
       ensureInitializedIfNeeded()
 
       let inputNode = engine.inputNode
-      let inputFormat = inputNode.outputFormat(forBus: 0)
+      var inputFormat = inputNode.outputFormat(forBus: 0)
+      var attempts = 0
+      while (inputFormat.sampleRate == 0 || inputFormat.channelCount == 0) && attempts < 3 {
+        sessionManager.configure(with: lastConfig)
+        Thread.sleep(forTimeInterval: 0.05)
+        inputFormat = inputNode.outputFormat(forBus: 0)
+        attempts += 1
+      }
+      guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
+        return false
+      }
       let requestedFormat = config?["format"] as? String ?? "aac"
-      let channels = config?["channels"] as? Int ?? Int(inputFormat.channelCount)
-      let sampleRate = config?["sampleRate"] as? Double ?? inputFormat.sampleRate
+      let channels = Int(inputFormat.channelCount)
+      let sampleRate = inputFormat.sampleRate
       let bitrate = resolveBitrate(config: config)
       let formatInfo = resolveRecordingFormat(requestedFormat: requestedFormat)
       let outputURL = resolveOutputURL(
@@ -341,7 +352,7 @@ final class NativeAudioEngine {
 
         guard startEngineIfNeeded() else {
           recordingState = nil
-          return
+          return false
         }
 
         inputNode.removeTap(onBus: 0)
@@ -360,8 +371,10 @@ final class NativeAudioEngine {
         }
 
         isRecordingFlag = true
+        return true
       } catch {
         recordingState = nil
+        return false
       }
     }
   }
