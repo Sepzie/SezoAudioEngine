@@ -2,8 +2,11 @@ import AVFoundation
 
 final class AudioSessionManager {
   private let session = AVAudioSession.sharedInstance()
+  private var lastError: String?
 
-  func configure(with config: AudioEngineConfig) {
+  @discardableResult
+  func configure(with config: AudioEngineConfig) -> Bool {
+    lastError = nil
     do {
       try session.setCategory(
         .playAndRecord,
@@ -11,25 +14,42 @@ final class AudioSessionManager {
         options: [.defaultToSpeaker, .allowBluetooth]
       )
     } catch {
-      return
+      lastError = "setCategory failed: \(error.localizedDescription)"
+      return false
     }
 
     if let sampleRate = config.sampleRate {
-      try? session.setPreferredSampleRate(sampleRate)
+      do {
+        try session.setPreferredSampleRate(sampleRate)
+      } catch {
+        lastError = "setPreferredSampleRate failed: \(error.localizedDescription)"
+      }
     }
 
     if let bufferSize = config.bufferSize {
       let sampleRate = config.sampleRate ?? session.sampleRate
       if sampleRate > 0 {
         let duration = bufferSize / sampleRate
-        try? session.setPreferredIOBufferDuration(duration)
+        do {
+          try session.setPreferredIOBufferDuration(duration)
+        } catch {
+          lastError = "setPreferredIOBufferDuration failed: \(error.localizedDescription)"
+        }
       }
     }
 
-    try? session.setActive(true)
+    do {
+      try session.setActive(true)
+    } catch {
+      lastError = "setActive failed: \(error.localizedDescription)"
+      return false
+    }
+    return true
   }
 
-  func enableBackgroundPlayback(with config: AudioEngineConfig) {
+  @discardableResult
+  func enableBackgroundPlayback(with config: AudioEngineConfig) -> Bool {
+    lastError = nil
     do {
       try session.setCategory(
         .playback,
@@ -37,22 +57,41 @@ final class AudioSessionManager {
         options: [.allowBluetooth, .allowAirPlay]
       )
     } catch {
-      return
+      lastError = "setCategory failed: \(error.localizedDescription)"
+      return false
     }
 
     if let sampleRate = config.sampleRate {
-      try? session.setPreferredSampleRate(sampleRate)
+      do {
+        try session.setPreferredSampleRate(sampleRate)
+      } catch {
+        lastError = "setPreferredSampleRate failed: \(error.localizedDescription)"
+      }
     }
 
     if let bufferSize = config.bufferSize {
       let sampleRate = config.sampleRate ?? session.sampleRate
       if sampleRate > 0 {
         let duration = bufferSize / sampleRate
-        try? session.setPreferredIOBufferDuration(duration)
+        do {
+          try session.setPreferredIOBufferDuration(duration)
+        } catch {
+          lastError = "setPreferredIOBufferDuration failed: \(error.localizedDescription)"
+        }
       }
     }
 
-    try? session.setActive(true)
+    do {
+      try session.setActive(true)
+    } catch {
+      lastError = "setActive failed: \(error.localizedDescription)"
+      return false
+    }
+    return true
+  }
+
+  func lastErrorDescription() -> String? {
+    return lastError
   }
 
   func deactivate() {

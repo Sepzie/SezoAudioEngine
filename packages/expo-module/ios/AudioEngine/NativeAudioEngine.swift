@@ -32,6 +32,8 @@ final class NativeAudioEngine {
   private var recordingState: RecordingState?
   private var lastRecordingError: String?
   private var lastEngineError: String?
+  private let recordingMixer = AVAudioMixerNode()
+  private var recordingMixerConnected = false
   private var inputLevel: Double = 0.0
   private var backgroundPlaybackEnabled = false
   private var nowPlayingMetadata: [String: Any] = [:]
@@ -55,7 +57,11 @@ final class NativeAudioEngine {
     let parsedConfig = AudioEngineConfig(dictionary: config)
     queue.sync {
       lastConfig = parsedConfig
-      sessionManager.configure(with: parsedConfig)
+      _ = sessionManager.configure(with: parsedConfig)
+      _ = ensureRecordingMixerConnected(
+        sampleRate: AVAudioSession.sharedInstance().sampleRate,
+        channels: AVAudioSession.sharedInstance().inputNumberOfChannels
+      )
       engine.mainMixerNode.outputVolume = Float(masterVolume)
       engine.prepare()
       isInitialized = true
@@ -70,6 +76,7 @@ final class NativeAudioEngine {
       stopRecordingInternal()
       detachAllTracks()
       tracks.removeAll()
+      detachRecordingMixer()
       isPlayingFlag = false
       isRecordingFlag = false
       currentPositionMs = 0.0
@@ -308,8 +315,14 @@ final class NativeAudioEngine {
         }
         return false
       }
-      if session.category != .playAndRecord {
-        sessionManager.configure(with: lastConfig)
+      if !sessionManager.configure(with: lastConfig) {
+        lastRecordingError = sessionManager.lastErrorDescription() ?? "audio session configuration failed"
+        return false
+      }
+      if !session.isInputAvailable {
+        let routeInfo = describeRoute(session)
+        lastRecordingError = "audio input not available (category=\(session.category.rawValue), route=\(routeInfo))"
+        return false
       }
       ensureInitializedIfNeeded()
 
@@ -318,35 +331,16 @@ final class NativeAudioEngine {
         return false
       }
 
-      let inputNode = engine.inputNode
-      var inputFormat = inputNode.outputFormat(forBus: 0)
-      var attempts = 0
-      while (inputFormat.sampleRate == 0 || inputFormat.channelCount == 0) && attempts < 3 {
-        sessionManager.configure(with: lastConfig)
-        selectPreferredInput(session)
-        Thread.sleep(forTimeInterval: 0.05)
-        inputFormat = inputNode.outputFormat(forBus: 0)
-        attempts += 1
+      let sampleRate = session.sampleRate
+      let channels = max(1, session.inputNumberOfChannels)
+      if !ensureRecordingMixerConnected(sampleRate: sampleRate, channels: channels) {
+        return false
       }
-      if inputFormat.sampleRate == 0 || inputFormat.channelCount == 0 {
-        let fallbackFormat = inputNode.inputFormat(forBus: 0)
-        if fallbackFormat.sampleRate > 0 && fallbackFormat.channelCount > 0 {
-          inputFormat = fallbackFormat
-        }
-      }
-      var sampleRate = inputFormat.sampleRate
-      var channels = Int(inputFormat.channelCount)
-      if sampleRate == 0 || channels == 0 {
-        let fallbackRate = session.sampleRate
-        let fallbackChannels = session.inputNumberOfChannels
-        if fallbackRate > 0 && fallbackChannels > 0 {
-          sampleRate = fallbackRate
-          channels = fallbackChannels
-        }
-      }
-      guard sampleRate > 0, channels > 0 else {
+
+      let tapFormat = recordingMixer.outputFormat(forBus: 0)
+      guard tapFormat.sampleRate > 0, tapFormat.channelCount > 0 else {
         let routeInfo = describeRoute(session)
-        lastRecordingError = "input format invalid (sampleRate=\(inputFormat.sampleRate), channels=\(inputFormat.channelCount), sessionRate=\(session.sampleRate), sessionChannels=\(session.inputNumberOfChannels), route=\(routeInfo))"
+        lastRecordingError = "input format invalid (sampleRate=\(tapFormat.sampleRate), channels=\(tapFormat.channelCount), sessionRate=\(session.sampleRate), sessionChannels=\(session.inputNumberOfChannels), route=\(routeInfo))"
         return false
       }
       let requestedFormat = config?["format"] as? String ?? "aac"
@@ -389,8 +383,8 @@ final class NativeAudioEngine {
           startTimeMs: startTimeMs
         )
 
-        inputNode.removeTap(onBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buffer, _ in
+        recordingMixer.removeTap(onBus: 0)
+        recordingMixer.installTap(onBus: 0, bufferSize: 1024, format: tapFormat) { [weak self] buffer, _ in
           guard let self = self else { return }
           self.queue.async {
             guard let state = self.recordingState else { return }
@@ -543,7 +537,7 @@ final class NativeAudioEngine {
     queue.sync {
       backgroundPlaybackEnabled = true
       nowPlayingMetadata.merge(metadata) { _, new in new }
-      sessionManager.enableBackgroundPlayback(with: lastConfig)
+      _ = sessionManager.enableBackgroundPlayback(with: lastConfig)
       configureRemoteCommandsIfNeeded()
       updateNowPlayingInfoInternal()
     }
@@ -564,7 +558,7 @@ final class NativeAudioEngine {
       nowPlayingMetadata.removeAll()
       removeRemoteCommands()
       MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
-      sessionManager.configure(with: lastConfig)
+      _ = sessionManager.configure(with: lastConfig)
     }
   }
 
@@ -583,10 +577,14 @@ final class NativeAudioEngine {
     }
     let config = lastConfig
     if backgroundPlaybackEnabled {
-      sessionManager.enableBackgroundPlayback(with: config)
+      _ = sessionManager.enableBackgroundPlayback(with: config)
     } else {
-      sessionManager.configure(with: config)
+      _ = sessionManager.configure(with: config)
     }
+    _ = ensureRecordingMixerConnected(
+      sampleRate: AVAudioSession.sharedInstance().sampleRate,
+      channels: AVAudioSession.sharedInstance().inputNumberOfChannels
+    )
     engine.mainMixerNode.outputVolume = Float(masterVolume)
     engine.prepare()
     isInitialized = true
@@ -732,9 +730,47 @@ final class NativeAudioEngine {
 
   /// Stops the input tap and clears recording state.
   private func stopRecordingInternal() {
-    engine.inputNode.removeTap(onBus: 0)
+    recordingMixer.removeTap(onBus: 0)
     recordingState = nil
     isRecordingFlag = false
+  }
+
+  private func ensureRecordingMixerConnected(sampleRate: Double, channels: Int) -> Bool {
+    if recordingMixerConnected {
+      return true
+    }
+    if engine.isRunning {
+      lastRecordingError = "recording mixer unavailable while engine is running"
+      return false
+    }
+
+    let resolvedRate = sampleRate > 0 ? sampleRate : (lastConfig.sampleRate ?? 44100)
+    let resolvedChannels = channels > 0 ? channels : 1
+    guard let format = AVAudioFormat(
+      standardFormatWithSampleRate: resolvedRate,
+      channels: AVAudioChannelCount(resolvedChannels)
+    ) else {
+      lastRecordingError = "recording format invalid (sampleRate=\(resolvedRate), channels=\(resolvedChannels))"
+      return false
+    }
+
+    engine.attach(recordingMixer)
+    engine.connect(engine.inputNode, to: recordingMixer, format: format)
+    engine.connect(recordingMixer, to: engine.mainMixerNode, format: format)
+    recordingMixer.volume = 0.0
+    recordingMixerConnected = true
+    return true
+  }
+
+  private func detachRecordingMixer() {
+    if !recordingMixerConnected {
+      return
+    }
+    recordingMixer.removeTap(onBus: 0)
+    engine.disconnectNodeInput(recordingMixer)
+    engine.disconnectNodeOutput(recordingMixer)
+    engine.detach(recordingMixer)
+    recordingMixerConnected = false
   }
 
   /// Maps requested output formats to supported formats.
