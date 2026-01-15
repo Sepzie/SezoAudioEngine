@@ -30,6 +30,8 @@ final class NativeAudioEngine {
   private var activePlaybackCount = 0
   private var playbackToken = UUID()
   private var recordingState: RecordingState?
+  private var lastRecordingError: String?
+  private var lastEngineError: String?
   private var inputLevel: Double = 0.0
   private var backgroundPlaybackEnabled = false
   private var nowPlayingMetadata: [String: Any] = [:]
@@ -294,23 +296,60 @@ final class NativeAudioEngine {
   func startRecording(config: [String: Any]?) -> Bool {
     return queue.sync {
       guard !isRecordingFlag else { return true }
+      lastRecordingError = nil
+      let session = AVAudioSession.sharedInstance()
+      let permission = session.recordPermission
+      if permission != .granted {
+        if permission == .undetermined {
+          requestRecordPermission()
+          lastRecordingError = "microphone permission not determined"
+        } else {
+          lastRecordingError = "microphone permission denied"
+        }
+        return false
+      }
+      if session.category != .playAndRecord {
+        sessionManager.configure(with: lastConfig)
+      }
       ensureInitializedIfNeeded()
+
+      guard startEngineIfNeeded() else {
+        lastRecordingError = lastEngineError ?? "audio engine failed to start"
+        return false
+      }
 
       let inputNode = engine.inputNode
       var inputFormat = inputNode.outputFormat(forBus: 0)
       var attempts = 0
       while (inputFormat.sampleRate == 0 || inputFormat.channelCount == 0) && attempts < 3 {
         sessionManager.configure(with: lastConfig)
+        selectPreferredInput(session)
         Thread.sleep(forTimeInterval: 0.05)
         inputFormat = inputNode.outputFormat(forBus: 0)
         attempts += 1
       }
-      guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
+      if inputFormat.sampleRate == 0 || inputFormat.channelCount == 0 {
+        let fallbackFormat = inputNode.inputFormat(forBus: 0)
+        if fallbackFormat.sampleRate > 0 && fallbackFormat.channelCount > 0 {
+          inputFormat = fallbackFormat
+        }
+      }
+      var sampleRate = inputFormat.sampleRate
+      var channels = Int(inputFormat.channelCount)
+      if sampleRate == 0 || channels == 0 {
+        let fallbackRate = session.sampleRate
+        let fallbackChannels = session.inputNumberOfChannels
+        if fallbackRate > 0 && fallbackChannels > 0 {
+          sampleRate = fallbackRate
+          channels = fallbackChannels
+        }
+      }
+      guard sampleRate > 0, channels > 0 else {
+        let routeInfo = describeRoute(session)
+        lastRecordingError = "input format invalid (sampleRate=\(inputFormat.sampleRate), channels=\(inputFormat.channelCount), sessionRate=\(session.sampleRate), sessionChannels=\(session.inputNumberOfChannels), route=\(routeInfo))"
         return false
       }
       let requestedFormat = config?["format"] as? String ?? "aac"
-      let channels = Int(inputFormat.channelCount)
-      let sampleRate = inputFormat.sampleRate
       let bitrate = resolveBitrate(config: config)
       let formatInfo = resolveRecordingFormat(requestedFormat: requestedFormat)
       let outputURL = resolveOutputURL(
@@ -350,13 +389,8 @@ final class NativeAudioEngine {
           startTimeMs: startTimeMs
         )
 
-        guard startEngineIfNeeded() else {
-          recordingState = nil
-          return false
-        }
-
         inputNode.removeTap(onBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buffer, _ in
           guard let self = self else { return }
           self.queue.async {
             guard let state = self.recordingState else { return }
@@ -373,9 +407,22 @@ final class NativeAudioEngine {
         isRecordingFlag = true
         return true
       } catch {
+        lastRecordingError = "recording setup failed: \(error.localizedDescription)"
         recordingState = nil
         return false
       }
+    }
+  }
+
+  private func requestRecordPermission() {
+    let session = AVAudioSession.sharedInstance()
+    let requestBlock = {
+      session.requestRecordPermission { _ in }
+    }
+    if Thread.isMainThread {
+      requestBlock()
+    } else {
+      DispatchQueue.main.async(execute: requestBlock)
     }
   }
 
@@ -422,6 +469,10 @@ final class NativeAudioEngine {
     queue.sync {
       recordingVolume = volume
     }
+  }
+
+  func getLastRecordingError() -> String? {
+    return queue.sync { lastRecordingError }
   }
 
   /// Offline export for a single track.
@@ -730,6 +781,19 @@ final class NativeAudioEngine {
     return baseURL.appendingPathComponent(filename)
   }
 
+  private func selectPreferredInput(_ session: AVAudioSession) {
+    guard let inputs = session.availableInputs, !inputs.isEmpty else { return }
+    if let builtIn = inputs.first(where: { $0.portType == .builtInMic }) {
+      try? session.setPreferredInput(builtIn)
+    }
+  }
+
+  private func describeRoute(_ session: AVAudioSession) -> String {
+    let inputs = session.currentRoute.inputs.map { "\($0.portType.rawValue):\($0.portName)" }
+    let outputs = session.currentRoute.outputs.map { "\($0.portType.rawValue):\($0.portName)" }
+    return "inputs[\(inputs.joined(separator: ","))], outputs[\(outputs.joined(separator: ","))]"
+  }
+
   /// Returns file size for output metadata.
   private func resolveFileSize(url: URL) -> Int {
     let path = url.path
@@ -994,12 +1058,15 @@ final class NativeAudioEngine {
   @discardableResult
   private func startEngineIfNeeded() -> Bool {
     if !isInitialized {
+      lastEngineError = "audio engine not initialized"
       return false
     }
     if !engine.isRunning {
       do {
         try engine.start()
+        lastEngineError = nil
       } catch {
+        lastEngineError = error.localizedDescription
         return false
       }
     }
