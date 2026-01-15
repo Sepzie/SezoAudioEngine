@@ -137,6 +137,7 @@ export default function App() {
   const recordingLevelRef = useRef(0);
   const recordingElapsedRef = useRef(0);
   const recordingStartRef = useRef<number | null>(null);
+  const pendingRecordingRef = useRef<RecordingInfo | null>(null);
   const loadedRecordingUris = useRef(new Set<string>());
   const recordingCountRef = useRef(1);
   const engineAny = AudioEngineModule as Record<string, any>;
@@ -480,10 +481,27 @@ export default function App() {
         return;
       }
       setLastRecording(recording);
+      if (isPlaying) {
+        pendingRecordingRef.current = recording;
+        setRecordingStatus('Saved (load after stop)');
+        return;
+      }
       void appendRecordingTrack(recording);
     },
-    [appendRecordingTrack]
+    [appendRecordingTrack, isPlaying]
   );
+
+  useEffect(() => {
+    if (isPlaying) {
+      return;
+    }
+    const pending = pendingRecordingRef.current;
+    if (!pending) {
+      return;
+    }
+    pendingRecordingRef.current = null;
+    void appendRecordingTrack(pending);
+  }, [appendRecordingTrack, isPlaying]);
 
   const handleStartRecording = useCallback(async () => {
     if (!supportsRecording) {

@@ -34,6 +34,7 @@ final class NativeAudioEngine {
   private var lastEngineError: String?
   private let recordingMixer = AVAudioMixerNode()
   private var recordingMixerConnected = false
+  private var recordingTapInstalled = false
   private var inputLevel: Double = 0.0
   private var backgroundPlaybackEnabled = false
   private var nowPlayingMetadata: [String: Any] = [:]
@@ -383,21 +384,6 @@ final class NativeAudioEngine {
           startTimeMs: startTimeMs
         )
 
-        recordingMixer.removeTap(onBus: 0)
-        recordingMixer.installTap(onBus: 0, bufferSize: 1024, format: tapFormat) { [weak self] buffer, _ in
-          guard let self = self else { return }
-          self.queue.async {
-            guard let state = self.recordingState else { return }
-            self.applyRecordingGain(buffer: buffer)
-            self.updateInputLevel(buffer: buffer)
-            do {
-              try state.file.write(from: buffer)
-            } catch {
-              return
-            }
-          }
-        }
-
         isRecordingFlag = true
         return true
       } catch {
@@ -730,7 +716,6 @@ final class NativeAudioEngine {
 
   /// Stops the input tap and clears recording state.
   private func stopRecordingInternal() {
-    recordingMixer.removeTap(onBus: 0)
     recordingState = nil
     isRecordingFlag = false
   }
@@ -758,6 +743,22 @@ final class NativeAudioEngine {
     engine.connect(engine.inputNode, to: recordingMixer, format: format)
     engine.connect(recordingMixer, to: engine.mainMixerNode, format: format)
     recordingMixer.volume = 0.0
+    if !recordingTapInstalled {
+      recordingMixer.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
+        guard let self = self else { return }
+        self.queue.async {
+          guard let state = self.recordingState else { return }
+          self.applyRecordingGain(buffer: buffer)
+          self.updateInputLevel(buffer: buffer)
+          do {
+            try state.file.write(from: buffer)
+          } catch {
+            return
+          }
+        }
+      }
+      recordingTapInstalled = true
+    }
     recordingMixerConnected = true
     return true
   }
@@ -766,7 +767,10 @@ final class NativeAudioEngine {
     if !recordingMixerConnected {
       return
     }
-    recordingMixer.removeTap(onBus: 0)
+    if recordingTapInstalled {
+      recordingMixer.removeTap(onBus: 0)
+      recordingTapInstalled = false
+    }
     engine.disconnectNodeInput(recordingMixer)
     engine.disconnectNodeOutput(recordingMixer)
     engine.detach(recordingMixer)
