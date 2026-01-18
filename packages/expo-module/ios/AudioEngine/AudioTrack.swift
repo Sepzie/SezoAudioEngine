@@ -44,6 +44,12 @@ final class AudioTrack {
       self.playerNode = AVAudioPlayerNode()
       self.timePitch = AVAudioUnitTimePitch()
       self.isAttached = false
+
+      // DEBUG: Log track loading details
+      print("🎵 [TRACK LOAD DEBUG] Track '\(id)' loaded:")
+      print("  📍 startTimeMs: \(self.startTimeMs)ms")
+      print("  ⏱️  duration: \(durationMs)ms")
+      print("  📄 uri: \(uri)")
     } catch {
       return nil
     }

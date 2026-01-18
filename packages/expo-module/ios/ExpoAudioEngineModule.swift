@@ -160,7 +160,8 @@ public class ExpoAudioEngineModule: Module {
       "recordingStopped",
       "extractionProgress",
       "extractionComplete",
-      "error"
+      "error",
+      "debugLog"
     )
   }
 }

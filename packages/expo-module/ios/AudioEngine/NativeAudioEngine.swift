@@ -50,7 +50,9 @@ final class NativeAudioEngine {
     let format: String
     let sampleRate: Double
     let channels: Int
-    let startTimeMs: Double
+    var startTimeMs: Double
+    var startTimeSamples: Int64
+    var startTimeResolved: Bool
   }
 
   /// Initializes the audio session and prepares the engine.
@@ -374,14 +376,32 @@ final class NativeAudioEngine {
 
       do {
         let file = try AVAudioFile(forWriting: outputURL, settings: settings)
-        let startTimeMs = isPlayingFlag ? currentPlaybackPositionMs() : 0.0
+
+        // Capture start time (finalized on first tap buffer when playing).
+        let startTimeMs: Double
+        let startTimeSamples: Int64
+        let startTimeResolved: Bool
+
+        if isPlayingFlag {
+          // Use the current playback position from the mix timeline.
+          startTimeMs = currentPlaybackPositionMs()
+          startTimeSamples = Int64(startTimeMs / 1000.0 * sampleRate)
+          startTimeResolved = false
+        } else {
+          startTimeSamples = 0
+          startTimeMs = 0.0
+          startTimeResolved = true
+        }
+
         recordingState = RecordingState(
           url: outputURL,
           file: file,
           format: formatInfo.format,
           sampleRate: sampleRate,
           channels: channels,
-          startTimeMs: startTimeMs
+          startTimeMs: startTimeMs,
+          startTimeSamples: startTimeSamples,
+          startTimeResolved: startTimeResolved
         )
 
         isRecordingFlag = true
@@ -426,11 +446,12 @@ final class NativeAudioEngine {
 
       let durationMs = (Double(state.file.length) / state.sampleRate) * 1000.0
       let fileSize = resolveFileSize(url: state.url)
+
       return [
         "uri": state.url.absoluteString,
         "duration": durationMs,
         "startTimeMs": state.startTimeMs,
-        "startTimeSamples": Int64(state.startTimeMs / 1000.0 * state.sampleRate),
+        "startTimeSamples": state.startTimeSamples,
         "sampleRate": state.sampleRate,
         "channels": state.channels,
         "format": state.format,
