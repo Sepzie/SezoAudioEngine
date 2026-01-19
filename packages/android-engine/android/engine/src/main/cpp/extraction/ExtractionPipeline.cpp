@@ -1,6 +1,7 @@
 #include "extraction/ExtractionPipeline.h"
 #include "audio/AACEncoder.h"
 #include "audio/M4AEncoder.h"
+#include "audio/M4ADecoder.h"
 #include "audio/MP3Decoder.h"
 #include "audio/MP3Encoder.h"
 #include "audio/WAVDecoder.h"
@@ -46,6 +47,9 @@ std::unique_ptr<sezo::audio::AudioDecoder> CreateDecoderForPath(
     const std::string& path) {
   if (HasExtension(path, ".mp3")) {
     return std::make_unique<sezo::audio::MP3Decoder>();
+  }
+  if (HasExtension(path, ".m4a") || HasExtension(path, ".mp4")) {
+    return std::make_unique<sezo::audio::M4ADecoder>();
   }
   if (HasExtension(path, ".wav")) {
     return std::make_unique<sezo::audio::WAVDecoder>();

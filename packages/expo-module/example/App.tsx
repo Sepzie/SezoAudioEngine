@@ -76,7 +76,7 @@ const isPlayableRecordingUri = (uri: string) => {
       lower.endsWith('.aac')
     );
   }
-  return lower.endsWith('.wav') || lower.endsWith('.mp3');
+  return lower.endsWith('.wav') || lower.endsWith('.mp3') || lower.endsWith('.m4a');
 };
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -1331,10 +1331,9 @@ export default function App() {
                 options={AUDIO_FORMAT_OPTIONS}
               />
 
-              {(recordingFormat === 'aac' || recordingFormat === 'm4a') &&
-                Platform.OS === 'android' && (
+              {recordingFormat === 'aac' && Platform.OS === 'android' && (
                 <Text style={styles.sectionHint}>
-                  AAC/M4A recordings cannot be auto-loaded yet. Use WAV/MP3 for timeline placement.
+                  AAC recordings cannot be auto-loaded yet. Use M4A/MP3/WAV for timeline placement.
                 </Text>
               )}
 

@@ -18,6 +18,7 @@ add_library(sezo_audio_engine SHARED
   core/TimingManager.cpp
   # Audio decoding
   audio/AudioDecoder.cpp
+  audio/M4ADecoder.cpp
   audio/MP3Decoder.cpp
   audio/WAVDecoder.cpp
   # Audio encoding
