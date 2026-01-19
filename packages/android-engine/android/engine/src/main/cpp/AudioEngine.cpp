@@ -518,6 +518,8 @@ AudioEngine::ExtractionResult AudioEngine::ExtractTrack(
     config.format = audio::EncoderFormat::kWAV;
   } else if (options.format == "aac") {
     config.format = audio::EncoderFormat::kAAC;
+  } else if (options.format == "m4a") {
+    config.format = audio::EncoderFormat::kM4A;
   } else if (options.format == "mp3") {
     config.format = audio::EncoderFormat::kMP3;
   } else {
@@ -593,6 +595,8 @@ AudioEngine::ExtractionResult AudioEngine::ExtractAllTracks(
     config.format = audio::EncoderFormat::kWAV;
   } else if (options.format == "aac") {
     config.format = audio::EncoderFormat::kAAC;
+  } else if (options.format == "m4a") {
+    config.format = audio::EncoderFormat::kM4A;
   } else if (options.format == "mp3") {
     config.format = audio::EncoderFormat::kMP3;
   } else {

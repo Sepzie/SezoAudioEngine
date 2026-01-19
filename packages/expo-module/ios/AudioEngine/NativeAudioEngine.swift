@@ -803,6 +803,9 @@ final class NativeAudioEngine {
     if requestedFormat == "wav" {
       return ("wav", "wav")
     }
+    if requestedFormat == "m4a" {
+      return ("m4a", "m4a")
+    }
     if requestedFormat == "mp3" {
       return ("aac", "m4a")
     }

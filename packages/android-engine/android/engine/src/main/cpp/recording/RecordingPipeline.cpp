@@ -69,6 +69,9 @@ bool RecordingPipeline::StartRecording(
   if (config_.format == "aac") {
     encoder_ = std::make_unique<audio::AACEncoder>();
     encoder_config.format = audio::EncoderFormat::kAAC;
+  } else if (config_.format == "m4a") {
+    encoder_ = std::make_unique<audio::M4AEncoder>();
+    encoder_config.format = audio::EncoderFormat::kM4A;
   } else if (config_.format == "mp3") {
     encoder_ = std::make_unique<audio::MP3Encoder>();
     encoder_config.format = audio::EncoderFormat::kMP3;

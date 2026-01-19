@@ -28,6 +28,8 @@ const getMimeType = (format: string) => {
   switch (format) {
     case 'aac':
       return 'audio/aac';
+    case 'm4a':
+      return 'audio/mp4';
     case 'mp3':
       return 'audio/mpeg';
     case 'wav':
@@ -83,6 +85,7 @@ const RECORDING_POLL_MS = 200;
 const AUDIO_FORMAT_OPTIONS = [
   { value: 'wav', label: 'WAV' },
   { value: 'aac', label: 'AAC' },
+  { value: 'm4a', label: 'M4A' },
   { value: 'mp3', label: 'MP3' },
 ] as const;
 const RECORDING_QUALITY_OPTIONS = [
@@ -114,7 +117,9 @@ export default function App() {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingStatus, setRecordingStatus] = useState('Idle');
-  const [recordingFormat, setRecordingFormat] = useState<'wav' | 'aac' | 'mp3'>('wav');
+  const [recordingFormat, setRecordingFormat] = useState<'wav' | 'aac' | 'm4a' | 'mp3'>(
+    'wav'
+  );
   const [recordingQuality, setRecordingQuality] = useState<'low' | 'medium' | 'high'>(
     'medium'
   );
@@ -126,7 +131,9 @@ export default function App() {
   const [lastRecording, setLastRecording] = useState<RecordingInfo | null>(null);
   const [extractionProgress, setExtractionProgress] = useState(0);
   const [extractionStatus, setExtractionStatus] = useState('Idle');
-  const [extractionFormat, setExtractionFormat] = useState<'wav' | 'aac' | 'mp3'>('aac');
+  const [extractionFormat, setExtractionFormat] = useState<'wav' | 'aac' | 'm4a' | 'mp3'>(
+    'aac'
+  );
   const [extractionIncludeEffects, setExtractionIncludeEffects] = useState(true);
   const [lastExtraction, setLastExtraction] = useState<ExtractionInfo | null>(null);
   const [isExtracting, setIsExtracting] = useState(false);
@@ -1324,9 +1331,10 @@ export default function App() {
                 options={AUDIO_FORMAT_OPTIONS}
               />
 
-              {recordingFormat === 'aac' && Platform.OS === 'android' && (
+              {(recordingFormat === 'aac' || recordingFormat === 'm4a') &&
+                Platform.OS === 'android' && (
                 <Text style={styles.sectionHint}>
-                  AAC recordings cannot be auto-loaded yet. Use WAV/MP3 for timeline placement.
+                  AAC/M4A recordings cannot be auto-loaded yet. Use WAV/MP3 for timeline placement.
                 </Text>
               )}
 

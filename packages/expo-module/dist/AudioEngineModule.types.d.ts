@@ -17,7 +17,7 @@ export interface AudioTrack {
 export interface RecordingConfig {
     sampleRate?: number;
     channels?: number;
-    format?: 'aac' | 'mp3' | 'wav';
+    format?: 'aac' | 'm4a' | 'mp3' | 'wav';
     bitrate?: number;
     quality?: 'low' | 'medium' | 'high';
     enableNoiseGate?: boolean;
@@ -30,12 +30,12 @@ export interface RecordingResult {
     startTimeSamples?: number;
     sampleRate: number;
     channels: number;
-    format: 'aac' | 'mp3' | 'wav';
+    format: 'aac' | 'm4a' | 'mp3' | 'wav';
     bitrate?: number;
     fileSize: number;
 }
 export interface ExtractionConfig {
-    format?: 'aac' | 'mp3' | 'wav';
+    format?: 'aac' | 'm4a' | 'mp3' | 'wav';
     bitrate?: number;
     includeEffects?: boolean;
     outputDir?: string;
@@ -44,7 +44,7 @@ export interface ExtractionResult {
     trackId?: string;
     uri: string;
     duration: number;
-    format: 'aac' | 'mp3' | 'wav';
+    format: 'aac' | 'm4a' | 'mp3' | 'wav';
     bitrate?: number;
     fileSize: number;
 }

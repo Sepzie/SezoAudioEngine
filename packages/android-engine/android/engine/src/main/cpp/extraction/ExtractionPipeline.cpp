@@ -1,5 +1,6 @@
 #include "extraction/ExtractionPipeline.h"
 #include "audio/AACEncoder.h"
+#include "audio/M4AEncoder.h"
 #include "audio/MP3Decoder.h"
 #include "audio/MP3Encoder.h"
 #include "audio/WAVDecoder.h"
@@ -239,6 +240,8 @@ std::unique_ptr<audio::AudioEncoder> ExtractionPipeline::CreateEncoder(
       return std::make_unique<audio::WAVEncoder>();
     case audio::EncoderFormat::kAAC:
       return std::make_unique<audio::AACEncoder>();
+    case audio::EncoderFormat::kM4A:
+      return std::make_unique<audio::M4AEncoder>();
     case audio::EncoderFormat::kMP3:
       return std::make_unique<audio::MP3Encoder>();
     default:

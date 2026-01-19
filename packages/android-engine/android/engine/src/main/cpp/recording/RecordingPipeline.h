@@ -3,6 +3,7 @@
 #include "MicrophoneCapture.h"
 #include "audio/AudioEncoder.h"
 #include "audio/AACEncoder.h"
+#include "audio/M4AEncoder.h"
 #include "audio/MP3Encoder.h"
 #include "audio/WAVEncoder.h"
 
@@ -24,7 +25,7 @@ namespace recording {
 struct RecordingConfig {
   int32_t sample_rate = 44100;
   int32_t channels = 1;  // 1 = mono, 2 = stereo
-  std::string format = "aac";  // "aac", "mp3", "wav"
+  std::string format = "aac";  // "aac", "m4a", "mp3", "wav"
   int32_t bitrate = 128000;  // For compressed formats
   int32_t bits_per_sample = 16;  // For WAV
   bool enable_noise_gate = false;

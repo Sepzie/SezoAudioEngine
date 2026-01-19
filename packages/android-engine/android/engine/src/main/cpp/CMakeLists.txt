@@ -22,6 +22,7 @@ add_library(sezo_audio_engine SHARED
   audio/WAVDecoder.cpp
   # Audio encoding
   audio/AACEncoder.cpp
+  audio/M4AEncoder.cpp
   audio/MP3Encoder.cpp
   audio/WAVEncoder.cpp
   # Playback
