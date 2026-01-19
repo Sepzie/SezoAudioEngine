@@ -11,7 +11,8 @@ namespace audio {
  */
 enum class EncoderFormat {
   kWAV,  // Uncompressed PCM WAV
-  kAAC,  // AAC/M4A (Android MediaCodec)
+  kAAC,  // Raw AAC (ADTS)
+  kM4A,  // AAC wrapped in an MPEG-4 container
   kMP3   // MP3 (LAME - optional)
 };
 

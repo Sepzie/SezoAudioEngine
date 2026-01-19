@@ -131,7 +131,7 @@ class AudioEngine {
 
   // Phase 6: Extraction
   struct ExtractionOptions {
-    std::string format = "wav";  // "wav", "aac", "mp3"
+    std::string format = "wav";  // "wav", "aac", "m4a", "mp3"
     int32_t bitrate = 128000;
     int32_t bits_per_sample = 16;
     bool include_effects = true;

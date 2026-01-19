@@ -1,4 +1,5 @@
 #include "Track.h"
+#include "audio/M4ADecoder.h"
 #include "audio/MP3Decoder.h"
 #include "audio/WAVDecoder.h"
 
@@ -34,6 +35,9 @@ bool Track::Load() {
   // Determine decoder type based on file extension
   if (file_path_.find(".mp3") != std::string::npos) {
     decoder_ = std::make_unique<audio::MP3Decoder>();
+  } else if (file_path_.find(".m4a") != std::string::npos ||
+             file_path_.find(".mp4") != std::string::npos) {
+    decoder_ = std::make_unique<audio::M4ADecoder>();
   } else if (file_path_.find(".wav") != std::string::npos) {
     decoder_ = std::make_unique<audio::WAVDecoder>();
   } else {

@@ -13,6 +13,7 @@ class ExpoAudioEngineModule : Module() {
   private val pendingExtractions = Collections.synchronizedMap(mutableMapOf<Long, PendingExtraction>())
   private val progressLogState = Collections.synchronizedMap(mutableMapOf<Long, Float>())
   private var lastExtractionJobId: Long? = null
+  private var activeRecordingFormat: String = "aac"
 
   private data class PendingExtraction(
     val promise: Promise,
@@ -244,6 +245,7 @@ class ExpoAudioEngineModule : Module() {
         throw Exception("Failed to start recording")
       }
 
+      activeRecordingFormat = format
       Log.d(TAG, "Recording started successfully")
     }
 
@@ -268,7 +270,7 @@ class ExpoAudioEngineModule : Module() {
           "startTimeSamples" to result.startTimeSamples,
           "sampleRate" to 44100,
           "channels" to 1,
-          "format" to "aac",
+          "format" to activeRecordingFormat,
           "fileSize" to result.fileSize
         )
       )
@@ -280,7 +282,7 @@ class ExpoAudioEngineModule : Module() {
         "startTimeSamples" to result.startTimeSamples,
         "sampleRate" to 44100,
         "channels" to 1,
-        "format" to "aac",
+        "format" to activeRecordingFormat,
         "fileSize" to result.fileSize
       )
     }

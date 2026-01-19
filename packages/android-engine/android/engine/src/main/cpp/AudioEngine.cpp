@@ -119,7 +119,9 @@ bool AudioEngine::LoadTrack(const std::string& track_id,
 
   const bool is_mp3 = file_path.find(".mp3") != std::string::npos;
   const bool is_wav = file_path.find(".wav") != std::string::npos;
-  if (!is_mp3 && !is_wav) {
+  const bool is_m4a = file_path.find(".m4a") != std::string::npos ||
+      file_path.find(".mp4") != std::string::npos;
+  if (!is_mp3 && !is_wav && !is_m4a) {
     ReportError(core::ErrorCode::kUnsupportedFormat, "Unsupported audio format: " + file_path);
     return false;
   }
@@ -518,6 +520,8 @@ AudioEngine::ExtractionResult AudioEngine::ExtractTrack(
     config.format = audio::EncoderFormat::kWAV;
   } else if (options.format == "aac") {
     config.format = audio::EncoderFormat::kAAC;
+  } else if (options.format == "m4a") {
+    config.format = audio::EncoderFormat::kM4A;
   } else if (options.format == "mp3") {
     config.format = audio::EncoderFormat::kMP3;
   } else {
@@ -593,6 +597,8 @@ AudioEngine::ExtractionResult AudioEngine::ExtractAllTracks(
     config.format = audio::EncoderFormat::kWAV;
   } else if (options.format == "aac") {
     config.format = audio::EncoderFormat::kAAC;
+  } else if (options.format == "m4a") {
+    config.format = audio::EncoderFormat::kM4A;
   } else if (options.format == "mp3") {
     config.format = audio::EncoderFormat::kMP3;
   } else {
