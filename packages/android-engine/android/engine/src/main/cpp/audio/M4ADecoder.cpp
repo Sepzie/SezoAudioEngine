@@ -18,7 +18,9 @@ namespace {
 constexpr int64_t kCodecTimeoutUs = 10000;
 constexpr int kMaxDecodeTries = 8;
 constexpr int32_t kPcm16Encoding = 2;
+#ifdef AMEDIAFORMAT_KEY_PCM_ENCODING
 constexpr int32_t kPcmFloatEncoding = 4;
+#endif
 
 bool HasAudioMime(const char* mime) {
   return mime && std::strncmp(mime, "audio/", 6) == 0;
