@@ -316,6 +316,37 @@ export const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.border,
   },
+  testEntry: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: theme.radius.button,
+    backgroundColor: theme.colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    marginBottom: 10,
+  },
+  testEntryPass: {
+    borderColor: 'rgba(35, 209, 139, 0.8)',
+  },
+  testEntryFail: {
+    borderColor: 'rgba(255, 93, 93, 0.8)',
+  },
+  testEntryPending: {
+    borderColor: 'rgba(255, 180, 84, 0.8)',
+  },
+  testEntryUnexpected: {
+    borderColor: 'rgba(138, 148, 156, 0.6)',
+  },
+  testEntryTitle: {
+    color: theme.colors.text,
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  testEntryMeta: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
+  },
   detailLabel: {
     color: theme.colors.textMuted,
     fontSize: 11,

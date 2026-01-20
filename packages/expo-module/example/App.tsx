@@ -24,6 +24,26 @@ import TrackCard from './components/TrackCard';
 import { styles, theme } from './ui';
 import { ExtractionInfo, RecordingInfo, Track } from './types';
 
+type PlaybackState = 'stopped' | 'playing' | 'paused' | 'recording';
+type PlaybackTestStatus = 'pending' | 'pass' | 'fail' | 'unexpected';
+type PlaybackTestEntry = {
+  id: number;
+  status: PlaybackTestStatus;
+  expected?: PlaybackState;
+  actual?: PlaybackState;
+  source: string;
+  timestamp: number;
+  positionMs?: number;
+  durationMs?: number;
+  message?: string;
+};
+type PlaybackExpectation = {
+  id: number;
+  expected: PlaybackState;
+  source: string;
+  timestamp: number;
+};
+
 const getMimeType = (format: string) => {
   switch (format) {
     case 'aac':
@@ -82,6 +102,7 @@ const isPlayableRecordingUri = (uri: string) => {
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const POSITION_POLL_MS = 250;
 const RECORDING_POLL_MS = 200;
+const PLAYBACK_EVENT_TIMEOUT_MS = 1500;
 const AUDIO_FORMAT_OPTIONS = [
   { value: 'wav', label: 'WAV' },
   { value: 'aac', label: 'AAC' },
@@ -139,6 +160,7 @@ export default function App() {
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractionJobId, setExtractionJobId] = useState<number | null>(null);
   const [backgroundEnabled, setBackgroundEnabled] = useState<0 | 1>(0);
+  const [playbackTests, setPlaybackTests] = useState<PlaybackTestEntry[]>([]);
   const positionRef = useRef(0);
   const durationRef = useRef(0);
   const recordingLevelRef = useRef(0);
@@ -147,6 +169,10 @@ export default function App() {
   const pendingRecordingRef = useRef<RecordingInfo | null>(null);
   const loadedRecordingUris = useRef(new Set<string>());
   const recordingCountRef = useRef(1);
+  const playbackStateRef = useRef<PlaybackState>('stopped');
+  const playbackExpectationIdRef = useRef(1);
+  const playbackExpectationsRef = useRef<PlaybackExpectation[]>([]);
+  const playbackTimeoutsRef = useRef(new Map<number, ReturnType<typeof setTimeout>>());
   const engineAny = AudioEngineModule as Record<string, any>;
   const supportsTrackPitch = typeof engineAny.setTrackPitch === 'function';
   const supportsTrackSpeed = typeof engineAny.setTrackSpeed === 'function';
@@ -261,6 +287,121 @@ export default function App() {
       recordingStoppedSub?.remove?.();
     };
   }, [handleRecordingResult, recordingFormat]);
+
+  const appendPlaybackTest = useCallback((entry: PlaybackTestEntry) => {
+    setPlaybackTests((prev) => {
+      const next = [entry, ...prev];
+      return next.length > 10 ? next.slice(0, 10) : next;
+    });
+  }, []);
+
+  const updatePlaybackTestEntry = useCallback(
+    (id: number, updates: Partial<PlaybackTestEntry>) => {
+      setPlaybackTests((prev) =>
+        prev.map((entry) => (entry.id === id ? { ...entry, ...updates } : entry))
+      );
+    },
+    []
+  );
+
+  const clearPlaybackTests = useCallback(() => {
+    playbackExpectationsRef.current = [];
+    playbackTimeoutsRef.current.forEach((timeout) => clearTimeout(timeout));
+    playbackTimeoutsRef.current.clear();
+    setPlaybackTests([]);
+  }, []);
+
+  const queuePlaybackExpectation = useCallback(
+    (expected: PlaybackState, source: string) => {
+      if (playbackStateRef.current === expected) {
+        return;
+      }
+      const id = playbackExpectationIdRef.current++;
+      const timestamp = Date.now();
+      const entry: PlaybackTestEntry = {
+        id,
+        status: 'pending',
+        expected,
+        source,
+        timestamp,
+      };
+      appendPlaybackTest(entry);
+      playbackExpectationsRef.current.push({
+        id,
+        expected,
+        source,
+        timestamp,
+      });
+      const timeout = setTimeout(() => {
+        playbackExpectationsRef.current = playbackExpectationsRef.current.filter(
+          (pending) => pending.id !== id
+        );
+        playbackTimeoutsRef.current.delete(id);
+        updatePlaybackTestEntry(id, {
+          status: 'fail',
+          message: `No playbackStateChange within ${PLAYBACK_EVENT_TIMEOUT_MS}ms`,
+        });
+      }, PLAYBACK_EVENT_TIMEOUT_MS);
+      playbackTimeoutsRef.current.set(id, timeout);
+    },
+    [appendPlaybackTest, updatePlaybackTestEntry]
+  );
+
+  useEffect(() => {
+    const playbackSub = AudioEngineModule.addListener(
+      'playbackStateChange',
+      (event: any) => {
+        const state =
+          typeof event?.state === 'string'
+            ? (event.state as PlaybackState)
+            : undefined;
+        if (!state) {
+          return;
+        }
+        const positionMs =
+          typeof event?.positionMs === 'number' ? event.positionMs : undefined;
+        const durationMs =
+          typeof event?.durationMs === 'number' ? event.durationMs : undefined;
+
+        playbackStateRef.current = state;
+
+        const expectation = playbackExpectationsRef.current.shift();
+        if (!expectation) {
+          const id = playbackExpectationIdRef.current++;
+          appendPlaybackTest({
+            id,
+            status: 'unexpected',
+            actual: state,
+            source: 'native',
+            timestamp: Date.now(),
+            positionMs,
+            durationMs,
+            message: 'Unexpected playbackStateChange event',
+          });
+          return;
+        }
+
+        const timeout = playbackTimeoutsRef.current.get(expectation.id);
+        if (timeout) {
+          clearTimeout(timeout);
+          playbackTimeoutsRef.current.delete(expectation.id);
+        }
+
+        const pass = state === expectation.expected;
+        updatePlaybackTestEntry(expectation.id, {
+          status: pass ? 'pass' : 'fail',
+          actual: state,
+          positionMs,
+          durationMs,
+          message: pass ? undefined : `Expected ${expectation.expected}, got ${state}`,
+        });
+      }
+    );
+
+    return () => {
+      playbackSub?.remove?.();
+    };
+  }, [appendPlaybackTest, updatePlaybackTestEntry]);
 
   useEffect(() => {
     Animated.stagger(120, [
@@ -682,37 +823,41 @@ export default function App() {
   const handlePlay = useCallback(() => {
     try {
       AudioEngineModule.play();
+      queuePlaybackExpectation('playing', 'play');
       setIsPlaying(true);
       setStatus('Playing');
     } catch (error) {
       console.error('Play error:', error);
     }
-  }, []);
+  }, [queuePlaybackExpectation]);
 
   const handlePause = useCallback(() => {
     try {
       AudioEngineModule.pause();
+      queuePlaybackExpectation('paused', 'pause');
       setIsPlaying(false);
       setStatus('Paused');
     } catch (error) {
       console.error('Pause error:', error);
     }
-  }, []);
+  }, [queuePlaybackExpectation]);
 
   const handleStop = useCallback(() => {
     try {
       AudioEngineModule.stop();
+      queuePlaybackExpectation('stopped', 'stop');
       setIsPlaying(false);
       setPosition(0);
       setStatus('Stopped');
     } catch (error) {
       console.error('Stop error:', error);
     }
-  }, []);
+  }, [queuePlaybackExpectation]);
 
   const handleReset = useCallback(() => {
     try {
       AudioEngineModule.stop();
+      queuePlaybackExpectation('stopped', 'reset');
       AudioEngineModule.seek(0);
       AudioEngineModule.setMasterVolume(1.0);
       AudioEngineModule.setPitch(0.0);
@@ -751,7 +896,7 @@ export default function App() {
     } catch (error) {
       console.error('Reset error:', error);
     }
-  }, [engineAny, supportsTrackPitch, supportsTrackSpeed, tracks]);
+  }, [engineAny, queuePlaybackExpectation, supportsTrackPitch, supportsTrackSpeed, tracks]);
 
   const handleExtractTrack = useCallback(async () => {
     const track = tracks[0];
@@ -1109,6 +1254,21 @@ export default function App() {
     return `${(Math.max(0, ms) / 1000).toFixed(2)}s`;
   };
 
+  const formatClock = (timestamp: number) => {
+    const date = new Date(timestamp);
+    const hours = date.getHours().toString().padStart(2, '0');
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    const seconds = date.getSeconds().toString().padStart(2, '0');
+    return `${hours}:${minutes}:${seconds}`;
+  };
+
+  const playbackPendingCount = playbackTests.filter(
+    (entry) => entry.status === 'pending'
+  ).length;
+  const playbackFailCount = playbackTests.filter(
+    (entry) => entry.status === 'fail'
+  ).length;
+
   const heroStyle = {
     opacity: introAnim,
     transform: [
@@ -1227,6 +1387,66 @@ export default function App() {
                 maximumTrackTintColor={theme.colors.track}
                 thumbTintColor={theme.colors.accentStrong}
               />
+            </CollapsibleSection>
+
+            <CollapsibleSection
+              title="Playback Event Tests"
+              right={
+                <Text style={styles.sectionHint}>
+                  Pending {playbackPendingCount} • Failed {playbackFailCount}
+                </Text>
+              }
+              containerStyle={controlsStyle}
+            >
+              <Text style={styles.sectionHint}>
+                Asserts playbackStateChange events for play, pause, and stop.
+              </Text>
+
+              <View style={styles.transportRow}>
+                <TouchableOpacity style={styles.resetButton} onPress={clearPlaybackTests}>
+                  <Text style={styles.resetButtonText}>Clear Log</Text>
+                </TouchableOpacity>
+              </View>
+
+              {playbackTests.length === 0 ? (
+                <Text style={styles.sectionHint}>No playback state events yet.</Text>
+              ) : (
+                playbackTests.map((entry) => {
+                  const statusStyle =
+                    entry.status === 'pass'
+                      ? styles.testEntryPass
+                      : entry.status === 'fail'
+                        ? styles.testEntryFail
+                        : entry.status === 'pending'
+                          ? styles.testEntryPending
+                          : styles.testEntryUnexpected;
+                  const title =
+                    entry.status === 'unexpected'
+                      ? `Unexpected ${entry.actual ?? 'state'}`
+                      : `Expected ${entry.expected ?? 'state'}`;
+                  const metaParts = [
+                    entry.actual ? `Actual ${entry.actual}` : 'Awaiting event',
+                    formatClock(entry.timestamp),
+                    entry.source,
+                  ];
+                  if (typeof entry.positionMs === 'number') {
+                    metaParts.push(`pos ${formatSeconds(entry.positionMs)}`);
+                  }
+                  if (typeof entry.durationMs === 'number') {
+                    metaParts.push(`dur ${formatSeconds(entry.durationMs)}`);
+                  }
+
+                  return (
+                    <View key={entry.id} style={[styles.testEntry, statusStyle]}>
+                      <Text style={styles.testEntryTitle}>{title}</Text>
+                      <Text style={styles.testEntryMeta}>{metaParts.join(' • ')}</Text>
+                      {entry.message ? (
+                        <Text style={styles.testEntryMeta}>{entry.message}</Text>
+                      ) : null}
+                    </View>
+                  );
+                })
+              )}
             </CollapsibleSection>
 
             <CollapsibleSection
