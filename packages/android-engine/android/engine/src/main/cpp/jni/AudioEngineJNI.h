@@ -83,6 +83,10 @@ JNIEXPORT jdouble JNICALL
 Java_com_sezo_audioengine_AudioEngine_nativeGetDuration(JNIEnv* env, jobject thiz, jlong handle);
 
 JNIEXPORT void JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeSetPlaybackStateListener(
+    JNIEnv* env, jobject thiz, jlong handle, jboolean enabled);
+
+JNIEXPORT void JNICALL
 Java_com_sezo_audioengine_AudioEngine_nativeSetTrackVolume(
     JNIEnv* env, jobject thiz, jlong handle, jstring track_id, jfloat volume);
 

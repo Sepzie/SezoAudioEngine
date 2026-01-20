@@ -46,8 +46,10 @@ class AudioEngine {
   void Release();
 
   using ErrorCallback = std::function<void(core::ErrorCode, const std::string&)>;
+  using PlaybackStateCallback = std::function<void(core::PlaybackState, double, double)>;
 
   void SetErrorCallback(ErrorCallback callback);
+  void SetPlaybackStateCallback(PlaybackStateCallback callback);
   core::ErrorCode GetLastErrorCode() const;
   std::string GetLastErrorMessage() const;
 
@@ -198,6 +200,7 @@ class AudioEngine {
  private:
   void RecalculateDuration();
   void ReportError(core::ErrorCode code, const std::string& message);
+  void NotifyPlaybackState(core::PlaybackState state);
   void StartExtractionWorker();
   void StopExtractionWorker();
   void ExtractionWorkerLoop();
@@ -240,6 +243,8 @@ class AudioEngine {
 
   mutable std::mutex error_mutex_;
   ErrorCallback error_callback_;
+  mutable std::mutex playback_state_mutex_;
+  PlaybackStateCallback playback_state_callback_;
   core::ErrorCode last_error_ = core::ErrorCode::kOk;
   std::string last_error_message_;
 

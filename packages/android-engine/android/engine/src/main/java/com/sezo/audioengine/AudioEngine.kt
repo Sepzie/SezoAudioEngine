@@ -6,6 +6,7 @@ class AudioEngine {
   private var nativeHandle: Long = 0
   private var extractionProgressListener: ((Long, Float) -> Unit)? = null
   private var extractionCompletionListener: ((Long, ExtractionResult) -> Unit)? = null
+  private var playbackStateListener: ((String, Double, Double) -> Unit)? = null
 
   init {
     System.loadLibrary("sezo_audio_engine")
@@ -17,11 +18,13 @@ class AudioEngine {
   }
 
   fun release() {
+    setPlaybackStateListener(null)
     nativeRelease(nativeHandle)
   }
 
   fun destroy() {
     if (nativeHandle != 0L) {
+      setPlaybackStateListener(null)
       nativeDestroy(nativeHandle)
       nativeHandle = 0
     }
@@ -68,6 +71,13 @@ class AudioEngine {
 
   fun getDuration(): Double {
     return nativeGetDuration(nativeHandle)
+  }
+
+  fun setPlaybackStateListener(listener: ((String, Double, Double) -> Unit)?) {
+    playbackStateListener = listener
+    if (nativeHandle != 0L) {
+      nativeSetPlaybackStateListener(nativeHandle, listener != null)
+    }
   }
 
   // Track controls
@@ -332,6 +342,18 @@ class AudioEngine {
     )
   }
 
+  @Keep
+  private fun onNativePlaybackStateChanged(state: Int, positionMs: Double, durationMs: Double) {
+    val mappedState = when (state) {
+      0 -> "stopped"
+      1 -> "playing"
+      2 -> "paused"
+      3 -> "recording"
+      else -> "stopped"
+    }
+    playbackStateListener?.invoke(mappedState, positionMs, durationMs)
+  }
+
   // Native method declarations
   private external fun nativeCreate(): Long
   private external fun nativeDestroy(handle: Long)
@@ -351,6 +373,7 @@ class AudioEngine {
   private external fun nativeIsPlaying(handle: Long): Boolean
   private external fun nativeGetCurrentPosition(handle: Long): Double
   private external fun nativeGetDuration(handle: Long): Double
+  private external fun nativeSetPlaybackStateListener(handle: Long, enabled: Boolean)
 
   private external fun nativeSetTrackVolume(handle: Long, trackId: String, volume: Float)
   private external fun nativeSetTrackMuted(handle: Long, trackId: String, muted: Boolean)

@@ -40,6 +40,17 @@ class ExpoAudioEngineModule : Module() {
         throw Exception("Failed to initialize audio engine")
       }
 
+      audioEngine?.setPlaybackStateListener { state, positionMs, durationMs ->
+        sendEvent(
+          "playbackStateChange",
+          mapOf(
+            "state" to state,
+            "positionMs" to positionMs,
+            "durationMs" to durationMs
+          )
+        )
+      }
+
       Log.d(TAG, "Audio engine initialized successfully")
     }
 
@@ -53,6 +64,7 @@ class ExpoAudioEngineModule : Module() {
         progressLogState.clear()
         engine.setExtractionProgressListener(null)
         engine.setExtractionCompletionListener(null)
+        engine.setPlaybackStateListener(null)
         engine.release()
         engine.destroy()
       }

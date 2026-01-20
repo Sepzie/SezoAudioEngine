@@ -5,6 +5,13 @@ import UIKit
 /// Swift wrapper around `AVAudioEngine` that backs the Expo module API.
 /// Keeps state on a single serial queue to avoid thread-safety issues.
 final class NativeAudioEngine {
+  private enum PlaybackState: String {
+    case stopped
+    case playing
+    case paused
+    case recording
+  }
+
   /// Serial queue to protect engine state and avoid races with audio callbacks.
   private let queue = DispatchQueue(label: "sezo.audioengine.state")
   /// Core iOS audio graph.
@@ -42,6 +49,8 @@ final class NativeAudioEngine {
   private var pauseCommandTarget: Any?
   private var toggleCommandTarget: Any?
   private var lastConfig = AudioEngineConfig(dictionary: [:])
+  var onPlaybackStateChange: ((String, Double, Double) -> Void)?
+  var onPlaybackComplete: ((Double, Double) -> Void)?
 
   /// Bookkeeping for a live recording session.
   private struct RecordingState {
@@ -720,6 +729,8 @@ final class NativeAudioEngine {
     stopAllPlayers()
     stopEngineIfRunning()
     updateNowPlayingInfoInternal()
+    emitPlaybackState(.stopped, positionMs: currentPositionMs)
+    onPlaybackComplete?(currentPositionMs, durationMs)
   }
 
   /// Computes playback position from host time.
@@ -1191,6 +1202,7 @@ final class NativeAudioEngine {
     schedulePlayback(at: currentPositionMs)
     isPlayingFlag = true
     updateNowPlayingInfoInternal()
+    emitPlaybackState(.playing)
   }
 
   /// Internal pause logic (expects to run on the queue).
@@ -1201,10 +1213,12 @@ final class NativeAudioEngine {
     stopAllPlayers()
     stopEngineIfRunning()
     updateNowPlayingInfoInternal()
+    emitPlaybackState(.paused, positionMs: currentPositionMs)
   }
 
   /// Internal stop logic (expects to run on the queue).
   private func stopInternal() {
+    let shouldEmit = isPlayingFlag || currentPositionMs != 0.0
     isPlayingFlag = false
     currentPositionMs = 0.0
     playbackStartHostTime = nil
@@ -1213,6 +1227,9 @@ final class NativeAudioEngine {
     stopAllPlayers()
     stopEngineIfRunning()
     updateNowPlayingInfoInternal()
+    if shouldEmit {
+      emitPlaybackState(.stopped, positionMs: currentPositionMs)
+    }
   }
 
   /// Internal seek logic (expects to run on the queue).
@@ -1249,6 +1266,11 @@ final class NativeAudioEngine {
     info[MPNowPlayingInfoPropertyPlaybackRate] = isPlayingFlag ? 1.0 : 0.0
 
     MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+  }
+
+  private func emitPlaybackState(_ state: PlaybackState, positionMs: Double? = nil) {
+    let resolvedPosition = positionMs ?? (isPlayingFlag ? currentPlaybackPositionMs() : currentPositionMs)
+    onPlaybackStateChange?(state.rawValue, resolvedPosition, durationMs)
   }
 
   /// Registers basic play/pause remote command handlers.

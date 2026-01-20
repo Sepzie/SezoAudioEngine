@@ -21,6 +21,11 @@ void AudioEngine::SetErrorCallback(ErrorCallback callback) {
   error_callback_ = std::move(callback);
 }
 
+void AudioEngine::SetPlaybackStateCallback(PlaybackStateCallback callback) {
+  std::lock_guard<std::mutex> lock(playback_state_mutex_);
+  playback_state_callback_ = std::move(callback);
+}
+
 core::ErrorCode AudioEngine::GetLastErrorCode() const {
   std::lock_guard<std::mutex> lock(error_mutex_);
   return last_error_;
@@ -196,14 +201,22 @@ void AudioEngine::Play() {
     return;
   }
 
+  const auto previous_state = transport_->GetState();
   transport_->Play();
+  if (previous_state == core::PlaybackState::kPlaying) {
+    return;
+  }
   if (!player_->IsRunning()) {
     if (!player_->Start()) {
       transport_->Stop();
       ReportError(core::ErrorCode::kStreamError, "Failed to start audio stream");
+      if (previous_state != core::PlaybackState::kStopped) {
+        NotifyPlaybackState(core::PlaybackState::kStopped);
+      }
       return;
     }
   }
+  NotifyPlaybackState(core::PlaybackState::kPlaying);
   LOGD("Playback started");
 }
 
@@ -212,7 +225,12 @@ void AudioEngine::Pause() {
     return;
   }
 
+  const auto previous_state = transport_->GetState();
   transport_->Pause();
+  const auto current_state = transport_->GetState();
+  if (current_state != previous_state) {
+    NotifyPlaybackState(current_state);
+  }
   LOGD("Playback paused");
 }
 
@@ -221,11 +239,16 @@ void AudioEngine::Stop() {
     return;
   }
 
+  const auto previous_state = transport_->GetState();
   transport_->Stop();
   if (!player_->Stop()) {
     ReportError(core::ErrorCode::kStreamError, "Failed to stop audio stream");
   }
   Seek(0.0);
+  const auto current_state = transport_->GetState();
+  if (current_state != previous_state) {
+    NotifyPlaybackState(current_state);
+  }
   LOGD("Playback stopped");
 }
 
@@ -835,6 +858,18 @@ void AudioEngine::ReportError(core::ErrorCode code, const std::string& message) 
     callback(code, message);
   }
   LOGE("%s", message.c_str());
+}
+
+void AudioEngine::NotifyPlaybackState(core::PlaybackState state) {
+  PlaybackStateCallback callback;
+  {
+    std::lock_guard<std::mutex> lock(playback_state_mutex_);
+    callback = playback_state_callback_;
+  }
+  if (!callback) {
+    return;
+  }
+  callback(state, GetCurrentPosition(), GetDuration());
 }
 
 void AudioEngine::RecalculateDuration() {

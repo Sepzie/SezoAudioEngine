@@ -23,6 +23,12 @@ struct JniExtractionCallbackContext {
   jmethodID completion_method = nullptr;
 };
 
+struct JniPlaybackStateCallbackContext {
+  JavaVM* jvm = nullptr;
+  jobject engine_object = nullptr;
+  jmethodID state_method = nullptr;
+};
+
 JNIEnv* GetEnvForCallback(JavaVM* jvm, bool* did_attach) {
   if (did_attach) {
     *did_attach = false;
@@ -128,6 +134,52 @@ void CallCompletionCallback(
 
   env->DeleteLocalRef(resultMap);
   env->DeleteGlobalRef(context->engine_object);
+
+  if (did_attach) {
+    context->jvm->DetachCurrentThread();
+  }
+}
+
+void DeletePlaybackStateContext(JniPlaybackStateCallbackContext* context) {
+  if (!context) {
+    return;
+  }
+  if (context->jvm && context->engine_object) {
+    bool did_attach = false;
+    JNIEnv* env = GetEnvForCallback(context->jvm, &did_attach);
+    if (env) {
+      env->DeleteGlobalRef(context->engine_object);
+      if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+      }
+    }
+    if (did_attach) {
+      context->jvm->DetachCurrentThread();
+    }
+  }
+  delete context;
+}
+
+void CallPlaybackStateCallback(
+    const std::shared_ptr<JniPlaybackStateCallbackContext>& context,
+    jint state,
+    double position_ms,
+    double duration_ms) {
+  if (!context || !context->jvm || !context->engine_object || !context->state_method) {
+    return;
+  }
+
+  bool did_attach = false;
+  JNIEnv* env = GetEnvForCallback(context->jvm, &did_attach);
+  if (!env) {
+    return;
+  }
+
+  env->CallVoidMethod(context->engine_object, context->state_method,
+                      state, position_ms, duration_ms);
+  if (env->ExceptionCheck()) {
+    env->ExceptionClear();
+  }
 
   if (did_attach) {
     context->jvm->DetachCurrentThread();
@@ -323,6 +375,43 @@ Java_com_sezo_audioengine_AudioEngine_nativeGetDuration(JNIEnv* env [[maybe_unus
     return 0.0;
   }
   return engine->GetDuration();
+}
+
+JNIEXPORT void JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeSetPlaybackStateListener(
+    JNIEnv* env, jobject thiz, jlong handle, jboolean enabled) {
+  auto* engine = reinterpret_cast<AudioEngine*>(handle);
+  if (!engine) {
+    return;
+  }
+  if (!enabled || !g_java_vm) {
+    engine->SetPlaybackStateCallback(nullptr);
+    return;
+  }
+
+  jclass engine_class = env->GetObjectClass(thiz);
+  jmethodID state_method = env->GetMethodID(
+      engine_class, "onNativePlaybackStateChanged", "(IDD)V");
+  if (!state_method) {
+    if (env->ExceptionCheck()) {
+      env->ExceptionClear();
+    }
+    LOGE("Failed to find onNativePlaybackStateChanged");
+    engine->SetPlaybackStateCallback(nullptr);
+    return;
+  }
+
+  auto context = std::shared_ptr<JniPlaybackStateCallbackContext>(
+      new JniPlaybackStateCallbackContext(), DeletePlaybackStateContext);
+  context->jvm = g_java_vm;
+  context->engine_object = env->NewGlobalRef(thiz);
+  context->state_method = state_method;
+
+  engine->SetPlaybackStateCallback(
+      [context](core::PlaybackState state, double position_ms, double duration_ms) {
+        CallPlaybackStateCallback(
+            context, static_cast<jint>(state), position_ms, duration_ms);
+      });
 }
 
 JNIEXPORT void JNICALL
