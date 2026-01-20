@@ -38,7 +38,7 @@ allprojects {
 Optionally pin the engine version in `android/gradle.properties`:
 
 ```properties
-sezoAudioEngineVersion=android-engine-v0.1.4
+sezoAudioEngineVersion=android-engine-v0.1.9
 ```
 
 If you want to build from source instead, include the local engine module in
