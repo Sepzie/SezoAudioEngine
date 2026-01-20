@@ -1,38 +1,39 @@
 import ExpoModulesCore
-import Foundation
 
 public class ExpoAudioEngineModule: Module {
   private let engine = NativeAudioEngine()
 
-  public override init() {
-    super.init()
-    engine.onPlaybackStateChange = { [weak self] state, positionMs, durationMs in
-      DispatchQueue.main.async {
-        self?.sendEvent(
-          "playbackStateChange",
-          [
-            "state": state,
-            "positionMs": positionMs,
-            "durationMs": durationMs
-          ]
-        )
-      }
-    }
-    engine.onPlaybackComplete = { [weak self] positionMs, durationMs in
-      DispatchQueue.main.async {
-        self?.sendEvent(
-          "playbackComplete",
-          [
-            "positionMs": positionMs,
-            "durationMs": durationMs
-          ]
-        )
-      }
-    }
-  }
-
   public func definition() -> ModuleDefinition {
     Name("ExpoAudioEngineModule")
+    OnCreate {
+      engine.onPlaybackStateChange = { [weak self] state, positionMs, durationMs in
+        DispatchQueue.main.async {
+          self?.sendEvent(
+            "playbackStateChange",
+            [
+              "state": state,
+              "positionMs": positionMs,
+              "durationMs": durationMs
+            ]
+          )
+        }
+      }
+      engine.onPlaybackComplete = { [weak self] positionMs, durationMs in
+        DispatchQueue.main.async {
+          self?.sendEvent(
+            "playbackComplete",
+            [
+              "positionMs": positionMs,
+              "durationMs": durationMs
+            ]
+          )
+        }
+      }
+    }
+    OnDestroy {
+      engine.onPlaybackStateChange = nil
+      engine.onPlaybackComplete = nil
+    }
 
     AsyncFunction("initialize") { (config: [String: Any]) in
       engine.initialize(config: config)
