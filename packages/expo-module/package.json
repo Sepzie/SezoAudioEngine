@@ -1,6 +1,6 @@
 {
   "name": "sezo-audio-engine",
-  "version": "0.0.10",
+  "version": "0.0.11",
   "description": "Cross-platform Expo module for the Sezo Audio Engine with iOS implementation and background playback.",
   "license": "MIT",
   "author": "Sezo",
@@ -38,7 +38,9 @@
     "android/cpp",
     "android/build.gradle",
     "android/settings.gradle",
-    "ios",
+    "ios/AudioEngine",
+    "ios/ExpoAudioEngine.podspec",
+    "ios/ExpoAudioEngineModule.swift",
     "dist",
     "expo-module.config.json",
     "README.md",
@@ -47,6 +49,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "clean": "rm -rf dist",
+    "prepack": "rm -rf ios/build",
     "test": "echo \"TODO: add tests\"",
     "prepublishOnly": "npm run build"
   },
