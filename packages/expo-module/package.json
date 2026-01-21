@@ -1,6 +1,6 @@
 {
   "name": "sezo-audio-engine",
-  "version": "0.0.9",
+  "version": "0.0.10",
   "description": "Cross-platform Expo module for the Sezo Audio Engine with iOS implementation and background playback.",
   "license": "MIT",
   "author": "Sezo",
