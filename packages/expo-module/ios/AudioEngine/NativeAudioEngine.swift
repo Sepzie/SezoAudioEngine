@@ -760,13 +760,32 @@ final class NativeAudioEngine {
       lastRecordingError = "recording mixer unavailable while engine is running"
       return false
     }
+    let session = AVAudioSession.sharedInstance()
+    if !session.isInputAvailable {
+      let routeInfo = describeRoute(session)
+      lastRecordingError = "audio input not available (category=\(session.category.rawValue), route=\(routeInfo))"
+      return false
+    }
 
-    let resolvedRate = sampleRate > 0 ? sampleRate : (lastConfig.sampleRate ?? 44100)
-    let resolvedChannels = channels > 0 ? channels : 1
-    guard let format = AVAudioFormat(
+    let inputFormat = engine.inputNode.inputFormat(forBus: 0)
+    let inputSampleRate = inputFormat.sampleRate
+    let inputChannels = Int(inputFormat.channelCount)
+    guard inputSampleRate > 0, inputChannels > 0 else {
+      lastRecordingError = "input hw format invalid (sampleRate=\(inputSampleRate), channels=\(inputChannels))"
+      return false
+    }
+
+    let resolvedRate = sampleRate > 0 ? sampleRate : (lastConfig.sampleRate ?? inputSampleRate)
+    let resolvedChannels = channels > 0 ? channels : inputChannels
+    let format: AVAudioFormat
+    if resolvedRate == inputSampleRate && resolvedChannels == inputChannels {
+      format = inputFormat
+    } else if let preferredFormat = AVAudioFormat(
       standardFormatWithSampleRate: resolvedRate,
       channels: AVAudioChannelCount(resolvedChannels)
-    ) else {
+    ) {
+      format = preferredFormat
+    } else {
       lastRecordingError = "recording format invalid (sampleRate=\(resolvedRate), channels=\(resolvedChannels))"
       return false
     }
