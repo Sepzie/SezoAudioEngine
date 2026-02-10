@@ -62,7 +62,14 @@ class ExpoAudioEngineModule : Module() {
   )
 
   private fun requireEngine(): AudioEngine {
-    return audioEngine ?: throw CodedException("ENGINE_NOT_INITIALIZED", "Engine not initialized")
+    return audioEngine ?: run {
+      emitEngineError(
+        code = "ENGINE_NOT_INITIALIZED",
+        message = "Engine not initialized",
+        source = "engine"
+      )
+      throw CodedException("ENGINE_NOT_INITIALIZED", "Engine not initialized")
+    }
   }
 
   override fun definition() = ModuleDefinition {
@@ -70,6 +77,7 @@ class ExpoAudioEngineModule : Module() {
 
     OnActivityEntersBackground {
       Log.d(TAG, "Activity entering background")
+      emitDebugLog("debug", "Activity entering background")
       val engine = audioEngine ?: return@OnActivityEntersBackground
 
       if (backgroundPlaybackEnabled) {
@@ -81,31 +89,33 @@ class ExpoAudioEngineModule : Module() {
       if (wasPlayingBeforePause) {
         Log.d(TAG, "Pausing engine before background (was playing)")
         pausePlaybackInternal(engine, fromSystem = true, keepAudioFocus = false)
-        sendEvent("engineStateChanged", mapOf(
-          "reason" to "backgrounded",
-          "wasPlaying" to true
-        ))
+        emitEngineStateChanged(
+          reason = "backgrounded",
+          payload = mapOf("wasPlaying" to true)
+        )
       }
     }
 
     OnActivityEntersForeground {
       Log.d(TAG, "Activity entering foreground")
+      emitDebugLog("debug", "Activity entering foreground")
       val engine = audioEngine ?: return@OnActivityEntersForeground
 
       // Check stream health on resume
       if (!engine.isStreamHealthy()) {
         Log.w(TAG, "Stream unhealthy on resume, attempting restart")
         val restarted = engine.restartStream()
-        sendEvent("engineStateChanged", mapOf(
-          "reason" to "streamRestarted",
-          "success" to restarted
-        ))
+        emitEngineStateChanged(
+          reason = "streamRestarted",
+          payload = mapOf("success" to restarted)
+        )
         if (!restarted) {
           Log.e(TAG, "Failed to restart stream on resume")
-          sendEvent("error", mapOf(
-            "code" to "STREAM_DISCONNECTED",
-            "message" to "Audio stream could not be recovered after returning to foreground"
-          ))
+          emitEngineError(
+            code = "STREAM_DISCONNECTED",
+            message = "Audio stream could not be recovered after returning to foreground",
+            source = "engine"
+          )
           return@OnActivityEntersForeground
         }
       }
@@ -115,10 +125,9 @@ class ExpoAudioEngineModule : Module() {
         Log.d(TAG, "Resuming playback after returning to foreground")
         val resumed = startPlaybackInternal(engine, fromSystem = true)
         wasPlayingBeforePause = false
-        sendEvent(
-          "engineStateChanged",
-          mapOf(
-            "reason" to "resumed",
+        emitEngineStateChanged(
+          reason = "resumed",
+          payload = mapOf(
             "wasPlaying" to true,
             "success" to resumed
           )
@@ -148,6 +157,7 @@ class ExpoAudioEngineModule : Module() {
 
     AsyncFunction("initialize") { config: Map<String, Any?> ->
       Log.d(TAG, "Initialize called with config: $config")
+      emitDebugLog("info", "Initialize called", mapOf("config" to config))
 
       val sampleRate = (config["sampleRate"] as? Number)?.toInt() ?: 44100
       val maxTracks = (config["maxTracks"] as? Number)?.toInt() ?: 8
@@ -156,6 +166,11 @@ class ExpoAudioEngineModule : Module() {
       val success = audioEngine?.initialize(sampleRate, maxTracks) ?: false
 
       if (!success) {
+        emitEngineError(
+          code = "ENGINE_INIT_FAILED",
+          message = "Failed to initialize audio engine",
+          source = "engine"
+        )
         throw CodedException("ENGINE_INIT_FAILED", "Failed to initialize audio engine", null)
       }
 
@@ -171,6 +186,13 @@ class ExpoAudioEngineModule : Module() {
             "durationMs" to durationMs
           )
         )
+        sendEvent(
+          "positionUpdate",
+          mapOf(
+            "positionMs" to positionMs,
+            "durationMs" to durationMs
+          )
+        )
         handlePlaybackStateChange(state)
       }
 
@@ -179,6 +201,7 @@ class ExpoAudioEngineModule : Module() {
 
     AsyncFunction("release") {
       Log.d(TAG, "Release called")
+      emitDebugLog("info", "Release called")
       teardownBackgroundPlayback(clearMetadata = false, stopService = true)
       audioEngine?.let { engine ->
         synchronized(pendingExtractions) {
@@ -203,15 +226,47 @@ class ExpoAudioEngineModule : Module() {
 
       tracks.forEach { track ->
         val id = track["id"] as? String
-          ?: throw CodedException("TRACK_LOAD_FAILED", "Missing track id", null)
+          ?: run {
+            emitEngineError(
+              code = "TRACK_LOAD_FAILED",
+              message = "Missing track id",
+              details = track,
+              source = "engine"
+            )
+            throw CodedException("TRACK_LOAD_FAILED", "Missing track id", null)
+          }
         val uri = track["uri"] as? String
-          ?: throw CodedException("TRACK_LOAD_FAILED", "Missing track uri", null)
+          ?: run {
+            emitEngineError(
+              code = "TRACK_LOAD_FAILED",
+              message = "Missing track uri",
+              details = mapOf("trackId" to id),
+              source = "engine"
+            )
+            throw CodedException("TRACK_LOAD_FAILED", "Missing track uri", null)
+          }
         val startTimeMs = (track["startTimeMs"] as? Number)?.toDouble() ?: 0.0
 
         Log.d(TAG, "Loading track: id=$id, uri=$uri")
-        val filePath = convertUriToPath(uri)
+        val filePath = try {
+          convertUriToPath(uri)
+        } catch (error: CodedException) {
+          emitEngineError(
+            code = "UNSUPPORTED_URI",
+            message = error.message ?: "Unsupported URI",
+            details = mapOf("trackId" to id, "uri" to uri),
+            source = "system"
+          )
+          throw error
+        }
 
         if (!engine.loadTrack(id, filePath, startTimeMs)) {
+          emitEngineError(
+            code = "TRACK_LOAD_FAILED",
+            message = "Failed to load track: $id from $filePath",
+            details = mapOf("trackId" to id, "uri" to uri),
+            source = "engine"
+          )
           throw CodedException(
             "TRACK_LOAD_FAILED",
             "Failed to load track: $id from $filePath",
@@ -221,6 +276,7 @@ class ExpoAudioEngineModule : Module() {
 
         loadedTrackIds.add(id)
         Log.d(TAG, "Track loaded successfully: $id")
+        sendEvent("trackLoaded", mapOf("trackId" to id))
       }
     }
 
@@ -228,18 +284,27 @@ class ExpoAudioEngineModule : Module() {
       val engine = requireEngine()
 
       if (!engine.unloadTrack(trackId)) {
+        emitEngineError(
+          code = "TRACK_UNLOAD_FAILED",
+          message = "Failed to unload track: $trackId",
+          details = mapOf("trackId" to trackId),
+          source = "engine"
+        )
         throw CodedException("TRACK_UNLOAD_FAILED", "Failed to unload track: $trackId", null)
       }
 
       loadedTrackIds.remove(trackId)
       Log.d(TAG, "Track unloaded: $trackId")
+      sendEvent("trackUnloaded", mapOf("trackId" to trackId))
     }
 
     AsyncFunction("unloadAllTracks") {
       val engine = requireEngine()
+      val trackIdsToUnload = loadedTrackIds.toList()
       engine.unloadAllTracks()
       loadedTrackIds.clear()
       Log.d(TAG, "All tracks unloaded")
+      trackIdsToUnload.forEach { sendEvent("trackUnloaded", mapOf("trackId" to it)) }
     }
 
     Function("getLoadedTracks") {
@@ -249,6 +314,11 @@ class ExpoAudioEngineModule : Module() {
     AsyncFunction("play") {
       val engine = requireEngine()
       if (!startPlaybackInternal(engine, fromSystem = false)) {
+        emitEngineError(
+          code = "PLAYBACK_START_FAILED",
+          message = "Failed to start playback",
+          source = "playback"
+        )
         throw CodedException("PLAYBACK_START_FAILED", "Failed to start playback", null)
       }
       Log.d(TAG, "Playback started")
@@ -387,11 +457,23 @@ class ExpoAudioEngineModule : Module() {
       )
 
       if (!success) {
+        emitEngineError(
+          code = "RECORDING_START_FAILED",
+          message = "Failed to start recording",
+          details = mapOf(
+            "format" to format,
+            "sampleRate" to sampleRate,
+            "channels" to channels
+          ),
+          source = "recording"
+        )
         throw CodedException("RECORDING_START_FAILED", "Failed to start recording", null)
       }
 
       activeRecordingFormat = format
       Log.d(TAG, "Recording started successfully")
+      sendEvent("recordingStarted", mapOf<String, Any>())
+      emitEngineStateChanged("recordingStarted")
     }
 
     AsyncFunction("stopRecording") {
@@ -401,6 +483,12 @@ class ExpoAudioEngineModule : Module() {
       val result = engine.stopRecording()
 
       if (!result.success) {
+        emitEngineError(
+          code = "RECORDING_STOP_FAILED",
+          message = "Failed to stop recording: ${result.errorMessage}",
+          details = mapOf("errorMessage" to result.errorMessage),
+          source = "recording"
+        )
         throw CodedException(
           "RECORDING_STOP_FAILED",
           "Failed to stop recording: ${result.errorMessage}",
@@ -423,6 +511,7 @@ class ExpoAudioEngineModule : Module() {
           "fileSize" to result.fileSize
         )
       )
+      emitEngineStateChanged("recordingStopped")
 
       mapOf(
         "uri" to "file://${result.outputPath}",
@@ -469,6 +558,12 @@ class ExpoAudioEngineModule : Module() {
       )
 
       if (jobId <= 0L) {
+        emitEngineError(
+          code = "EXTRACTION_FAILED",
+          message = "Failed to start extraction",
+          details = mapOf("trackId" to trackId),
+          source = "extraction"
+        )
         promise.reject("EXTRACTION_FAILED", "Failed to start extraction", null)
         return@AsyncFunction
       }
@@ -508,6 +603,11 @@ class ExpoAudioEngineModule : Module() {
       )
 
       if (jobId <= 0L) {
+        emitEngineError(
+          code = "EXTRACTION_FAILED",
+          message = "Failed to start extraction",
+          source = "extraction"
+        )
         promise.reject("EXTRACTION_FAILED", "Failed to start extraction", null)
         return@AsyncFunction
       }
@@ -551,7 +651,7 @@ class ExpoAudioEngineModule : Module() {
         requestAudioFocus()
       }
       syncBackgroundService(engine.isPlaying())
-      sendEvent("engineStateChanged", mapOf("reason" to "backgroundPlaybackEnabled"))
+      emitEngineStateChanged("backgroundPlaybackEnabled")
     }
     Function("updateNowPlayingInfo") { metadata: Map<String, Any?> ->
       mergeNowPlayingMetadata(metadata)
@@ -568,7 +668,7 @@ class ExpoAudioEngineModule : Module() {
         abandonAudioFocus()
       }
       nowPlayingMetadata.clear()
-      sendEvent("engineStateChanged", mapOf("reason" to "backgroundPlaybackDisabled"))
+      emitEngineStateChanged("backgroundPlaybackDisabled")
     }
 
     Events(
@@ -582,6 +682,7 @@ class ExpoAudioEngineModule : Module() {
       "extractionProgress",
       "extractionComplete",
       "engineStateChanged",
+      "debugLog",
       "error"
     )
   }
@@ -621,6 +722,21 @@ class ExpoAudioEngineModule : Module() {
 
       if (!result.success) {
         Log.e(TAG, "Extraction failed for job=$jobId: ${result.errorMessage}")
+        val code = if (result.errorMessage == "Extraction cancelled") {
+          "EXTRACTION_CANCELLED"
+        } else {
+          "EXTRACTION_FAILED"
+        }
+        emitEngineError(
+          code = code,
+          message = result.errorMessage ?: "Unknown extraction error",
+          details = mapOf(
+            "jobId" to jobId,
+            "trackId" to pending.trackId,
+            "operation" to pending.operation
+          ),
+          source = "extraction"
+        )
         sendEvent(
           "extractionComplete",
           mapOf(
@@ -634,11 +750,6 @@ class ExpoAudioEngineModule : Module() {
             "operation" to pending.operation
           )
         )
-        val code = if (result.errorMessage == "Extraction cancelled") {
-          "EXTRACTION_CANCELLED"
-        } else {
-          "EXTRACTION_FAILED"
-        }
         pending.promise.reject(code, result.errorMessage, null)
       } else {
         Log.d(TAG, "Extraction successful: ${result.fileSize} bytes, ${result.durationSamples} samples")
@@ -696,12 +807,10 @@ class ExpoAudioEngineModule : Module() {
       Log.w(TAG, "Stream unhealthy before play, attempting restart")
       if (!engine.restartStream()) {
         if (!fromSystem) {
-          sendEvent(
-            "error",
-            mapOf(
-              "code" to "STREAM_DISCONNECTED",
-              "message" to "Audio stream is disconnected and could not be recovered"
-            )
+          emitEngineError(
+            code = "STREAM_DISCONNECTED",
+            message = "Audio stream is disconnected and could not be recovered",
+            source = "engine"
           )
         }
         return false
@@ -711,12 +820,10 @@ class ExpoAudioEngineModule : Module() {
     if (!requestAudioFocus()) {
       Log.w(TAG, "Audio focus request denied")
       if (!fromSystem) {
-        sendEvent(
-          "error",
-          mapOf(
-            "code" to "AUDIO_FOCUS_DENIED",
-            "message" to "Could not gain audio focus for playback"
-          )
+        emitEngineError(
+          code = "AUDIO_FOCUS_DENIED",
+          message = "Could not gain audio focus for playback",
+          source = "focus"
         )
       }
       return false
@@ -750,7 +857,7 @@ class ExpoAudioEngineModule : Module() {
     }
 
     if (fromSystem) {
-      sendEvent("engineStateChanged", mapOf("reason" to "pausedFromSystem"))
+      emitEngineStateChanged("pausedFromSystem")
     }
   }
 
@@ -769,7 +876,7 @@ class ExpoAudioEngineModule : Module() {
     }
 
     if (fromSystem) {
-      sendEvent("engineStateChanged", mapOf("reason" to "stoppedFromSystem"))
+      emitEngineStateChanged("stoppedFromSystem")
     }
   }
 
@@ -826,7 +933,7 @@ class ExpoAudioEngineModule : Module() {
         if (engine.isPlaying()) {
           shouldResumeAfterTransientFocusLoss = true
           pausePlaybackInternal(engine, fromSystem = true, keepAudioFocus = true)
-          sendEvent("engineStateChanged", mapOf("reason" to "audioFocusLossTransient"))
+          emitEngineStateChanged("audioFocusLossTransient")
         }
       }
       AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
@@ -834,12 +941,9 @@ class ExpoAudioEngineModule : Module() {
           volumeBeforeDuck = engine.getMasterVolume()
           val duckedVolume = (volumeBeforeDuck!! * 0.3f).coerceAtLeast(0.05f)
           engine.setMasterVolume(duckedVolume)
-          sendEvent(
-            "engineStateChanged",
-            mapOf(
-              "reason" to "audioFocusDuck",
-              "volume" to duckedVolume.toDouble()
-            )
+          emitEngineStateChanged(
+            reason = "audioFocusDuck",
+            payload = mapOf("volume" to duckedVolume.toDouble())
           )
         }
       }
@@ -847,7 +951,7 @@ class ExpoAudioEngineModule : Module() {
         shouldResumeAfterTransientFocusLoss = false
         if (engine.isPlaying()) {
           pausePlaybackInternal(engine, fromSystem = true)
-          sendEvent("engineStateChanged", mapOf("reason" to "audioFocusLoss"))
+          emitEngineStateChanged("audioFocusLoss")
         } else {
           abandonAudioFocus()
         }
@@ -898,6 +1002,80 @@ class ExpoAudioEngineModule : Module() {
       nowPlayingMetadata.clear()
     }
     abandonAudioFocus()
+  }
+
+  private fun emitEngineStateChanged(
+    reason: String,
+    payload: Map<String, Any?> = emptyMap()
+  ) {
+    val eventPayload = payload.toMutableMap()
+    eventPayload["reason"] = reason
+    sendEvent("engineStateChanged", eventPayload)
+  }
+
+  private fun emitDebugLog(
+    level: String,
+    message: String,
+    context: Map<String, Any?>? = null
+  ) {
+    val payload = mutableMapOf<String, Any?>(
+      "level" to level,
+      "message" to message
+    )
+    if (context != null) {
+      payload["context"] = context
+    }
+    sendEvent("debugLog", payload)
+  }
+
+  private fun emitEngineError(
+    code: String,
+    message: String,
+    details: Any? = null,
+    source: String? = null
+  ) {
+    val resolvedSource = source ?: resolveErrorSource(code)
+    val (severity, recoverable) = classifyError(code)
+    val payload = mutableMapOf<String, Any?>(
+      "code" to code,
+      "message" to message,
+      "severity" to severity,
+      "recoverable" to recoverable,
+      "source" to resolvedSource,
+      "timestampMs" to System.currentTimeMillis(),
+      "platform" to "android"
+    )
+    if (details != null) {
+      payload["details"] = details
+    }
+    sendEvent("error", payload)
+    emitDebugLog(
+      level = if (severity == "fatal") "error" else "warn",
+      message = message,
+      context = payload
+    )
+  }
+
+  private fun resolveErrorSource(code: String): String {
+    return when {
+      code == "AUDIO_SESSION_FAILED" -> "session"
+      code == "AUDIO_FOCUS_DENIED" -> "focus"
+      code.startsWith("PLAYBACK_") || code == "NO_TRACKS_LOADED" -> "playback"
+      code.startsWith("RECORDING_") -> "recording"
+      code.startsWith("EXTRACTION_") -> "extraction"
+      code.startsWith("ENGINE_") || code.startsWith("TRACK_") || code == "STREAM_DISCONNECTED" -> "engine"
+      else -> "system"
+    }
+  }
+
+  private fun classifyError(code: String): Pair<String, Boolean> {
+    return when (code) {
+      "ENGINE_INIT_FAILED",
+      "ENGINE_START_FAILED",
+      "AUDIO_SESSION_FAILED",
+      "STREAM_DISCONNECTED" -> "fatal" to false
+      else -> "warning" to true
+    }
   }
 
   private fun mapToBundle(map: Map<String, Any?>): Bundle {

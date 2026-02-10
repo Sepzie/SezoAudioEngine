@@ -13,6 +13,8 @@ The module emits events for playback, recording, and extraction.
 - `recordingStopped`
 - `extractionProgress`
 - `extractionComplete`
+- `engineStateChanged`
+- `debugLog`
 - `error`
 
 ## Error Payload
@@ -21,7 +23,12 @@ The module emits events for playback, recording, and extraction.
 
 - `code` (string)
 - `message` (string)
-- `details` (object, optional)
+- `details` (unknown, optional)
+- `severity` (`warning` | `fatal`)
+- `recoverable` (boolean)
+- `source` (`engine` | `session` | `playback` | `recording` | `extraction` | `focus` | `system`)
+- `timestampMs` (number)
+- `platform` (`ios` | `android`)
 
 Async functions may also reject with the same `code`/`message` shape.
 

@@ -64,11 +64,62 @@ export interface PlaybackCardOptions {
     showStop?: boolean;
     seekStepMs?: number;
 }
-export type AudioEngineEvent = 'playbackStateChange' | 'positionUpdate' | 'playbackComplete' | 'trackLoaded' | 'trackUnloaded' | 'recordingStarted' | 'recordingStopped' | 'extractionProgress' | 'extractionComplete' | 'error';
+export type AudioEngineEvent = 'playbackStateChange' | 'positionUpdate' | 'playbackComplete' | 'trackLoaded' | 'trackUnloaded' | 'recordingStarted' | 'recordingStopped' | 'extractionProgress' | 'extractionComplete' | 'engineStateChanged' | 'debugLog' | 'error';
+export type AudioEngineErrorSeverity = 'warning' | 'fatal';
+export type AudioEngineErrorSource = 'engine' | 'session' | 'playback' | 'recording' | 'extraction' | 'focus' | 'system';
 export interface AudioEngineError {
     code: string;
     message: string;
     details?: unknown;
+    severity: AudioEngineErrorSeverity;
+    recoverable: boolean;
+    source: AudioEngineErrorSource;
+    timestampMs: number;
+    platform: 'ios' | 'android';
+}
+export interface AudioEngineEventMap {
+    playbackStateChange: {
+        state: string;
+        positionMs: number;
+        durationMs: number;
+    };
+    positionUpdate: {
+        positionMs: number;
+        durationMs: number;
+    };
+    playbackComplete: {
+        positionMs: number;
+        durationMs: number;
+    };
+    trackLoaded: {
+        trackId: string;
+    };
+    trackUnloaded: {
+        trackId: string;
+    };
+    recordingStarted: Record<string, never>;
+    recordingStopped: {
+        uri: string;
+        duration: number;
+        startTimeMs: number;
+        startTimeSamples?: number;
+        sampleRate: number;
+        channels: number;
+        format: 'aac' | 'm4a' | 'mp3' | 'wav';
+        fileSize: number;
+    };
+    extractionProgress: Record<string, unknown>;
+    extractionComplete: Record<string, unknown>;
+    engineStateChanged: {
+        reason: string;
+        [key: string]: unknown;
+    };
+    debugLog: {
+        level: 'debug' | 'info' | 'warn' | 'error';
+        message: string;
+        context?: unknown;
+    };
+    error: AudioEngineError;
 }
 export interface AudioEngine {
     initialize(config: AudioEngineConfig): Promise<void>;
@@ -112,7 +163,7 @@ export interface AudioEngine {
     enableBackgroundPlayback(metadata: MediaMetadata): Promise<void>;
     updateNowPlayingInfo(metadata: Partial<MediaMetadata>): void;
     disableBackgroundPlayback(): Promise<void>;
-    addListener(event: AudioEngineEvent, callback: Function): {
+    addListener<K extends keyof AudioEngineEventMap>(event: K, callback: (payload: AudioEngineEventMap[K]) => void): {
         remove: () => void;
     };
 }

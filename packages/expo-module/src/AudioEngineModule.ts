@@ -55,5 +55,5 @@ export const AudioEngineModule: AudioEngine = {
   updateNowPlayingInfo: (metadata) => NativeAudioEngineModule.updateNowPlayingInfo(metadata),
   disableBackgroundPlayback: () => NativeAudioEngineModule.disableBackgroundPlayback(),
 
-  addListener: (event, callback) => NativeAudioEngineModule.addListener(event, callback)
+  addListener: ((event, callback) => NativeAudioEngineModule.addListener(event, callback)) as AudioEngine['addListener']
 };
