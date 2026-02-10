@@ -1045,6 +1045,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#error-payload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error Payload
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#example" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1137,6 +1148,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#error-payload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error Payload
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#example" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1182,6 +1204,14 @@
 <li><code>extractionComplete</code></li>
 <li><code>error</code></li>
 </ul>
+<h2 id="error-payload">Error Payload</h2>
+<p><code>error</code> events include:</p>
+<ul>
+<li><code>code</code> (string)</li>
+<li><code>message</code> (string)</li>
+<li><code>details</code> (object, optional)</li>
+</ul>
+<p>Async functions may also reject with the same <code>code</code>/<code>message</code> shape.</p>
 <h2 id="example">Example</h2>
 <pre><code class="language-ts">const subscription = AudioEngineModule.addListener('playbackStateChange', (event) =&gt; {
   console.log('state', event);
