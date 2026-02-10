@@ -126,6 +126,7 @@ final class NativeAudioEngine {
       applyPitchSpeedForAllTracks()
       recalculateDuration()
       engine.prepare()
+      updateRemoteCommandStates()
       if failedInputs.isEmpty {
         return nil
       }
@@ -150,6 +151,7 @@ final class NativeAudioEngine {
       }
       applyMixingForAllTracks()
       recalculateDuration()
+      updateRemoteCommandStates()
     }
   }
 
@@ -160,6 +162,7 @@ final class NativeAudioEngine {
       detachAllTracks()
       tracks.removeAll()
       recalculateDuration()
+      updateRemoteCommandStates()
     }
   }
 
@@ -574,6 +577,7 @@ final class NativeAudioEngine {
       backgroundPlaybackEnabled = true
       nowPlayingMetadata.merge(metadata) { _, new in new }
       _ = sessionManager.enableBackgroundPlayback(with: lastConfig)
+      setRemoteControlEventsEnabled(true)
       configureRemoteCommandsIfNeeded()
       updateNowPlayingInfoInternal()
     }
@@ -594,6 +598,10 @@ final class NativeAudioEngine {
       nowPlayingMetadata.removeAll()
       removeRemoteCommands()
       MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+      if #available(iOS 13.0, *) {
+        MPNowPlayingInfoCenter.default().playbackState = .stopped
+      }
+      setRemoteControlEventsEnabled(false)
       _ = sessionManager.configure(with: lastConfig)
     }
   }
@@ -1362,6 +1370,16 @@ final class NativeAudioEngine {
     info[MPNowPlayingInfoPropertyPlaybackRate] = isPlayingFlag ? 1.0 : 0.0
 
     MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    if #available(iOS 13.0, *) {
+      if isPlayingFlag {
+        MPNowPlayingInfoCenter.default().playbackState = .playing
+      } else if currentPositionMs > 0 {
+        MPNowPlayingInfoCenter.default().playbackState = .paused
+      } else {
+        MPNowPlayingInfoCenter.default().playbackState = .stopped
+      }
+    }
+    updateRemoteCommandStates()
   }
 
   private func emitPlaybackState(_ state: PlaybackState, positionMs: Double? = nil) {
@@ -1394,9 +1412,7 @@ final class NativeAudioEngine {
       return .success
     }
 
-    commandCenter.playCommand.isEnabled = true
-    commandCenter.pauseCommand.isEnabled = true
-    commandCenter.togglePlayPauseCommand.isEnabled = true
+    updateRemoteCommandStates()
   }
 
   /// Removes remote command handlers.
@@ -1414,6 +1430,29 @@ final class NativeAudioEngine {
     playCommandTarget = nil
     pauseCommandTarget = nil
     toggleCommandTarget = nil
+  }
+
+  private func updateRemoteCommandStates() {
+    let commandCenter = MPRemoteCommandCenter.shared()
+    let hasTracks = !tracks.isEmpty
+    commandCenter.playCommand.isEnabled = backgroundPlaybackEnabled && hasTracks && !isPlayingFlag
+    commandCenter.pauseCommand.isEnabled = backgroundPlaybackEnabled && hasTracks && isPlayingFlag
+    commandCenter.togglePlayPauseCommand.isEnabled = backgroundPlaybackEnabled && hasTracks
+  }
+
+  private func setRemoteControlEventsEnabled(_ enabled: Bool) {
+    let handler = {
+      if enabled {
+        UIApplication.shared.beginReceivingRemoteControlEvents()
+      } else {
+        UIApplication.shared.endReceivingRemoteControlEvents()
+      }
+    }
+    if Thread.isMainThread {
+      handler()
+    } else {
+      DispatchQueue.main.async(execute: handler)
+    }
   }
 
   /// Resolves artwork from a local file path or file URL.
