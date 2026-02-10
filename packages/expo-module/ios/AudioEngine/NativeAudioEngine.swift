@@ -1218,10 +1218,19 @@ final class NativeAudioEngine {
         lastEngineError = nil
       } catch {
         lastEngineError = error.localizedDescription
+        let session = AVAudioSession.sharedInstance()
         emitError(
           code: "ENGINE_START_FAILED",
           message: "Failed to start audio engine. \(error.localizedDescription)",
-          details: ["nativeError": error.localizedDescription]
+          details: [
+            "nativeError": error.localizedDescription,
+            "category": session.category.rawValue,
+            "sampleRate": session.sampleRate,
+            "inputAvailable": session.isInputAvailable,
+            "inputChannels": session.inputNumberOfChannels,
+            "route": describeRoute(session),
+            "recordingMixerConnected": recordingMixerConnected
+          ]
         )
         return false
       }

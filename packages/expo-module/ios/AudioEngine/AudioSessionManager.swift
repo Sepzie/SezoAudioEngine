@@ -51,10 +51,12 @@ final class AudioSessionManager {
   func enableBackgroundPlayback(with config: AudioEngineConfig) -> Bool {
     lastError = nil
     do {
+      // The current engine graph always includes an input-side recording mixer path.
+      // Keep an input-capable category in background mode so engine.start() remains valid.
       try session.setCategory(
-        .playback,
+        .playAndRecord,
         mode: .default,
-        options: [.allowBluetoothHFP, .allowAirPlay]
+        options: [.defaultToSpeaker, .allowBluetoothHFP, .allowAirPlay]
       )
     } catch {
       lastError = "setCategory failed: \(error.localizedDescription)"
