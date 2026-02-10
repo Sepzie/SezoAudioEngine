@@ -1,6 +1,7 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  NativeModules,
   PermissionsAndroid,
   Platform,
   ScrollView,
@@ -29,6 +30,13 @@ interface TestResult {
   error?: string;
 }
 
+interface ExecutedTestResult {
+  status: 'pass' | 'fail';
+  metrics?: Record<string, number | string>;
+  thresholds?: Record<string, string>;
+  error?: string;
+}
+
 interface TestReport {
   timestamp: string;
   platform: string;
@@ -38,6 +46,19 @@ interface TestReport {
     status: 'pass' | 'fail';
     metrics: Record<string, number | string>;
   }>;
+}
+
+interface StoredTestReport {
+  schemaVersion: number;
+  savedAt: string;
+  report: TestReport;
+}
+
+interface SavedReportEntry {
+  id: string;
+  uri: string;
+  savedAt: string;
+  report: TestReport;
 }
 
 interface TestFixtures {
@@ -64,6 +85,9 @@ const DRIFT_THRESHOLD_MS = 50;
 const SEEK_THRESHOLD_MS = 150;
 const EXTRACTION_DURATION_TOLERANCE_MS = 200;
 const SPEED_ADVANCE_MIN_MS = 2200;
+const TESTLAB_REPORTS_DIR_NAME = 'sezo-testlab-reports';
+const TESTLAB_REPORTS_LIMIT = 40;
+const TESTLAB_REPORT_SCHEMA_VERSION = 1;
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -248,6 +272,84 @@ const buildReport = (results: TestResult[]): TestReport => {
   };
 };
 
+const summarizeReport = (report: TestReport) => {
+  const total = report.tests.length;
+  const passed = report.tests.filter((test) => test.status === 'pass').length;
+  const failed = total - passed;
+  return { total, passed, failed };
+};
+
+const readPublicEnv = (key: string) => {
+  const env = (
+    globalThis as { process?: { env?: Record<string, string | undefined> } }
+  ).process?.env;
+  return env?.[key];
+};
+
+const resolveDevServerHost = () => {
+  const scriptUrl = (
+    NativeModules as { SourceCode?: { scriptURL?: string } }
+  ).SourceCode?.scriptURL;
+  if (!scriptUrl || !scriptUrl.startsWith('http')) {
+    return null;
+  }
+  try {
+    return new URL(scriptUrl).hostname;
+  } catch {
+    const match = scriptUrl.match(/^https?:\/\/([^/:]+)/i);
+    return match?.[1] ?? null;
+  }
+};
+
+const resolveDevReportEndpoint = () => {
+  const explicitUrl = readPublicEnv('EXPO_PUBLIC_TESTLAB_REPORT_UPLOAD_URL');
+  if (explicitUrl) {
+    return explicitUrl;
+  }
+  const host = resolveDevServerHost();
+  if (!host) {
+    return null;
+  }
+  const port = readPublicEnv('EXPO_PUBLIC_TESTLAB_REPORT_UPLOAD_PORT') ?? '8099';
+  const path = readPublicEnv('EXPO_PUBLIC_TESTLAB_REPORT_UPLOAD_PATH') ?? '/testlab/report';
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  return `http://${host}:${port}${normalizedPath}`;
+};
+
+const getReportsDirectoryUri = () => {
+  if (!FileSystem.documentDirectory) {
+    return null;
+  }
+  return `${FileSystem.documentDirectory}${TESTLAB_REPORTS_DIR_NAME}/`;
+};
+
+const normalizeSavedReport = (value: unknown): { report: TestReport; savedAt: string } | null => {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+  const candidate = value as Partial<StoredTestReport> & Partial<TestReport>;
+  if (candidate.report && typeof candidate.savedAt === 'string') {
+    return {
+      report: candidate.report as TestReport,
+      savedAt: candidate.savedAt,
+    };
+  }
+  if (typeof candidate.timestamp === 'string' && Array.isArray(candidate.tests)) {
+    return {
+      report: candidate as TestReport,
+      savedAt: candidate.timestamp,
+    };
+  }
+  return null;
+};
+
+const getFileSize = (info: FileSystem.FileInfo) => {
+  if (!info.exists || info.isDirectory || typeof info.size !== 'number') {
+    return 0;
+  }
+  return info.size;
+};
+
 const TestLabScreen = ({
   engineReady,
   onBack,
@@ -270,6 +372,8 @@ const TestLabScreen = ({
   const [isRunning, setIsRunning] = useState(false);
   const [progress, setProgress] = useState(0);
   const [report, setReport] = useState<TestReport | null>(null);
+  const [savedReports, setSavedReports] = useState<SavedReportEntry[]>([]);
+  const [reportStorageStatus, setReportStorageStatus] = useState('');
 
   const summary = useMemo(() => {
     const total = results.length;
@@ -290,6 +394,228 @@ const TestLabScreen = ({
       }))
     );
   }, [initialResults]);
+
+  const refreshSavedReports = useCallback(async () => {
+    const reportsDir = getReportsDirectoryUri();
+    if (!reportsDir) {
+      setSavedReports([]);
+      return;
+    }
+    try {
+      const dirInfo = await FileSystem.getInfoAsync(reportsDir);
+      if (!dirInfo.exists) {
+        setSavedReports([]);
+        return;
+      }
+      const fileNames = await FileSystem.readDirectoryAsync(reportsDir);
+      const entries: SavedReportEntry[] = [];
+      for (const fileName of fileNames) {
+        if (!fileName.endsWith('.json')) {
+          continue;
+        }
+        const uri = `${reportsDir}${fileName}`;
+        try {
+          const raw = await FileSystem.readAsStringAsync(uri);
+          const normalized = normalizeSavedReport(JSON.parse(raw));
+          if (!normalized) {
+            continue;
+          }
+          entries.push({
+            id: fileName,
+            uri,
+            savedAt: normalized.savedAt,
+            report: normalized.report,
+          });
+        } catch (error) {
+          console.warn('[TestLab] Failed to parse saved report', fileName, error);
+        }
+      }
+      entries.sort((a, b) => Date.parse(b.savedAt) - Date.parse(a.savedAt));
+      setSavedReports(entries);
+    } catch (error) {
+      console.warn('[TestLab] Failed to load saved reports', error);
+      setSavedReports([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshSavedReports();
+  }, [refreshSavedReports]);
+
+  const saveReportLocally = useCallback(
+    async (nextReport: TestReport) => {
+      const reportsDir = getReportsDirectoryUri();
+      if (!reportsDir) {
+        setReportStorageStatus('Unable to access app document directory.');
+        return null;
+      }
+      try {
+        await FileSystem.makeDirectoryAsync(reportsDir, { intermediates: true });
+        const fileName = `testlab-report-${Date.now()}.json`;
+        const fileUri = `${reportsDir}${fileName}`;
+        const savedAt = new Date().toISOString();
+        const payload: StoredTestReport = {
+          schemaVersion: TESTLAB_REPORT_SCHEMA_VERSION,
+          savedAt,
+          report: nextReport,
+        };
+        await FileSystem.writeAsStringAsync(fileUri, JSON.stringify(payload, null, 2), {
+          encoding: FileSystem.EncodingType.UTF8,
+        });
+
+        const allFiles = await FileSystem.readDirectoryAsync(reportsDir);
+        const sorted = allFiles.filter((name) => name.endsWith('.json')).sort().reverse();
+        for (const staleFile of sorted.slice(TESTLAB_REPORTS_LIMIT)) {
+          await FileSystem.deleteAsync(`${reportsDir}${staleFile}`, { idempotent: true });
+        }
+
+        await refreshSavedReports();
+        setReportStorageStatus(`Saved in app data: ${fileName}`);
+        return { fileName, fileUri, savedAt };
+      } catch (error) {
+        console.warn('[TestLab] Failed to save report locally', error);
+        setReportStorageStatus('Failed to save report locally.');
+        return null;
+      }
+    },
+    [refreshSavedReports]
+  );
+
+  const mirrorReportToComputer = useCallback(
+    async (nextReport: TestReport, localFileName: string, savedAt: string) => {
+      if (!__DEV__) {
+        return;
+      }
+      const endpoint = resolveDevReportEndpoint();
+      if (!endpoint) {
+        return;
+      }
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fileName: localFileName,
+            savedAt,
+            report: nextReport,
+          }),
+        });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const payload = (await response.json().catch(() => null)) as
+          | { savedPath?: string }
+          | null;
+        setReportStorageStatus(
+          `Saved in app data and mirrored to computer: ${payload?.savedPath ?? endpoint}`
+        );
+      } catch (error: any) {
+        console.warn('[TestLab] Failed to mirror report to computer', error);
+        setReportStorageStatus(
+          `Saved in app data. Computer mirror unavailable (${error?.message ?? 'network error'}).`
+        );
+      }
+    },
+    []
+  );
+
+  const persistReport = useCallback(
+    async (nextReport: TestReport) => {
+      const saved = await saveReportLocally(nextReport);
+      if (!saved) {
+        return;
+      }
+      await mirrorReportToComputer(nextReport, saved.fileName, saved.savedAt);
+    },
+    [mirrorReportToComputer, saveReportLocally]
+  );
+
+  const shareReportUri = useCallback(async (uri: string) => {
+    const shareUri = await getAndroidContentUri(uri);
+    if (Platform.OS === 'android') {
+      await IntentLauncher.startActivityAsync('android.intent.action.SEND', {
+        type: 'application/json',
+        flags: 1,
+        extra: {
+          'android.intent.extra.STREAM': shareUri,
+        },
+      });
+      return;
+    }
+    await Share.share({
+      message: shareUri,
+      url: shareUri,
+    });
+  }, []);
+
+  const loadSavedReport = useCallback(
+    async (entry: SavedReportEntry) => {
+      if (!__DEV__) {
+        setReportStorageStatus('Receiver re-send is only available while running in dev mode.');
+        return;
+      }
+      const endpoint = resolveDevReportEndpoint();
+      if (!endpoint) {
+        setReportStorageStatus('Receiver endpoint not configured.');
+        return;
+      }
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fileName: entry.id,
+            savedAt: entry.savedAt,
+            report: entry.report,
+          }),
+        });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const payload = (await response.json().catch(() => null)) as
+          | { savedPath?: string }
+          | null;
+        setReportStorageStatus(`Re-sent to receiver: ${payload?.savedPath ?? endpoint}`);
+      } catch (error: any) {
+        console.warn('[TestLab] Failed to re-send saved report to receiver', error);
+        setReportStorageStatus(
+          `Re-send failed (${error?.message ?? 'network error'}). Check receiver/network settings.`
+        );
+      }
+    },
+    []
+  );
+
+  const shareSavedReport = useCallback(
+    async (entry: SavedReportEntry) => {
+      try {
+        await shareReportUri(entry.uri);
+      } catch (error) {
+        console.warn('[TestLab] Share saved report failed', error);
+      }
+    },
+    [shareReportUri]
+  );
+
+  const deleteSavedReport = useCallback(
+    async (entry: SavedReportEntry) => {
+      try {
+        await FileSystem.deleteAsync(entry.uri, { idempotent: true });
+        await refreshSavedReports();
+      } catch (error) {
+        console.warn('[TestLab] Delete saved report failed', error);
+      }
+    },
+    [refreshSavedReports]
+  );
+
+  const resendLatestSavedReport = useCallback(() => {
+    if (savedReports.length === 0) {
+      Alert.alert('No saved reports', 'Run tests once to create a saved report.');
+      return;
+    }
+    void loadSavedReport(savedReports[0]);
+  }, [loadSavedReport, savedReports]);
 
   const runAllTests = useCallback(async () => {
     if (isRunning) {
@@ -332,7 +658,11 @@ const TestLabScreen = ({
       await loadTestSession(resolvedFixtures);
       await wait(120);
 
-      const tests = [
+      const tests: Array<{
+        id: string;
+        name: string;
+        run: () => Promise<ExecutedTestResult>;
+      }> = [
         {
           id: 'load_playback',
           name: 'Load & Playback Smoke',
@@ -461,15 +791,16 @@ const TestLabScreen = ({
             } catch (error) {
               console.warn('[TestLab] Recording load failed', error);
             }
-            const status =
-              info.exists && (info.size ?? 0) > 0 && recording.duration > 0 && loadSucceeded
+            const fileSize = getFileSize(info);
+            const status: ExecutedTestResult['status'] =
+              info.exists && fileSize > 0 && recording.duration > 0 && loadSucceeded
                 ? 'pass'
                 : 'fail';
             return {
               status,
               metrics: {
                 durationMs: recording.duration,
-                fileSize: info.size ?? 0,
+                fileSize,
                 loadSucceeded: loadSucceeded ? 'true' : 'false',
               },
             };
@@ -491,13 +822,15 @@ const TestLabScreen = ({
             });
             const aacInfo = await FileSystem.getInfoAsync(aacResult.uri);
             const wavInfo = await FileSystem.getInfoAsync(wavResult.uri);
+            const aacSize = getFileSize(aacInfo);
+            const wavSize = getFileSize(wavInfo);
             const aacDeltaMs = Math.abs(aacResult.duration - originalDuration);
             const wavDeltaMs = Math.abs(wavResult.duration - originalDuration);
-            const status =
+            const status: ExecutedTestResult['status'] =
               aacInfo.exists &&
               wavInfo.exists &&
-              (aacInfo.size ?? 0) > 0 &&
-              (wavInfo.size ?? 0) > 0 &&
+              aacSize > 0 &&
+              wavSize > 0 &&
               aacDeltaMs <= EXTRACTION_DURATION_TOLERANCE_MS &&
               wavDeltaMs <= EXTRACTION_DURATION_TOLERANCE_MS
                 ? 'pass'
@@ -508,10 +841,10 @@ const TestLabScreen = ({
                 originalDurationMs: originalDuration,
                 aacDurationMs: aacResult.duration,
                 aacDeltaMs,
-                aacSize: aacInfo.size ?? 0,
+                aacSize,
                 wavDurationMs: wavResult.duration,
                 wavDeltaMs,
-                wavSize: wavInfo.size ?? 0,
+                wavSize,
               },
               thresholds: {
                 aacDeltaMs: `<= ${EXTRACTION_DURATION_TOLERANCE_MS}ms`,
@@ -553,7 +886,9 @@ const TestLabScreen = ({
         setProgress((index + 1) / tests.length);
       }
 
-      setReport(buildReport(runResults));
+      const builtReport = buildReport(runResults);
+      setReport(builtReport);
+      await persistReport(builtReport);
     } catch (error: any) {
       console.warn('[TestLab] Run failed', error);
       Alert.alert('Test run failed', error?.message ?? 'Unable to run tests.');
@@ -570,6 +905,7 @@ const TestLabScreen = ({
     isRunning,
     initialResults,
     resetResults,
+    persistReport,
     restoreSnapshot,
   ]);
 
@@ -579,30 +915,21 @@ const TestLabScreen = ({
       return;
     }
     try {
-      const fileName = `testlab-report-${Date.now()}.json`;
-      const fileUri = `${FileSystem.documentDirectory ?? ''}${fileName}`;
-      await FileSystem.writeAsStringAsync(fileUri, JSON.stringify(report, null, 2), {
+      const saved = await saveReportLocally(report);
+      if (saved) {
+        await shareReportUri(saved.fileUri);
+        return;
+      }
+      const fallbackFileName = `testlab-report-${Date.now()}.json`;
+      const fallbackUri = `${FileSystem.documentDirectory ?? ''}${fallbackFileName}`;
+      await FileSystem.writeAsStringAsync(fallbackUri, JSON.stringify(report, null, 2), {
         encoding: FileSystem.EncodingType.UTF8,
       });
-      const shareUri = await getAndroidContentUri(fileUri);
-      if (Platform.OS === 'android') {
-        await IntentLauncher.startActivityAsync('android.intent.action.SEND', {
-          type: 'application/json',
-          flags: 1,
-          extra: {
-            'android.intent.extra.STREAM': shareUri,
-          },
-        });
-      } else {
-        await Share.share({
-          message: shareUri,
-          url: shareUri,
-        });
-      }
+      await shareReportUri(fallbackUri);
     } catch (error) {
       console.warn('[TestLab] Share report failed', error);
     }
-  }, [report]);
+  }, [report, saveReportLocally, shareReportUri]);
 
   return (
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -644,6 +971,17 @@ const TestLabScreen = ({
           >
             <Text style={styles.resetButtonText}>Share JSON</Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.controlButton,
+              styles.heroActionButton,
+              (savedReports.length === 0 || isRunning) && styles.controlButtonDisabled,
+            ]}
+            onPress={resendLatestSavedReport}
+            disabled={savedReports.length === 0 || isRunning}
+          >
+            <Text style={styles.controlButtonText}>Re-send Last Report</Text>
+          </TouchableOpacity>
         </View>
         <ProgressBar progress={progress} />
         <View style={styles.testSummaryRow}>
@@ -656,6 +994,9 @@ const TestLabScreen = ({
             {engineReady ? 'Engine ready' : 'Engine not ready'}
           </Text>
         </View>
+        {reportStorageStatus ? (
+          <Text style={[styles.sectionHint, styles.reportStorageHint]}>{reportStorageStatus}</Text>
+        ) : null}
       </View>
 
       <CollapsibleSection
@@ -707,6 +1048,53 @@ const TestLabScreen = ({
             );
           })}
         </View>
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        title="Saved Reports"
+        subtitle="Persisted in app data and ready to re-send/share/delete"
+        defaultCollapsed={false}
+      >
+        {savedReports.length === 0 ? (
+          <Text style={styles.sectionHint}>No saved reports yet. Run the suite to generate one.</Text>
+        ) : (
+          <View style={styles.savedReportsList}>
+            {savedReports.map((entry) => {
+              const summaryForEntry = summarizeReport(entry.report);
+              return (
+                <View key={entry.id} style={styles.savedReportRow}>
+                  <View style={styles.savedReportHeader}>
+                    <Text style={styles.savedReportTitle}>{entry.report.timestamp}</Text>
+                    <Text style={styles.savedReportMeta}>
+                      {summaryForEntry.passed}/{summaryForEntry.total} passed
+                      {summaryForEntry.failed ? ` | ${summaryForEntry.failed} failed` : ''}
+                    </Text>
+                  </View>
+                  <Text style={styles.savedReportMeta}>file: {entry.id}</Text>
+                  <View style={styles.savedReportActions}>
+                    <TouchableOpacity
+                      style={styles.savedReportButton}
+                      onPress={() => void loadSavedReport(entry)}
+                    >
+                      <Text style={styles.savedReportButtonText}>Re-send to Receiver</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.savedReportButton} onPress={() => shareSavedReport(entry)}>
+                      <Text style={styles.savedReportButtonText}>Share</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.savedReportButton, styles.savedReportDeleteButton]}
+                      onPress={() => void deleteSavedReport(entry)}
+                    >
+                      <Text style={[styles.savedReportButtonText, styles.savedReportDeleteButtonText]}>
+                        Delete
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
       </CollapsibleSection>
     </ScrollView>
   );

@@ -181,6 +181,9 @@ export const styles = StyleSheet.create({
     color: theme.colors.textMuted,
     fontSize: 12,
   },
+  reportStorageHint: {
+    marginTop: 8,
+  },
   sectionContent: {
     marginTop: 12,
   },
@@ -450,6 +453,54 @@ export const styles = StyleSheet.create({
   },
   testList: {
     gap: 12,
+  },
+  savedReportsList: {
+    gap: 10,
+  },
+  savedReportRow: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: theme.radius.button,
+    backgroundColor: theme.colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    gap: 8,
+  },
+  savedReportHeader: {
+    gap: 2,
+  },
+  savedReportTitle: {
+    color: theme.colors.text,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  savedReportMeta: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
+  },
+  savedReportActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  savedReportButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: theme.radius.button,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceStrong,
+  },
+  savedReportButtonText: {
+    color: theme.colors.text,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  savedReportDeleteButton: {
+    borderColor: 'rgba(255, 93, 93, 0.6)',
+    backgroundColor: 'rgba(255, 93, 93, 0.15)',
+  },
+  savedReportDeleteButtonText: {
+    color: theme.colors.danger,
   },
   testRow: {
     paddingVertical: 12,

@@ -95,3 +95,42 @@ npx yarn rebuild
 ### Metro bundler issues
 - Clear Metro cache: `cd packages/expo-module/example && rm -rf .expo`
 - Restart Metro: Press `r` in the terminal
+
+## Test Lab Report Persistence
+
+The example app Test Lab now persists each run report to app documents under:
+
+- `sezo-testlab-reports/testlab-report-<timestamp>.json`
+
+You can load, share, and delete these reports from the Test Lab UI.
+
+### Mirror Reports to Your Computer During Dev
+
+Run the local receiver on your machine:
+
+```bash
+npx yarn testlab:receiver
+```
+
+This command also attempts:
+
+- `adb reverse tcp:<receiver-port> tcp:<receiver-port>`
+
+so Android devices/emulators connected over adb can reach your computer receiver automatically.
+
+When the app is connected to the dev server (`__DEV__`), each saved report is also POSTed to:
+
+- `http://<dev-server-host>:8099/testlab/report` (default)
+
+Receiver output directory:
+
+- `artifacts/testlab-reports/`
+
+Optional environment variables:
+
+- `EXPO_PUBLIC_TESTLAB_REPORT_UPLOAD_URL` (full URL override in app)
+- `EXPO_PUBLIC_TESTLAB_REPORT_UPLOAD_PORT` (default `8099`)
+- `EXPO_PUBLIC_TESTLAB_REPORT_UPLOAD_PATH` (default `/testlab/report`)
+- `SEZO_TESTLAB_REPORT_PORT` (receiver port)
+- `SEZO_TESTLAB_REPORT_PATH` (receiver route)
+- `SEZO_TESTLAB_REPORT_DIR` (receiver output dir)

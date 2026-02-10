@@ -23,6 +23,7 @@
     "test:cpp:android": "bash packages/android-engine/android/engine/src/test/cpp/scripts/run_android_tests.sh",
     "test:cpp:android:build": "bash packages/android-engine/android/engine/src/test/cpp/scripts/run_android_tests.sh --build-only",
     "test:cpp:android:run": "bash packages/android-engine/android/engine/src/test/cpp/scripts/run_android_tests.sh --run-only",
+    "testlab:receiver": "PORT=${SEZO_TESTLAB_REPORT_PORT:-8099}; adb reverse tcp:$PORT tcp:$PORT >/dev/null 2>&1 || true; node scripts/testlab-report-receiver.mjs",
     "clean": "rm -rf packages/expo-module/dist packages/expo-module/example/android/app/build packages/expo-module/example/android/.gradle"
   }
 }
