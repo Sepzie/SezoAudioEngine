@@ -68,7 +68,7 @@ class ExpoAudioEngineModule : Module() {
         message = "Engine not initialized",
         source = "engine"
       )
-      throw CodedException("ENGINE_NOT_INITIALIZED", "Engine not initialized")
+      throw CodedException("ENGINE_NOT_INITIALIZED", "Engine not initialized", null)
     }
   }
 
