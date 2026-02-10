@@ -34,7 +34,7 @@ class ExpoAudioEngineModule : Module() {
     }
 
     override fun stop() {
-      audioEngine?.let { stopPlaybackInternal(it, fromSystem = true) }
+      audioEngine?.let { stopPlaybackInternal(it, fromSystem = true, stopService = false) }
     }
 
     override fun seekTo(positionMs: Double) {
@@ -739,13 +739,17 @@ class ExpoAudioEngineModule : Module() {
     }
   }
 
-  private fun stopPlaybackInternal(engine: AudioEngine, fromSystem: Boolean) {
+  private fun stopPlaybackInternal(
+    engine: AudioEngine,
+    fromSystem: Boolean,
+    stopService: Boolean = true
+  ) {
     engine.stop()
     shouldResumeAfterTransientFocusLoss = false
     restoreDuckedVolumeIfNeeded(engine)
     abandonAudioFocus()
 
-    if (backgroundPlaybackEnabled) {
+    if (backgroundPlaybackEnabled && stopService) {
       stopBackgroundService()
     }
 
@@ -892,7 +896,18 @@ class ExpoAudioEngineModule : Module() {
         is Long -> bundle.putLong(key, value)
         is Float -> bundle.putFloat(key, value)
         is Double -> bundle.putDouble(key, value)
-        is Number -> bundle.putDouble(key, value.toDouble())
+        is Number -> {
+          val numberAsDouble = value.toDouble()
+          val isIntegral = numberAsDouble % 1.0 == 0.0
+          if (isIntegral &&
+            numberAsDouble >= Long.MIN_VALUE.toDouble() &&
+            numberAsDouble <= Long.MAX_VALUE.toDouble()
+          ) {
+            bundle.putLong(key, numberAsDouble.toLong())
+          } else {
+            bundle.putDouble(key, numberAsDouble)
+          }
+        }
         is Map<*, *> -> {
           val child = mutableMapOf<String, Any?>()
           value.forEach { (nestedKey, nestedValue) ->

@@ -98,7 +98,6 @@ internal class MediaPlaybackService : Service() {
       ACTION_PREVIOUS -> handleSeekBy(-cardOptions.seekStepMs)
       ACTION_NEXT -> handleSeekBy(cardOptions.seekStepMs)
       ACTION_STOP_SERVICE -> {
-        handleStop()
         stopSelf()
         return START_NOT_STICKY
       }
@@ -354,7 +353,19 @@ internal class MediaPlaybackService : Service() {
       cardOptions.showStop = bundle.getBoolean(KEY_CARD_SHOW_STOP)
     }
     if (bundle.containsKey(KEY_CARD_SEEK_STEP_MS)) {
-      cardOptions.seekStepMs = bundle.getLong(KEY_CARD_SEEK_STEP_MS).coerceAtLeast(1000L)
+      val seekValue = bundle.get(KEY_CARD_SEEK_STEP_MS)
+      val seekStepMs = when (seekValue) {
+        is Long -> seekValue
+        is Int -> seekValue.toLong()
+        is Double -> seekValue.toLong()
+        is Float -> seekValue.toLong()
+        is String -> seekValue.toLongOrNull()
+        is Number -> seekValue.toLong()
+        else -> null
+      }
+      if (seekStepMs != null) {
+        cardOptions.seekStepMs = seekStepMs.coerceAtLeast(1000L)
+      }
     }
     if (bundle.containsKey(KEY_CARD_ACCENT_COLOR)) {
       cardOptions.accentColor = parseColor(bundle.get(KEY_CARD_ACCENT_COLOR))

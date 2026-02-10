@@ -159,7 +159,7 @@ export default function App() {
   const [lastExtraction, setLastExtraction] = useState<ExtractionInfo | null>(null);
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractionJobId, setExtractionJobId] = useState<number | null>(null);
-  const [backgroundEnabled, setBackgroundEnabled] = useState<0 | 1>(0);
+  const [backgroundEnabled, setBackgroundEnabled] = useState<0 | 1>(1);
   const [playbackTests, setPlaybackTests] = useState<PlaybackTestEntry[]>([]);
   const positionRef = useRef(0);
   const durationRef = useRef(0);
@@ -191,6 +191,28 @@ export default function App() {
         if (mounted) {
           setStatus('Ready');
           setRecordingStatus('Ready');
+          if (canUseBackground && backgroundEnabled === 1) {
+            const title = 'Sezo Audio Engine';
+            const artist = 'Sezo Audio Engine';
+            AudioEngineModule.enableBackgroundPlayback({
+              title,
+              artist,
+              logo: 'ic_launcher',
+              playbackCard:
+                Platform.OS === 'android'
+                  ? {
+                      smallIcon: 'ic_launcher',
+                      accentColor: '#0E9F6E',
+                      showPrevious: true,
+                      showNext: true,
+                      showStop: true,
+                      seekStepMs: 10000,
+                    }
+                  : undefined,
+            }).catch((error) => {
+              console.warn('[Background] Enable on init failed', error);
+            });
+          }
         }
       })
       .catch((error) => {
