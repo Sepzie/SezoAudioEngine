@@ -51,6 +51,7 @@ final class NativeAudioEngine {
   private var lastConfig = AudioEngineConfig(dictionary: [:])
   var onPlaybackStateChange: ((String, Double, Double) -> Void)?
   var onPlaybackComplete: ((Double, Double) -> Void)?
+  var onError: ((String, String, [String: Any]?) -> Void)?
 
   /// Bookkeeping for a live recording session.
   private struct RecordingState {
@@ -109,8 +110,10 @@ final class NativeAudioEngine {
       ensureInitializedIfNeeded()
       stopEngineIfRunning()
       stopAllPlayers()
+      var failedInputs: [[String: Any]] = []
       for input in trackInputs {
         guard let track = AudioTrack(input: input) else {
+          failedInputs.append(input)
           continue
         }
         if let existing = tracks[track.id] {
@@ -118,6 +121,22 @@ final class NativeAudioEngine {
         }
         attachTrack(track)
         tracks[track.id] = track
+      }
+      if !failedInputs.isEmpty {
+        var details: [String: Any] = ["failedCount": failedInputs.count]
+        let failedIds = failedInputs.compactMap { $0["id"] as? String }
+        if !failedIds.isEmpty {
+          details["failedTrackIds"] = failedIds
+        }
+        let failedUris = failedInputs.compactMap { $0["uri"] as? String }
+        if !failedUris.isEmpty {
+          details["failedTrackUris"] = failedUris
+        }
+        emitError(
+          code: "TRACK_LOAD_FAILED",
+          message: "Failed to load \(failedInputs.count) track(s).",
+          details: details
+        )
       }
       applyMixingForAllTracks()
       applyPitchSpeedForAllTracks()
@@ -592,10 +611,18 @@ final class NativeAudioEngine {
       return
     }
     let config = lastConfig
+    let configured: Bool
     if backgroundPlaybackEnabled {
-      _ = sessionManager.enableBackgroundPlayback(with: config)
+      configured = sessionManager.enableBackgroundPlayback(with: config)
     } else {
-      _ = sessionManager.configure(with: config)
+      configured = sessionManager.configure(with: config)
+    }
+    if !configured {
+      emitError(
+        code: "AUDIO_SESSION_FAILED",
+        message: sessionManager.lastErrorDescription() ?? "Audio session configuration failed",
+        details: ["backgroundPlaybackEnabled": backgroundPlaybackEnabled]
+      )
     }
     _ = ensureRecordingMixerConnected(
       sampleRate: AVAudioSession.sharedInstance().sampleRate,
@@ -1148,11 +1175,19 @@ final class NativeAudioEngine {
     }
   }
 
+  private func emitError(code: String, message: String, details: [String: Any]? = nil) {
+    onError?(code, message, details)
+  }
+
   /// Starts the AVAudioEngine if it is not already running.
   @discardableResult
   private func startEngineIfNeeded() -> Bool {
     if !isInitialized {
       lastEngineError = "audio engine not initialized"
+      emitError(
+        code: "ENGINE_NOT_INITIALIZED",
+        message: lastEngineError ?? "Audio engine not initialized"
+      )
       return false
     }
     if !engine.isRunning {
@@ -1161,6 +1196,11 @@ final class NativeAudioEngine {
         lastEngineError = nil
       } catch {
         lastEngineError = error.localizedDescription
+        emitError(
+          code: "ENGINE_START_FAILED",
+          message: "Failed to start audio engine. \(error.localizedDescription)",
+          details: ["nativeError": error.localizedDescription]
+        )
         return false
       }
     }
@@ -1212,7 +1252,13 @@ final class NativeAudioEngine {
 
   /// Internal play logic (expects to run on the queue).
   private func playInternal() {
-    guard !tracks.isEmpty else { return }
+    guard !tracks.isEmpty else {
+      emitError(
+        code: "NO_TRACKS_LOADED",
+        message: "Cannot start playback without loaded tracks."
+      )
+      return
+    }
     ensureInitializedIfNeeded()
     if isPlayingFlag {
       return

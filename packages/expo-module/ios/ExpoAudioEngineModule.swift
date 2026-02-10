@@ -29,10 +29,23 @@ public class ExpoAudioEngineModule: Module {
           )
         }
       }
+      engine.onError = { [weak self] code, message, details in
+        DispatchQueue.main.async {
+          var payload: [String: Any] = [
+            "code": code,
+            "message": message
+          ]
+          if let details = details {
+            payload["details"] = details
+          }
+          self?.sendEvent("error", payload)
+        }
+      }
     }
     OnDestroy {
       engine.onPlaybackStateChange = nil
       engine.onPlaybackComplete = nil
+      engine.onError = nil
     }
 
     AsyncFunction("initialize") { (config: [String: Any]) in

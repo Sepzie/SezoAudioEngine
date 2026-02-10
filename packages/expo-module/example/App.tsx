@@ -310,6 +310,19 @@ export default function App() {
     };
   }, [handleRecordingResult, recordingFormat]);
 
+  useEffect(() => {
+    const errorSub = AudioEngineModule.addListener('error', (event: any) => {
+      const code = typeof event?.code === 'string' ? event.code : 'UNKNOWN_ERROR';
+      const message = typeof event?.message === 'string' ? event.message : 'Unknown error';
+      setStatus(`Error (${code})`);
+      console.error('[AudioEngine] Error event:', message, event?.details ?? event);
+    });
+
+    return () => {
+      errorSub?.remove?.();
+    };
+  }, []);
+
   const appendPlaybackTest = useCallback((entry: PlaybackTestEntry) => {
     setPlaybackTests((prev) => {
       const next = [entry, ...prev];
