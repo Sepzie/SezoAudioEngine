@@ -47,11 +47,26 @@ class AudioEngine {
 
   using ErrorCallback = std::function<void(core::ErrorCode, const std::string&)>;
   using PlaybackStateCallback = std::function<void(core::PlaybackState, double, double)>;
+  using PlaybackCompleteCallback = std::function<void()>;
 
   void SetErrorCallback(ErrorCallback callback);
   void SetPlaybackStateCallback(PlaybackStateCallback callback);
+  void SetPlaybackCompleteCallback(PlaybackCompleteCallback callback);
   core::ErrorCode GetLastErrorCode() const;
   std::string GetLastErrorMessage() const;
+
+  /**
+   * Check if the audio stream is in a healthy state.
+   * @return true if the stream is usable
+   */
+  bool IsStreamHealthy() const;
+
+  /**
+   * Attempt to restart the audio stream after a disconnect.
+   * Track data is preserved - only the stream is restarted.
+   * @return true if restart was successful
+   */
+  bool RestartStream();
 
   // Track management
   bool LoadTrack(const std::string& track_id,
@@ -217,7 +232,7 @@ class AudioEngine {
     std::shared_ptr<std::atomic<bool>> cancel_flag;
   };
 
-  bool initialized_ = false;
+  std::atomic<bool> initialized_{false};
   int32_t sample_rate_ = 44100;
   int32_t max_tracks_ = 8;
 
@@ -235,6 +250,7 @@ class AudioEngine {
   std::atomic<int64_t> recording_start_samples_{0};
 
   // Track management
+  mutable std::mutex tracks_mutex_;
   std::map<std::string, std::shared_ptr<playback::Track>> tracks_;
 
   // Effects state (for Phase 2)
@@ -245,6 +261,8 @@ class AudioEngine {
   ErrorCallback error_callback_;
   mutable std::mutex playback_state_mutex_;
   PlaybackStateCallback playback_state_callback_;
+  mutable std::mutex playback_complete_mutex_;
+  PlaybackCompleteCallback playback_complete_callback_;
   core::ErrorCode last_error_ = core::ErrorCode::kOk;
   std::string last_error_message_;
 

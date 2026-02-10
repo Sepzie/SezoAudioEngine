@@ -65,6 +65,14 @@ class AudioEngine {
     return nativeIsPlaying(nativeHandle)
   }
 
+  fun isStreamHealthy(): Boolean {
+    return nativeIsStreamHealthy(nativeHandle)
+  }
+
+  fun restartStream(): Boolean {
+    return nativeRestartStream(nativeHandle)
+  }
+
   fun getCurrentPosition(): Double {
     return nativeGetCurrentPosition(nativeHandle)
   }
@@ -371,6 +379,8 @@ class AudioEngine {
   private external fun nativeStop(handle: Long)
   private external fun nativeSeek(handle: Long, positionMs: Double)
   private external fun nativeIsPlaying(handle: Long): Boolean
+  private external fun nativeIsStreamHealthy(handle: Long): Boolean
+  private external fun nativeRestartStream(handle: Long): Boolean
   private external fun nativeGetCurrentPosition(handle: Long): Double
   private external fun nativeGetDuration(handle: Long): Double
   private external fun nativeSetPlaybackStateListener(handle: Long, enabled: Boolean)

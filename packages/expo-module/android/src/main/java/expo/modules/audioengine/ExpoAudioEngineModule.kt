@@ -14,6 +14,8 @@ class ExpoAudioEngineModule : Module() {
   private val progressLogState = Collections.synchronizedMap(mutableMapOf<Long, Float>())
   private var lastExtractionJobId: Long? = null
   private var activeRecordingFormat: String = "aac"
+  private var wasPlayingBeforePause: Boolean = false
+  private var backgroundPlaybackEnabled: Boolean = false
 
   private data class PendingExtraction(
     val promise: Promise,
@@ -26,6 +28,78 @@ class ExpoAudioEngineModule : Module() {
 
   override fun definition() = ModuleDefinition {
     Name("ExpoAudioEngineModule")
+
+    OnActivityEntersBackground {
+      Log.d(TAG, "Activity entering background")
+      val engine = audioEngine ?: return@OnActivityEntersBackground
+
+      if (backgroundPlaybackEnabled) {
+        Log.d(TAG, "Background playback enabled, keeping engine running")
+        return@OnActivityEntersBackground
+      }
+
+      wasPlayingBeforePause = engine.isPlaying()
+      if (wasPlayingBeforePause) {
+        Log.d(TAG, "Pausing engine before background (was playing)")
+        engine.pause()
+        sendEvent("engineStateChanged", mapOf(
+          "reason" to "backgrounded",
+          "wasPlaying" to true
+        ))
+      }
+    }
+
+    OnActivityEntersForeground {
+      Log.d(TAG, "Activity entering foreground")
+      val engine = audioEngine ?: return@OnActivityEntersForeground
+
+      // Check stream health on resume
+      if (!engine.isStreamHealthy()) {
+        Log.w(TAG, "Stream unhealthy on resume, attempting restart")
+        val restarted = engine.restartStream()
+        sendEvent("engineStateChanged", mapOf(
+          "reason" to "streamRestarted",
+          "success" to restarted
+        ))
+        if (!restarted) {
+          Log.e(TAG, "Failed to restart stream on resume")
+          sendEvent("error", mapOf(
+            "code" to "STREAM_DISCONNECTED",
+            "message" to "Audio stream could not be recovered after returning to foreground"
+          ))
+          return@OnActivityEntersForeground
+        }
+      }
+
+      // Resume playback if it was playing before backgrounding
+      if (wasPlayingBeforePause && !backgroundPlaybackEnabled) {
+        Log.d(TAG, "Resuming playback after returning to foreground")
+        engine.play()
+        wasPlayingBeforePause = false
+        sendEvent("engineStateChanged", mapOf(
+          "reason" to "resumed",
+          "wasPlaying" to true
+        ))
+      }
+    }
+
+    OnDestroy {
+      Log.d(TAG, "Module being destroyed, releasing engine")
+      audioEngine?.let { engine ->
+        synchronized(pendingExtractions) {
+          pendingExtractions.keys.forEach { engine.cancelExtraction(it) }
+          pendingExtractions.clear()
+        }
+        progressLogState.clear()
+        engine.setExtractionProgressListener(null)
+        engine.setExtractionCompletionListener(null)
+        engine.setPlaybackStateListener(null)
+        engine.release()
+        engine.destroy()
+      }
+      audioEngine = null
+      loadedTrackIds.clear()
+    }
 
     AsyncFunction("initialize") { config: Map<String, Any?> ->
       Log.d(TAG, "Initialize called with config: $config")
@@ -115,8 +189,17 @@ class ExpoAudioEngineModule : Module() {
       loadedTrackIds.map { mapOf("id" to it) }
     }
 
-    Function("play") {
+    AsyncFunction("play") {
       val engine = audioEngine ?: throw Exception("Engine not initialized")
+
+      // Check stream health before playing, attempt recovery if needed
+      if (!engine.isStreamHealthy()) {
+        Log.w(TAG, "Stream unhealthy before play, attempting restart")
+        if (!engine.restartStream()) {
+          throw Exception("Audio stream is disconnected and could not be recovered")
+        }
+      }
+
       engine.play()
       Log.d(TAG, "Playback started")
     }
@@ -418,6 +501,7 @@ class ExpoAudioEngineModule : Module() {
       "recordingStopped",
       "extractionProgress",
       "extractionComplete",
+      "engineStateChanged",
       "error"
     )
   }

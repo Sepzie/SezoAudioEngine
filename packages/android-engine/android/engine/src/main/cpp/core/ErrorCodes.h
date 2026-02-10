@@ -14,6 +14,7 @@ enum class ErrorCode {
   kDecoderOpenFailed,
   kSeekFailed,
   kStreamError,
+  kStreamDisconnected,
   kRecordingFailed,
   kExtractionFailed
 };

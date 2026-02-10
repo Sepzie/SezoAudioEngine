@@ -356,6 +356,24 @@ Java_com_sezo_audioengine_AudioEngine_nativeIsPlaying(JNIEnv* env [[maybe_unused
   return engine->IsPlaying() ? JNI_TRUE : JNI_FALSE;
 }
 
+JNIEXPORT jboolean JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeIsStreamHealthy(JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]], jlong handle) {
+  auto* engine = reinterpret_cast<AudioEngine*>(handle);
+  if (!engine) {
+    return JNI_FALSE;
+  }
+  return engine->IsStreamHealthy() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeRestartStream(JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]], jlong handle) {
+  auto* engine = reinterpret_cast<AudioEngine*>(handle);
+  if (!engine) {
+    return JNI_FALSE;
+  }
+  return engine->RestartStream() ? JNI_TRUE : JNI_FALSE;
+}
+
 JNIEXPORT jdouble JNICALL
 Java_com_sezo_audioengine_AudioEngine_nativeGetCurrentPosition(
     JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]], jlong handle) {

@@ -75,6 +75,12 @@ Java_com_sezo_audioengine_AudioEngine_nativeSeek(
 JNIEXPORT jboolean JNICALL
 Java_com_sezo_audioengine_AudioEngine_nativeIsPlaying(JNIEnv* env, jobject thiz, jlong handle);
 
+JNIEXPORT jboolean JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeIsStreamHealthy(JNIEnv* env, jobject thiz, jlong handle);
+
+JNIEXPORT jboolean JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeRestartStream(JNIEnv* env, jobject thiz, jlong handle);
+
 JNIEXPORT jdouble JNICALL
 Java_com_sezo_audioengine_AudioEngine_nativeGetCurrentPosition(
     JNIEnv* env, jobject thiz, jlong handle);

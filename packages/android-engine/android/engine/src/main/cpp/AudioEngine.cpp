@@ -2,6 +2,7 @@
 #include "extraction/ExtractionPipeline.h"
 #include <android/log.h>
 #include <algorithm>
+#include <future>
 #include <utility>
 
 #define LOG_TAG "AudioEngine"
@@ -26,6 +27,11 @@ void AudioEngine::SetPlaybackStateCallback(PlaybackStateCallback callback) {
   playback_state_callback_ = std::move(callback);
 }
 
+void AudioEngine::SetPlaybackCompleteCallback(PlaybackCompleteCallback callback) {
+  std::lock_guard<std::mutex> lock(playback_complete_mutex_);
+  playback_complete_callback_ = std::move(callback);
+}
+
 core::ErrorCode AudioEngine::GetLastErrorCode() const {
   std::lock_guard<std::mutex> lock(error_mutex_);
   return last_error_;
@@ -37,7 +43,7 @@ std::string AudioEngine::GetLastErrorMessage() const {
 }
 
 bool AudioEngine::Initialize(int32_t sample_rate, int32_t max_tracks) {
-  if (initialized_) {
+  if (initialized_.load(std::memory_order_acquire)) {
     LOGD("AudioEngine already initialized");
     return true;
   }
@@ -71,15 +77,20 @@ bool AudioEngine::Initialize(int32_t sample_rate, int32_t max_tracks) {
     return false;
   }
 
+  // Set up stream error callback for unrecoverable errors
+  player_->SetStreamErrorCallback([this](const std::string& message) {
+    ReportError(core::ErrorCode::kStreamDisconnected, message);
+  });
+
   StartExtractionWorker();
 
-  initialized_ = true;
+  initialized_.store(true, std::memory_order_release);
   LOGD("AudioEngine initialized: sample_rate=%d, max_tracks=%d", sample_rate, max_tracks);
   return true;
 }
 
 void AudioEngine::Release() {
-  if (!initialized_) {
+  if (!initialized_.load(std::memory_order_acquire)) {
     return;
   }
 
@@ -98,14 +109,36 @@ void AudioEngine::Release() {
   timing_.reset();
   clock_.reset();
 
-  initialized_ = false;
+  initialized_.store(false, std::memory_order_release);
   LOGD("AudioEngine released");
+}
+
+bool AudioEngine::IsStreamHealthy() const {
+  if (!initialized_.load(std::memory_order_acquire)) {
+    return false;
+  }
+  return player_ && player_->IsHealthy();
+}
+
+bool AudioEngine::RestartStream() {
+  if (!initialized_.load(std::memory_order_acquire)) {
+    return false;
+  }
+  if (!player_) {
+    return false;
+  }
+  bool result = player_->RestartStream();
+  if (!result) {
+    ReportError(core::ErrorCode::kStreamDisconnected,
+                "Failed to restart audio stream");
+  }
+  return result;
 }
 
 bool AudioEngine::LoadTrack(const std::string& track_id,
                             const std::string& file_path,
                             double start_time_ms) {
-  if (!initialized_) {
+  if (!initialized_.load(std::memory_order_acquire)) {
     ReportError(core::ErrorCode::kNotInitialized, "AudioEngine not initialized");
     return false;
   }
@@ -117,9 +150,18 @@ bool AudioEngine::LoadTrack(const std::string& track_id,
     ReportError(core::ErrorCode::kInvalidArgument, "File path is empty");
     return false;
   }
-  if (tracks_.size() >= static_cast<size_t>(max_tracks_)) {
-    ReportError(core::ErrorCode::kTrackLimitReached, "Max track limit reached");
-    return false;
+  {
+    std::lock_guard<std::mutex> lock(tracks_mutex_);
+    if (tracks_.size() >= static_cast<size_t>(max_tracks_)) {
+      ReportError(core::ErrorCode::kTrackLimitReached, "Max track limit reached");
+      return false;
+    }
+
+    // Check if track already loaded
+    if (tracks_.find(track_id) != tracks_.end()) {
+      LOGD("Track %s already loaded", track_id.c_str());
+      return true;
+    }
   }
 
   const bool is_mp3 = file_path.find(".mp3") != std::string::npos;
@@ -131,15 +173,9 @@ bool AudioEngine::LoadTrack(const std::string& track_id,
     return false;
   }
 
-  // Check if track already loaded
-  if (tracks_.find(track_id) != tracks_.end()) {
-    LOGD("Track %s already loaded", track_id.c_str());
-    return true;
-  }
-
   const int64_t start_time_samples = std::max<int64_t>(0, timing_->MsToSamples(start_time_ms));
 
-  // Create and load track
+  // Create and load track (file I/O done outside lock)
   auto track = std::make_shared<playback::Track>(track_id, file_path);
   if (!track->Load()) {
     LOGE("Failed to load track: %s", file_path.c_str());
@@ -153,9 +189,16 @@ bool AudioEngine::LoadTrack(const std::string& track_id,
     track->Seek(track_frame);
   }
 
-  // Add to mixer
-  mixer_->AddTrack(track);
-  tracks_[track_id] = track;
+  {
+    std::lock_guard<std::mutex> lock(tracks_mutex_);
+    // Double-check in case another thread loaded the same track
+    if (tracks_.find(track_id) != tracks_.end()) {
+      LOGD("Track %s already loaded (concurrent)", track_id.c_str());
+      return true;
+    }
+    mixer_->AddTrack(track);
+    tracks_[track_id] = track;
+  }
 
   RecalculateDuration();
 
@@ -166,14 +209,17 @@ bool AudioEngine::LoadTrack(const std::string& track_id,
 }
 
 bool AudioEngine::UnloadTrack(const std::string& track_id) {
-  auto it = tracks_.find(track_id);
-  if (it == tracks_.end()) {
-    ReportError(core::ErrorCode::kTrackNotFound, "Track not found: " + track_id);
-    return false;
-  }
+  {
+    std::lock_guard<std::mutex> lock(tracks_mutex_);
+    auto it = tracks_.find(track_id);
+    if (it == tracks_.end()) {
+      ReportError(core::ErrorCode::kTrackNotFound, "Track not found: " + track_id);
+      return false;
+    }
 
-  mixer_->RemoveTrack(track_id);
-  tracks_.erase(it);
+    mixer_->RemoveTrack(track_id);
+    tracks_.erase(it);
+  }
   RecalculateDuration();
 
   LOGD("Track unloaded: %s", track_id.c_str());
@@ -181,6 +227,7 @@ bool AudioEngine::UnloadTrack(const std::string& track_id) {
 }
 
 void AudioEngine::UnloadAllTracks() {
+  std::lock_guard<std::mutex> lock(tracks_mutex_);
   mixer_->ClearTracks();
   tracks_.clear();
   timing_->SetDuration(0);
@@ -188,6 +235,7 @@ void AudioEngine::UnloadAllTracks() {
 }
 
 std::vector<std::string> AudioEngine::GetLoadedTrackIds() const {
+  std::lock_guard<std::mutex> lock(tracks_mutex_);
   std::vector<std::string> ids;
   ids.reserve(tracks_.size());
   for (const auto& pair : tracks_) {
@@ -197,15 +245,26 @@ std::vector<std::string> AudioEngine::GetLoadedTrackIds() const {
 }
 
 void AudioEngine::Play() {
-  if (!initialized_) {
+  if (!initialized_.load(std::memory_order_acquire)) {
     return;
   }
 
   const auto previous_state = transport_->GetState();
-  transport_->Play();
   if (previous_state == core::PlaybackState::kPlaying) {
     return;
   }
+
+  // Check stream health before attempting to play
+  if (!player_->IsHealthy()) {
+    LOGW("Stream unhealthy before play, attempting restart...");
+    if (!player_->RestartStream()) {
+      ReportError(core::ErrorCode::kStreamDisconnected,
+                  "Audio stream is disconnected and could not be restarted");
+      return;
+    }
+  }
+
+  transport_->Play();
   if (!player_->IsRunning()) {
     if (!player_->Start()) {
       transport_->Stop();
@@ -221,7 +280,7 @@ void AudioEngine::Play() {
 }
 
 void AudioEngine::Pause() {
-  if (!initialized_) {
+  if (!initialized_.load(std::memory_order_acquire)) {
     return;
   }
 
@@ -235,7 +294,7 @@ void AudioEngine::Pause() {
 }
 
 void AudioEngine::Stop() {
-  if (!initialized_) {
+  if (!initialized_.load(std::memory_order_acquire)) {
     return;
   }
 
@@ -253,7 +312,7 @@ void AudioEngine::Stop() {
 }
 
 void AudioEngine::Seek(double position_ms) {
-  if (!initialized_) {
+  if (!initialized_.load(std::memory_order_acquire)) {
     return;
   }
 
@@ -273,11 +332,14 @@ void AudioEngine::Seek(double position_ms) {
 
   // Seek all tracks
   bool seek_ok = true;
-  for (auto& pair : tracks_) {
-    const int64_t track_start = pair.second->GetStartTimeSamples();
-    const int64_t track_frame = frame - track_start;
-    if (!pair.second->Seek(std::max<int64_t>(0, track_frame))) {
-      seek_ok = false;
+  {
+    std::lock_guard<std::mutex> lock(tracks_mutex_);
+    for (auto& pair : tracks_) {
+      const int64_t track_start = pair.second->GetStartTimeSamples();
+      const int64_t track_frame = frame - track_start;
+      if (!pair.second->Seek(std::max<int64_t>(0, track_frame))) {
+        seek_ok = false;
+      }
     }
   }
   if (!seek_ok) {
@@ -288,18 +350,18 @@ void AudioEngine::Seek(double position_ms) {
 }
 
 bool AudioEngine::IsPlaying() const {
-  return initialized_ && transport_->IsPlaying();
+  return initialized_.load(std::memory_order_acquire) && transport_->IsPlaying();
 }
 
 double AudioEngine::GetCurrentPosition() const {
-  if (!initialized_) {
+  if (!initialized_.load(std::memory_order_acquire)) {
     return 0.0;
   }
   return timing_->SamplesToMs(clock_->GetPosition());
 }
 
 double AudioEngine::GetDuration() const {
-  if (!initialized_) {
+  if (!initialized_.load(std::memory_order_acquire)) {
     return 0.0;
   }
   return timing_->GetDurationMs();
@@ -353,6 +415,7 @@ float AudioEngine::GetMasterVolume() const {
 
 // Phase 2: Per-track effects
 void AudioEngine::SetTrackPitch(const std::string& track_id, float semitones) {
+  std::lock_guard<std::mutex> lock(tracks_mutex_);
   auto it = tracks_.find(track_id);
   if (it != tracks_.end()) {
     it->second->SetPitchSemitones(semitones);
@@ -362,6 +425,7 @@ void AudioEngine::SetTrackPitch(const std::string& track_id, float semitones) {
 }
 
 float AudioEngine::GetTrackPitch(const std::string& track_id) const {
+  std::lock_guard<std::mutex> lock(tracks_mutex_);
   auto it = tracks_.find(track_id);
   if (it != tracks_.end()) {
     return it->second->GetPitchSemitones();
@@ -370,6 +434,7 @@ float AudioEngine::GetTrackPitch(const std::string& track_id) const {
 }
 
 void AudioEngine::SetTrackSpeed(const std::string& track_id, float rate) {
+  std::lock_guard<std::mutex> lock(tracks_mutex_);
   auto it = tracks_.find(track_id);
   if (it != tracks_.end()) {
     it->second->SetStretchFactor(rate);
@@ -379,6 +444,7 @@ void AudioEngine::SetTrackSpeed(const std::string& track_id, float rate) {
 }
 
 float AudioEngine::GetTrackSpeed(const std::string& track_id) const {
+  std::lock_guard<std::mutex> lock(tracks_mutex_);
   auto it = tracks_.find(track_id);
   if (it != tracks_.end()) {
     return it->second->GetStretchFactor();
@@ -389,7 +455,7 @@ float AudioEngine::GetTrackSpeed(const std::string& track_id) const {
 // Phase 2: Master effects (apply to all tracks)
 void AudioEngine::SetPitch(float semitones) {
   pitch_ = semitones;
-  // Apply to all loaded tracks
+  std::lock_guard<std::mutex> lock(tracks_mutex_);
   for (auto& pair : tracks_) {
     pair.second->SetPitchSemitones(semitones);
   }
@@ -401,7 +467,7 @@ float AudioEngine::GetPitch() const {
 
 void AudioEngine::SetSpeed(float rate) {
   speed_ = rate;
-  // Apply to all loaded tracks
+  std::lock_guard<std::mutex> lock(tracks_mutex_);
   for (auto& pair : tracks_) {
     pair.second->SetStretchFactor(rate);
   }
@@ -417,7 +483,7 @@ bool AudioEngine::StartRecording(
     const recording::RecordingConfig& config,
     RecordingCompletionCallback callback) {
 
-  if (!initialized_) {
+  if (!initialized_.load(std::memory_order_acquire)) {
     ReportError(core::ErrorCode::kNotInitialized, "AudioEngine not initialized");
     return false;
   }
@@ -508,20 +574,24 @@ AudioEngine::ExtractionResult AudioEngine::ExtractTrack(
   result.track_id = track_id;
   result.output_path = output_path;
 
-  if (!initialized_) {
+  if (!initialized_.load(std::memory_order_acquire)) {
     result.error_message = "AudioEngine not initialized";
     ReportError(core::ErrorCode::kNotInitialized, result.error_message);
     return result;
   }
 
-  auto it = tracks_.find(track_id);
-  if (it == tracks_.end()) {
-    result.error_message = "Track not found: " + track_id;
-    ReportError(core::ErrorCode::kTrackNotFound, result.error_message);
-    return result;
+  std::shared_ptr<playback::Track> track;
+  {
+    std::lock_guard<std::mutex> lock(tracks_mutex_);
+    auto it = tracks_.find(track_id);
+    if (it == tracks_.end()) {
+      result.error_message = "Track not found: " + track_id;
+      ReportError(core::ErrorCode::kTrackNotFound, result.error_message);
+      return result;
+    }
+    track = it->second;
   }
 
-  auto track = it->second;
   if (!track->IsLoaded()) {
     result.error_message = "Track not loaded: " + track_id;
     ReportError(core::ErrorCode::kTrackNotFound, result.error_message);
@@ -579,23 +649,26 @@ AudioEngine::ExtractionResult AudioEngine::ExtractAllTracks(
   ExtractionResult result;
   result.output_path = output_path;
 
-  if (!initialized_) {
+  if (!initialized_.load(std::memory_order_acquire)) {
     result.error_message = "AudioEngine not initialized";
     ReportError(core::ErrorCode::kNotInitialized, result.error_message);
     return result;
   }
 
-  if (tracks_.empty()) {
-    result.error_message = "No tracks loaded";
-    ReportError(core::ErrorCode::kTrackNotFound, result.error_message);
-    return result;
-  }
-
-  // Collect all loaded tracks
+  // Collect all loaded tracks under lock
   std::vector<std::shared_ptr<playback::Track>> track_list;
-  for (const auto& pair : tracks_) {
-    if (pair.second->IsLoaded()) {
-      track_list.push_back(pair.second);
+  {
+    std::lock_guard<std::mutex> lock(tracks_mutex_);
+    if (tracks_.empty()) {
+      result.error_message = "No tracks loaded";
+      ReportError(core::ErrorCode::kTrackNotFound, result.error_message);
+      return result;
+    }
+
+    for (const auto& pair : tracks_) {
+      if (pair.second->IsLoaded()) {
+        track_list.push_back(pair.second);
+      }
     }
   }
 
@@ -654,7 +727,7 @@ int64_t AudioEngine::StartExtractTrack(
     ExtractionProgressCallback progress_callback,
     ExtractionCompletionCallback completion_callback) {
 
-  if (!initialized_) {
+  if (!initialized_.load(std::memory_order_acquire)) {
     ReportError(core::ErrorCode::kNotInitialized, "AudioEngine not initialized");
     return 0;
   }
@@ -691,7 +764,7 @@ int64_t AudioEngine::StartExtractAllTracks(
     ExtractionProgressCallback progress_callback,
     ExtractionCompletionCallback completion_callback) {
 
-  if (!initialized_) {
+  if (!initialized_.load(std::memory_order_acquire)) {
     ReportError(core::ErrorCode::kNotInitialized, "AudioEngine not initialized");
     return 0;
   }
@@ -765,7 +838,15 @@ void AudioEngine::StopExtractionWorker() {
   extraction_cv_.notify_one();
 
   if (extraction_thread_.joinable()) {
-    extraction_thread_.join();
+    // Use a timed approach: try to join within 5 seconds, then detach if stuck
+    auto future = std::async(std::launch::async, [this] {
+      extraction_thread_.join();
+    });
+
+    if (future.wait_for(std::chrono::seconds(5)) == std::future_status::timeout) {
+      LOGW("Extraction worker did not stop within timeout, detaching thread");
+      extraction_thread_.detach();
+    }
   }
   extraction_worker_running_.store(false, std::memory_order_release);
 }
@@ -878,15 +959,18 @@ void AudioEngine::RecalculateDuration() {
   }
 
   int64_t max_end = 0;
-  for (const auto& pair : tracks_) {
-    if (!pair.second || !pair.second->IsLoaded()) {
-      continue;
-    }
-    const int64_t start = pair.second->GetStartTimeSamples();
-    const int64_t duration = pair.second->GetDuration();
-    const int64_t end = start + std::max<int64_t>(0, duration);
-    if (end > max_end) {
-      max_end = end;
+  {
+    std::lock_guard<std::mutex> lock(tracks_mutex_);
+    for (const auto& pair : tracks_) {
+      if (!pair.second || !pair.second->IsLoaded()) {
+        continue;
+      }
+      const int64_t start = pair.second->GetStartTimeSamples();
+      const int64_t duration = pair.second->GetDuration();
+      const int64_t end = start + std::max<int64_t>(0, duration);
+      if (end > max_end) {
+        max_end = end;
+      }
     }
   }
 
