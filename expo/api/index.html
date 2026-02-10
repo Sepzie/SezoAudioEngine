@@ -1083,10 +1083,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#background-playback-planned" class="md-nav__link">
+  <a href="#background-playback" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Background Playback (Planned)
+        Background Playback
       
     </span>
   </a>
@@ -1269,10 +1269,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#background-playback-planned" class="md-nav__link">
+  <a href="#background-playback" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Background Playback (Planned)
+        Background Playback
       
     </span>
   </a>
@@ -1360,11 +1360,23 @@
 <li><code>getOutputLevel(): number</code></li>
 <li><code>getTrackLevel(trackId: string): number</code></li>
 </ul>
-<h2 id="background-playback-planned">Background Playback (Planned)</h2>
+<h2 id="background-playback">Background Playback</h2>
 <ul>
 <li><code>enableBackgroundPlayback(metadata: MediaMetadata): Promise&lt;void&gt;</code></li>
 <li><code>updateNowPlayingInfo(metadata: Partial&lt;MediaMetadata&gt;): void</code></li>
 <li><code>disableBackgroundPlayback(): Promise&lt;void&gt;</code></li>
+</ul>
+<p><code>MediaMetadata</code> supports:</p>
+<ul>
+<li><code>title</code>, <code>artist</code>, <code>album</code>, <code>artwork</code></li>
+<li><code>logo</code> (app/brand logo resource name or local file path)</li>
+<li><code>playbackCard</code> (Android notification card options):</li>
+<li><code>smallIcon</code></li>
+<li><code>accentColor</code></li>
+<li><code>showPrevious</code></li>
+<li><code>showNext</code></li>
+<li><code>showStop</code></li>
+<li><code>seekStepMs</code></li>
 </ul>
 
 

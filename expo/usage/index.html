@@ -999,6 +999,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#background-playback" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Background Playback
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1147,6 +1158,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#background-playback" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Background Playback
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1186,6 +1208,21 @@ const result = await AudioEngineModule.stopRecording();
 </code></pre>
 <h2 id="extraction">Extraction</h2>
 <pre><code class="language-ts">const result = await AudioEngineModule.extractTrack('backing', { format: 'wav' });
+</code></pre>
+<h2 id="background-playback">Background Playback</h2>
+<pre><code class="language-ts">await AudioEngineModule.enableBackgroundPlayback({
+  title: 'My Song',
+  artist: 'My Artist',
+  logo: 'ic_launcher',
+  playbackCard: {
+    smallIcon: 'ic_launcher',
+    accentColor: '#0E9F6E',
+    showPrevious: true,
+    showNext: true,
+    showStop: true,
+    seekStepMs: 10000,
+  },
+});
 </code></pre>
 
 
