@@ -48,6 +48,9 @@ final class NativeAudioEngine {
   private var playCommandTarget: Any?
   private var pauseCommandTarget: Any?
   private var toggleCommandTarget: Any?
+  private var changePlaybackPositionCommandTarget: Any?
+  private var skipForwardCommandTarget: Any?
+  private var skipBackwardCommandTarget: Any?
   private var lastConfig = AudioEngineConfig(dictionary: [:])
   var onPlaybackStateChange: ((String, Double, Double) -> Void)?
   var onPlaybackComplete: ((Double, Double) -> Void)?
@@ -1346,6 +1349,13 @@ final class NativeAudioEngine {
     updateNowPlayingInfoInternal()
   }
 
+  private func seekByIntervalInternal(deltaMs: Double) {
+    let current = isPlayingFlag ? currentPlaybackPositionMs() : currentPositionMs
+    let maxPosition = durationMs > 0 ? durationMs : Double.greatestFiniteMagnitude
+    let target = min(max(0.0, current + deltaMs), maxPosition)
+    seekInternal(positionMs: target)
+  }
+
   /// Updates Now Playing info based on stored metadata and playback state.
   private func updateNowPlayingInfoInternal() {
     guard backgroundPlaybackEnabled else { return }
@@ -1411,6 +1421,33 @@ final class NativeAudioEngine {
       }
       return .success
     }
+    changePlaybackPositionCommandTarget = commandCenter.changePlaybackPositionCommand.addTarget { [weak self] event in
+      guard let self = self,
+            let positionEvent = event as? MPChangePlaybackPositionCommandEvent else {
+        return .commandFailed
+      }
+      self.queue.async {
+        let targetMs = max(0.0, positionEvent.positionTime * 1000.0)
+        self.seekInternal(positionMs: targetMs)
+      }
+      return .success
+    }
+    skipForwardCommandTarget = commandCenter.skipForwardCommand.addTarget { [weak self] event in
+      guard let self = self else { return .commandFailed }
+      let seconds = (event as? MPSkipIntervalCommandEvent)?.interval ?? 15.0
+      self.queue.async {
+        self.seekByIntervalInternal(deltaMs: max(0.0, seconds) * 1000.0)
+      }
+      return .success
+    }
+    skipBackwardCommandTarget = commandCenter.skipBackwardCommand.addTarget { [weak self] event in
+      guard let self = self else { return .commandFailed }
+      let seconds = (event as? MPSkipIntervalCommandEvent)?.interval ?? 15.0
+      self.queue.async {
+        self.seekByIntervalInternal(deltaMs: -max(0.0, seconds) * 1000.0)
+      }
+      return .success
+    }
 
     updateRemoteCommandStates()
   }
@@ -1427,17 +1464,46 @@ final class NativeAudioEngine {
     if let target = toggleCommandTarget {
       commandCenter.togglePlayPauseCommand.removeTarget(target)
     }
+    if let target = changePlaybackPositionCommandTarget {
+      commandCenter.changePlaybackPositionCommand.removeTarget(target)
+    }
+    if let target = skipForwardCommandTarget {
+      commandCenter.skipForwardCommand.removeTarget(target)
+    }
+    if let target = skipBackwardCommandTarget {
+      commandCenter.skipBackwardCommand.removeTarget(target)
+    }
     playCommandTarget = nil
     pauseCommandTarget = nil
     toggleCommandTarget = nil
+    changePlaybackPositionCommandTarget = nil
+    skipForwardCommandTarget = nil
+    skipBackwardCommandTarget = nil
   }
 
   private func updateRemoteCommandStates() {
     let commandCenter = MPRemoteCommandCenter.shared()
     let hasTracks = !tracks.isEmpty
+    let hasSeekableDuration = durationMs > 0
+    let seekStepSeconds = max(1.0, resolveSeekStepMs() / 1000.0)
     commandCenter.playCommand.isEnabled = backgroundPlaybackEnabled && hasTracks && !isPlayingFlag
     commandCenter.pauseCommand.isEnabled = backgroundPlaybackEnabled && hasTracks && isPlayingFlag
     commandCenter.togglePlayPauseCommand.isEnabled = backgroundPlaybackEnabled && hasTracks
+    commandCenter.changePlaybackPositionCommand.isEnabled = backgroundPlaybackEnabled && hasTracks && hasSeekableDuration
+    commandCenter.skipForwardCommand.preferredIntervals = [NSNumber(value: seekStepSeconds)]
+    commandCenter.skipBackwardCommand.preferredIntervals = [NSNumber(value: seekStepSeconds)]
+    commandCenter.skipForwardCommand.isEnabled = backgroundPlaybackEnabled && hasTracks && hasSeekableDuration
+    commandCenter.skipBackwardCommand.isEnabled = backgroundPlaybackEnabled && hasTracks && hasSeekableDuration
+  }
+
+  private func resolveSeekStepMs() -> Double {
+    guard let playbackCard = nowPlayingMetadata["playbackCard"] as? [String: Any] else {
+      return 15000.0
+    }
+    if let seekStepMs = playbackCard["seekStepMs"] as? NSNumber {
+      return max(1000.0, seekStepMs.doubleValue)
+    }
+    return 15000.0
   }
 
   private func setRemoteControlEventsEnabled(_ enabled: Bool) {
