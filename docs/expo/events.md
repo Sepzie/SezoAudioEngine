@@ -15,6 +15,16 @@ The module emits events for playback, recording, and extraction.
 - `extractionComplete`
 - `error`
 
+## Error Payload
+
+`error` events include:
+
+- `code` (string)
+- `message` (string)
+- `details` (object, optional)
+
+Async functions may also reject with the same `code`/`message` shape.
+
 ## Example
 
 ```ts

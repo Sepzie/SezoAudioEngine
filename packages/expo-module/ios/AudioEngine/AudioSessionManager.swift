@@ -11,7 +11,7 @@ final class AudioSessionManager {
       try session.setCategory(
         .playAndRecord,
         mode: .default,
-        options: [.defaultToSpeaker, .allowBluetooth]
+        options: [.defaultToSpeaker, .allowBluetoothHFP]
       )
     } catch {
       lastError = "setCategory failed: \(error.localizedDescription)"
@@ -54,7 +54,7 @@ final class AudioSessionManager {
       try session.setCategory(
         .playback,
         mode: .default,
-        options: [.allowBluetooth, .allowAirPlay]
+        options: [.allowBluetoothHFP, .allowAirPlay]
       )
     } catch {
       lastError = "setCategory failed: \(error.localizedDescription)"

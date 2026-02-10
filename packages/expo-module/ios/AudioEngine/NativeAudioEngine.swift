@@ -105,8 +105,8 @@ final class NativeAudioEngine {
   }
 
   /// Loads and attaches tracks into the engine graph.
-  func loadTracks(_ trackInputs: [[String: Any]]) {
-    queue.sync {
+  func loadTracks(_ trackInputs: [[String: Any]]) -> [String: Any]? {
+    return queue.sync {
       ensureInitializedIfNeeded()
       stopEngineIfRunning()
       stopAllPlayers()
@@ -122,26 +122,23 @@ final class NativeAudioEngine {
         attachTrack(track)
         tracks[track.id] = track
       }
-      if !failedInputs.isEmpty {
-        var details: [String: Any] = ["failedCount": failedInputs.count]
-        let failedIds = failedInputs.compactMap { $0["id"] as? String }
-        if !failedIds.isEmpty {
-          details["failedTrackIds"] = failedIds
-        }
-        let failedUris = failedInputs.compactMap { $0["uri"] as? String }
-        if !failedUris.isEmpty {
-          details["failedTrackUris"] = failedUris
-        }
-        emitError(
-          code: "TRACK_LOAD_FAILED",
-          message: "Failed to load \(failedInputs.count) track(s).",
-          details: details
-        )
-      }
       applyMixingForAllTracks()
       applyPitchSpeedForAllTracks()
       recalculateDuration()
       engine.prepare()
+      if failedInputs.isEmpty {
+        return nil
+      }
+      var details: [String: Any] = ["failedCount": failedInputs.count]
+      let failedIds = failedInputs.compactMap { $0["id"] as? String }
+      if !failedIds.isEmpty {
+        details["failedTrackIds"] = failedIds
+      }
+      let failedUris = failedInputs.compactMap { $0["uri"] as? String }
+      if !failedUris.isEmpty {
+        details["failedTrackUris"] = failedUris
+      }
+      return details
     }
   }
 
@@ -505,20 +502,18 @@ final class NativeAudioEngine {
   }
 
   /// Offline export for a single track.
-  func extractTrack(trackId: String, config: [String: Any]?) -> [String: Any] {
-    return queue.sync {
+  func extractTrack(trackId: String, config: [String: Any]?) throws -> [String: Any] {
+    return try queue.sync {
       guard let track = tracks[trackId] else {
-        return [
-          "trackId": trackId,
-          "uri": "",
-          "duration": 0,
-          "format": "aac",
-          "fileSize": 0
-        ]
+        throw AudioEngineError(
+          "TRACK_NOT_FOUND",
+          "Track not found: \(trackId).",
+          details: ["trackId": trackId]
+        )
       }
 
       let durationMs = track.startTimeMs + track.durationMs
-      return renderOffline(
+      return try renderOffline(
         tracksToRender: [track],
         totalDurationMs: durationMs,
         config: config,
@@ -528,12 +523,18 @@ final class NativeAudioEngine {
   }
 
   /// Offline export for all tracks (one file per track).
-  func extractAllTracks(config: [String: Any]?) -> [[String: Any]] {
-    return queue.sync {
+  func extractAllTracks(config: [String: Any]?) throws -> [[String: Any]] {
+    return try queue.sync {
+      if tracks.isEmpty {
+        throw AudioEngineError(
+          "NO_TRACKS_LOADED",
+          "Cannot extract without loaded tracks."
+        )
+      }
       var results: [[String: Any]] = []
       for track in tracks.values {
         let durationMs = track.startTimeMs + track.durationMs
-        let result = renderOffline(
+        let result = try renderOffline(
           tracksToRender: [track],
           totalDurationMs: durationMs,
           config: config,
@@ -978,7 +979,7 @@ final class NativeAudioEngine {
     totalDurationMs: Double,
     config: [String: Any]?,
     trackId: String
-  ) -> [String: Any] {
+  ) throws -> [String: Any] {
     ensureInitializedIfNeeded()
     stopEngineIfRunning()
     stopAllPlayers()
@@ -1015,6 +1016,12 @@ final class NativeAudioEngine {
     let originalState = snapshotTrackState()
     applyExtractionMixOverrides(tracksToRender: tracksToRender, includeEffects: includeEffects)
 
+    let errorContext: [String: Any] = [
+      "trackId": trackId,
+      "format": formatInfo.format,
+      "outputUri": outputURL.absoluteString
+    ]
+
     do {
       try engine.enableManualRenderingMode(
         .offline,
@@ -1049,7 +1056,11 @@ final class NativeAudioEngine {
           pcmFormat: renderFormat,
           frameCapacity: frameCount
         ) else {
-          break
+          throw AudioEngineError(
+            "EXTRACTION_FAILED",
+            "Failed to allocate render buffer.",
+            details: errorContext
+          )
         }
 
         let status = try engine.renderOffline(frameCount, to: buffer)
@@ -1061,9 +1072,17 @@ final class NativeAudioEngine {
         case .cannotDoInCurrentContext:
           continue
         case .error:
-          break
+          throw AudioEngineError(
+            "EXTRACTION_FAILED",
+            "Offline render failed.",
+            details: errorContext
+          )
         @unknown default:
-          break
+          throw AudioEngineError(
+            "EXTRACTION_FAILED",
+            "Offline render failed with unknown status.",
+            details: errorContext
+          )
         }
       }
 
@@ -1072,13 +1091,16 @@ final class NativeAudioEngine {
     } catch {
       engine.disableManualRenderingMode()
       restoreTrackState(originalState)
-      return [
-        "trackId": trackId,
-        "uri": "",
-        "duration": 0,
-        "format": formatInfo.format,
-        "fileSize": 0
-      ]
+      if let codedError = error as? AudioEngineError {
+        throw codedError
+      }
+      var details = errorContext
+      details["nativeError"] = error.localizedDescription
+      throw AudioEngineError(
+        "EXTRACTION_FAILED",
+        "Failed to extract track \(trackId). \(error.localizedDescription)",
+        details: details
+      )
     }
 
     restoreTrackState(originalState)

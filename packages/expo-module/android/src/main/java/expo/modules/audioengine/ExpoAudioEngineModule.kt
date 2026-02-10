@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.util.Log
 import com.sezo.audioengine.AudioEngine
 import expo.modules.kotlin.Promise
+import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.util.Collections
@@ -59,6 +60,10 @@ class ExpoAudioEngineModule : Module() {
     val bitrate: Int,
     val operation: String
   )
+
+  private fun requireEngine(): AudioEngine {
+    return audioEngine ?: throw CodedException("ENGINE_NOT_INITIALIZED", "Engine not initialized")
+  }
 
   override fun definition() = ModuleDefinition {
     Name("ExpoAudioEngineModule")
@@ -151,7 +156,7 @@ class ExpoAudioEngineModule : Module() {
       val success = audioEngine?.initialize(sampleRate, maxTracks) ?: false
 
       if (!success) {
-        throw Exception("Failed to initialize audio engine")
+        throw CodedException("ENGINE_INIT_FAILED", "Failed to initialize audio engine", null)
       }
 
       ensureAudioFocusManager()
@@ -194,18 +199,24 @@ class ExpoAudioEngineModule : Module() {
     }
 
     AsyncFunction("loadTracks") { tracks: List<Map<String, Any?>> ->
-      val engine = audioEngine ?: throw Exception("Engine not initialized")
+      val engine = requireEngine()
 
       tracks.forEach { track ->
-        val id = track["id"] as? String ?: throw Exception("Missing track id")
-        val uri = track["uri"] as? String ?: throw Exception("Missing track uri")
+        val id = track["id"] as? String
+          ?: throw CodedException("TRACK_LOAD_FAILED", "Missing track id", null)
+        val uri = track["uri"] as? String
+          ?: throw CodedException("TRACK_LOAD_FAILED", "Missing track uri", null)
         val startTimeMs = (track["startTimeMs"] as? Number)?.toDouble() ?: 0.0
 
         Log.d(TAG, "Loading track: id=$id, uri=$uri")
         val filePath = convertUriToPath(uri)
 
         if (!engine.loadTrack(id, filePath, startTimeMs)) {
-          throw Exception("Failed to load track: $id from $filePath")
+          throw CodedException(
+            "TRACK_LOAD_FAILED",
+            "Failed to load track: $id from $filePath",
+            null
+          )
         }
 
         loadedTrackIds.add(id)
@@ -214,10 +225,10 @@ class ExpoAudioEngineModule : Module() {
     }
 
     AsyncFunction("unloadTrack") { trackId: String ->
-      val engine = audioEngine ?: throw Exception("Engine not initialized")
+      val engine = requireEngine()
 
       if (!engine.unloadTrack(trackId)) {
-        throw Exception("Failed to unload track: $trackId")
+        throw CodedException("TRACK_UNLOAD_FAILED", "Failed to unload track: $trackId", null)
       }
 
       loadedTrackIds.remove(trackId)
@@ -225,7 +236,7 @@ class ExpoAudioEngineModule : Module() {
     }
 
     AsyncFunction("unloadAllTracks") {
-      val engine = audioEngine ?: throw Exception("Engine not initialized")
+      val engine = requireEngine()
       engine.unloadAllTracks()
       loadedTrackIds.clear()
       Log.d(TAG, "All tracks unloaded")
@@ -236,27 +247,27 @@ class ExpoAudioEngineModule : Module() {
     }
 
     AsyncFunction("play") {
-      val engine = audioEngine ?: throw Exception("Engine not initialized")
+      val engine = requireEngine()
       if (!startPlaybackInternal(engine, fromSystem = false)) {
-        throw Exception("Failed to start playback")
+        throw CodedException("PLAYBACK_START_FAILED", "Failed to start playback", null)
       }
       Log.d(TAG, "Playback started")
     }
 
     Function("pause") {
-      val engine = audioEngine ?: throw Exception("Engine not initialized")
+      val engine = requireEngine()
       pausePlaybackInternal(engine, fromSystem = false)
       Log.d(TAG, "Playback paused")
     }
 
     Function("stop") {
-      val engine = audioEngine ?: throw Exception("Engine not initialized")
+      val engine = requireEngine()
       stopPlaybackInternal(engine, fromSystem = false)
       Log.d(TAG, "Playback stopped")
     }
 
     Function("seek") { positionMs: Double ->
-      val engine = audioEngine ?: throw Exception("Engine not initialized")
+      val engine = requireEngine()
       engine.seek(positionMs)
       Log.d(TAG, "Seeked to position: $positionMs ms")
     }
@@ -274,27 +285,27 @@ class ExpoAudioEngineModule : Module() {
     }
 
     Function("setTrackVolume") { trackId: String, volume: Double ->
-      val engine = audioEngine ?: throw Exception("Engine not initialized")
+      val engine = requireEngine()
       engine.setTrackVolume(trackId, volume.toFloat())
     }
 
     Function("setTrackMuted") { trackId: String, muted: Boolean ->
-      val engine = audioEngine ?: throw Exception("Engine not initialized")
+      val engine = requireEngine()
       engine.setTrackMuted(trackId, muted)
     }
 
     Function("setTrackSolo") { trackId: String, solo: Boolean ->
-      val engine = audioEngine ?: throw Exception("Engine not initialized")
+      val engine = requireEngine()
       engine.setTrackSolo(trackId, solo)
     }
 
     Function("setTrackPan") { trackId: String, pan: Double ->
-      val engine = audioEngine ?: throw Exception("Engine not initialized")
+      val engine = requireEngine()
       engine.setTrackPan(trackId, pan.toFloat())
     }
 
     Function("setMasterVolume") { volume: Double ->
-      val engine = audioEngine ?: throw Exception("Engine not initialized")
+      val engine = requireEngine()
       engine.setMasterVolume(volume.toFloat())
     }
 
@@ -303,7 +314,7 @@ class ExpoAudioEngineModule : Module() {
     }
 
     Function("setPitch") { semitones: Double ->
-      val engine = audioEngine ?: throw Exception("Engine not initialized")
+      val engine = requireEngine()
       engine.setPitch(semitones.toFloat())
     }
 
@@ -312,7 +323,7 @@ class ExpoAudioEngineModule : Module() {
     }
 
     Function("setSpeed") { rate: Double ->
-      val engine = audioEngine ?: throw Exception("Engine not initialized")
+      val engine = requireEngine()
       engine.setSpeed(rate.toFloat())
     }
 
@@ -321,13 +332,13 @@ class ExpoAudioEngineModule : Module() {
     }
 
     Function("setTempoAndPitch") { tempo: Double, pitch: Double ->
-      val engine = audioEngine ?: throw Exception("Engine not initialized")
+      val engine = requireEngine()
       engine.setSpeed(tempo.toFloat())
       engine.setPitch(pitch.toFloat())
     }
 
     Function("setTrackPitch") { trackId: String, semitones: Double ->
-      val engine = audioEngine ?: throw Exception("Engine not initialized")
+      val engine = requireEngine()
       engine.setTrackPitch(trackId, semitones.toFloat())
     }
 
@@ -336,7 +347,7 @@ class ExpoAudioEngineModule : Module() {
     }
 
     Function("setTrackSpeed") { trackId: String, rate: Double ->
-      val engine = audioEngine ?: throw Exception("Engine not initialized")
+      val engine = requireEngine()
       engine.setTrackSpeed(trackId, rate.toFloat())
     }
 
@@ -345,7 +356,7 @@ class ExpoAudioEngineModule : Module() {
     }
 
     AsyncFunction("startRecording") { config: Map<String, Any?>? ->
-      val engine = audioEngine ?: throw Exception("Engine not initialized")
+      val engine = requireEngine()
 
       val sampleRate = (config?.get("sampleRate") as? Number)?.toInt() ?: 44100
       val channels = (config?.get("channels") as? Number)?.toInt() ?: 1
@@ -376,7 +387,7 @@ class ExpoAudioEngineModule : Module() {
       )
 
       if (!success) {
-        throw Exception("Failed to start recording")
+        throw CodedException("RECORDING_START_FAILED", "Failed to start recording", null)
       }
 
       activeRecordingFormat = format
@@ -384,13 +395,17 @@ class ExpoAudioEngineModule : Module() {
     }
 
     AsyncFunction("stopRecording") {
-      val engine = audioEngine ?: throw Exception("Engine not initialized")
+      val engine = requireEngine()
 
       Log.d(TAG, "Stopping recording")
       val result = engine.stopRecording()
 
       if (!result.success) {
-        throw Exception("Failed to stop recording: ${result.errorMessage}")
+        throw CodedException(
+          "RECORDING_STOP_FAILED",
+          "Failed to stop recording: ${result.errorMessage}",
+          null
+        )
       }
 
       Log.d(TAG, "Recording stopped: ${result.fileSize} bytes, ${result.durationSamples} samples")
@@ -426,12 +441,12 @@ class ExpoAudioEngineModule : Module() {
     }
 
     Function("setRecordingVolume") { volume: Double ->
-      val engine = audioEngine ?: throw Exception("Engine not initialized")
+      val engine = requireEngine()
       engine.setRecordingVolume(volume.toFloat())
     }
 
     AsyncFunction("extractTrack") { trackId: String, config: Map<String, Any?>?, promise: Promise ->
-      val engine = audioEngine ?: throw Exception("Engine not initialized")
+      val engine = requireEngine()
 
       val format = (config?.get("format") as? String) ?: "wav"
       val bitrate = (config?.get("bitrate") as? Number)?.toInt() ?: 128000
@@ -471,7 +486,7 @@ class ExpoAudioEngineModule : Module() {
     }
 
     AsyncFunction("extractAllTracks") { config: Map<String, Any?>?, promise: Promise ->
-      val engine = audioEngine ?: throw Exception("Engine not initialized")
+      val engine = requireEngine()
 
       val format = (config?.get("format") as? String) ?: "wav"
       val bitrate = (config?.get("bitrate") as? Number)?.toInt() ?: 128000
@@ -510,7 +525,7 @@ class ExpoAudioEngineModule : Module() {
     }
 
     Function("cancelExtraction") { jobId: Double? ->
-      val engine = audioEngine ?: throw Exception("Engine not initialized")
+      val engine = requireEngine()
       val resolvedJobId = jobId?.toLong() ?: lastExtractionJobId
       if (resolvedJobId == null) {
         false
@@ -527,7 +542,7 @@ class ExpoAudioEngineModule : Module() {
     Function("getTrackLevel") { _trackId: String -> 0.0 }
 
     AsyncFunction("enableBackgroundPlayback") { metadata: Map<String, Any?> ->
-      val engine = audioEngine ?: throw Exception("Engine not initialized")
+      val engine = requireEngine()
       backgroundPlaybackEnabled = true
       mergeNowPlayingMetadata(metadata)
       ensureAudioFocusManager()
@@ -940,15 +955,27 @@ class ExpoAudioEngineModule : Module() {
       uri.startsWith("content://") -> {
         // TODO: Handle content:// URIs with ContentResolver
         // For now, throw an error - this will be implemented when needed
-        throw Exception("content:// URIs not yet supported. Use file:// or absolute paths.")
+        throw CodedException(
+          "UNSUPPORTED_URI",
+          "content:// URIs not yet supported. Use file:// or absolute paths.",
+          null
+        )
       }
       uri.startsWith("asset://") -> {
         // TODO: Handle asset:// URIs by copying to temp file
         // For now, throw an error - this will be implemented when needed
-        throw Exception("asset:// URIs not yet supported. Use file:// or absolute paths.")
+        throw CodedException(
+          "UNSUPPORTED_URI",
+          "asset:// URIs not yet supported. Use file:// or absolute paths.",
+          null
+        )
       }
       else -> {
-        throw Exception("Unsupported URI scheme: $uri. Use file:// or absolute paths.")
+        throw CodedException(
+          "UNSUPPORTED_URI",
+          "Unsupported URI scheme: $uri. Use file:// or absolute paths.",
+          null
+        )
       }
     }
   }

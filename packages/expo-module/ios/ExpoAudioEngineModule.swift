@@ -1,5 +1,36 @@
 import ExpoModulesCore
 
+struct AudioEngineError: CodedError, CustomNSError {
+  let code: String
+  let description: String
+  let details: [String: Any]?
+
+  init(_ code: String, _ description: String, details: [String: Any]? = nil) {
+    self.code = code
+    self.description = description
+    self.details = details
+  }
+
+  static var errorDomain: String {
+    return "ExpoAudioEngine"
+  }
+
+  var errorCode: Int {
+    return 0
+  }
+
+  var errorUserInfo: [String: Any] {
+    var info: [String: Any] = [
+      NSLocalizedDescriptionKey: description,
+      "code": code
+    ]
+    if let details = details {
+      info["details"] = details
+    }
+    return info
+  }
+}
+
 public class ExpoAudioEngineModule: Module {
   private let engine = NativeAudioEngine()
 
@@ -54,8 +85,14 @@ public class ExpoAudioEngineModule: Module {
     AsyncFunction("release") {
       engine.releaseResources()
     }
-    AsyncFunction("loadTracks") { (tracks: [[String: Any]]) in
-      engine.loadTracks(tracks)
+    AsyncFunction("loadTracks") { (tracks: [[String: Any]]) throws in
+      if let failure = engine.loadTracks(tracks) {
+        let failedCount = failure["failedCount"] as? Int ?? 0
+        let message = failedCount > 0
+          ? "Failed to load \(failedCount) track(s)."
+          : "Failed to load tracks."
+        throw AudioEngineError("TRACK_LOAD_FAILED", message, details: failure)
+      }
     }
     AsyncFunction("unloadTrack") { (trackId: String) in
       engine.unloadTrack(trackId)
@@ -160,12 +197,12 @@ public class ExpoAudioEngineModule: Module {
       engine.setRecordingVolume(volume)
     }
 
-    AsyncFunction("extractTrack") { (trackId: String, config: [String: Any]?) in
-      return engine.extractTrack(trackId: trackId, config: config)
+    AsyncFunction("extractTrack") { (trackId: String, config: [String: Any]?) throws in
+      return try engine.extractTrack(trackId: trackId, config: config)
     }
 
-    AsyncFunction("extractAllTracks") { (config: [String: Any]?) in
-      return engine.extractAllTracks(config: config)
+    AsyncFunction("extractAllTracks") { (config: [String: Any]?) throws in
+      return try engine.extractAllTracks(config: config)
     }
 
     Function("cancelExtraction") { (jobId: Double?) in
