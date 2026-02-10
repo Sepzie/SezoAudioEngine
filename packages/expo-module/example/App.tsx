@@ -11,7 +11,11 @@ import {
   Share,
   PermissionsAndroid,
 } from 'react-native';
-import { AudioEngineModule } from 'sezo-audio-engine';
+import {
+  AudioEngineModule,
+  type AudioEngineError,
+  type AudioEngineEventMap,
+} from 'sezo-audio-engine';
 import Slider from '@react-native-community/slider';
 import { Asset } from 'expo-asset';
 import * as FileSystem from 'expo-file-system';
@@ -43,6 +47,8 @@ type PlaybackExpectation = {
   source: string;
   timestamp: number;
 };
+type EngineStateEvent = AudioEngineEventMap['engineStateChanged'];
+type EngineDebugLog = AudioEngineEventMap['debugLog'];
 
 const getMimeType = (format: string) => {
   switch (format) {
@@ -127,6 +133,66 @@ const BACKGROUND_OPTIONS = [
   { value: 0, label: 'OFF' },
 ] as const;
 
+const resolveErrorSource = (code: string): AudioEngineError['source'] => {
+  if (code === 'AUDIO_SESSION_FAILED') return 'session';
+  if (code === 'AUDIO_FOCUS_DENIED') return 'focus';
+  if (code.startsWith('PLAYBACK_') || code === 'NO_TRACKS_LOADED') return 'playback';
+  if (code.startsWith('RECORDING_')) return 'recording';
+  if (code.startsWith('EXTRACTION_')) return 'extraction';
+  if (code.startsWith('ENGINE_') || code.startsWith('TRACK_') || code === 'STREAM_DISCONNECTED') {
+    return 'engine';
+  }
+  return 'system';
+};
+
+const normalizeEngineError = (event: unknown): AudioEngineError => {
+  const payload = (event ?? {}) as Record<string, unknown>;
+  const code = typeof payload.code === 'string' ? payload.code : 'UNKNOWN_ERROR';
+  const message =
+    typeof payload.message === 'string' ? payload.message : 'Unknown audio engine error';
+  const severity: AudioEngineError['severity'] =
+    payload.severity === 'fatal' || payload.severity === 'warning'
+      ? payload.severity
+      : 'warning';
+  const recoverable =
+    typeof payload.recoverable === 'boolean' ? payload.recoverable : severity !== 'fatal';
+  const source: AudioEngineError['source'] =
+    payload.source === 'engine' ||
+    payload.source === 'session' ||
+    payload.source === 'playback' ||
+    payload.source === 'recording' ||
+    payload.source === 'extraction' ||
+    payload.source === 'focus' ||
+    payload.source === 'system'
+      ? payload.source
+      : resolveErrorSource(code);
+  const timestampMs =
+    typeof payload.timestampMs === 'number' ? payload.timestampMs : Date.now();
+  const platform: AudioEngineError['platform'] =
+    payload.platform === 'ios' || payload.platform === 'android'
+      ? payload.platform
+      : Platform.OS === 'ios'
+        ? 'ios'
+        : 'android';
+
+  return {
+    code,
+    message,
+    details: payload.details,
+    severity,
+    recoverable,
+    source,
+    timestampMs,
+    platform,
+  };
+};
+
+const formatEngineErrorSummary = (error: AudioEngineError) => {
+  const severity = error.severity.toUpperCase();
+  const recoverable = error.recoverable ? 'recoverable' : 'blocking';
+  return `${severity} ${error.code} (${error.source}, ${recoverable})`;
+};
+
 export default function App() {
   const [status, setStatus] = useState('Idle');
   const [isPlaying, setIsPlaying] = useState(false);
@@ -161,6 +227,9 @@ export default function App() {
   const [extractionJobId, setExtractionJobId] = useState<number | null>(null);
   const [backgroundEnabled, setBackgroundEnabled] = useState<0 | 1>(1);
   const [playbackTests, setPlaybackTests] = useState<PlaybackTestEntry[]>([]);
+  const [lastEngineError, setLastEngineError] = useState<AudioEngineError | null>(null);
+  const [lastEngineState, setLastEngineState] = useState<EngineStateEvent | null>(null);
+  const [lastDebugLog, setLastDebugLog] = useState<EngineDebugLog | null>(null);
   const positionRef = useRef(0);
   const durationRef = useRef(0);
   const recordingLevelRef = useRef(0);
@@ -311,15 +380,49 @@ export default function App() {
   }, [handleRecordingResult, recordingFormat]);
 
   useEffect(() => {
-    const errorSub = AudioEngineModule.addListener('error', (event: any) => {
-      const code = typeof event?.code === 'string' ? event.code : 'UNKNOWN_ERROR';
-      const message = typeof event?.message === 'string' ? event.message : 'Unknown error';
-      setStatus(`Error (${code})`);
-      console.error('[AudioEngine] Error event:', message, event?.details ?? event);
+    const errorSub = AudioEngineModule.addListener('error', (event) => {
+      const normalized = normalizeEngineError(event);
+      setLastEngineError(normalized);
+      const stateLabel = normalized.recoverable ? 'Warning' : 'Blocked';
+      setStatus(`${stateLabel} (${normalized.code})`);
+      if (normalized.severity === 'fatal') {
+        console.error(
+          '[AudioEngine] Fatal error:',
+          normalized.message,
+          normalized.details ?? normalized
+        );
+      } else {
+        console.warn(
+          '[AudioEngine] Warning:',
+          normalized.message,
+          normalized.details ?? normalized
+        );
+      }
+    });
+
+    const engineStateSub = AudioEngineModule.addListener('engineStateChanged', (event) => {
+      setLastEngineState(event);
+      const reason = typeof event?.reason === 'string' ? event.reason : 'stateChanged';
+      if (reason === 'recordingStarted') {
+        setRecordingStatus('Recording');
+      } else if (reason === 'recordingStopped') {
+        setRecordingStatus((prev) => (prev === 'Recording' ? 'Recording stopped' : prev));
+      }
+    });
+
+    const debugLogSub = AudioEngineModule.addListener('debugLog', (event) => {
+      setLastDebugLog(event);
+      if (event.level === 'error') {
+        console.error('[AudioEngine][DebugLog]', event.message, event.context ?? {});
+      } else if (event.level === 'warn') {
+        console.warn('[AudioEngine][DebugLog]', event.message, event.context ?? {});
+      }
     });
 
     return () => {
       errorSub?.remove?.();
+      engineStateSub?.remove?.();
+      debugLogSub?.remove?.();
     };
   }, []);
 
@@ -1395,6 +1498,19 @@ export default function App() {
           <Text style={styles.subtitle}>
             Playback, mixing, and live recording built for real-time audio apps.
           </Text>
+          <Text style={styles.sectionHint}>
+            Engine state: {lastEngineState?.reason ?? 'idle'}
+          </Text>
+          {lastEngineError ? (
+            <Text style={styles.sectionHint}>
+              Last error: {formatEngineErrorSummary(lastEngineError)}
+            </Text>
+          ) : null}
+          {lastDebugLog ? (
+            <Text style={styles.sectionHint}>
+              Debug: [{lastDebugLog.level}] {lastDebugLog.message}
+            </Text>
+          ) : null}
 
           {tracks.length === 0 && (
             <TouchableOpacity style={styles.primaryButton} onPress={loadTracks}>
