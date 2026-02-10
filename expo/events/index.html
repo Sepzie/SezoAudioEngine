@@ -1202,6 +1202,8 @@
 <li><code>recordingStopped</code></li>
 <li><code>extractionProgress</code></li>
 <li><code>extractionComplete</code></li>
+<li><code>engineStateChanged</code></li>
+<li><code>debugLog</code></li>
 <li><code>error</code></li>
 </ul>
 <h2 id="error-payload">Error Payload</h2>
@@ -1209,7 +1211,12 @@
 <ul>
 <li><code>code</code> (string)</li>
 <li><code>message</code> (string)</li>
-<li><code>details</code> (object, optional)</li>
+<li><code>details</code> (unknown, optional)</li>
+<li><code>severity</code> (<code>warning</code> | <code>fatal</code>)</li>
+<li><code>recoverable</code> (boolean)</li>
+<li><code>source</code> (<code>engine</code> | <code>session</code> | <code>playback</code> | <code>recording</code> | <code>extraction</code> | <code>focus</code> | <code>system</code>)</li>
+<li><code>timestampMs</code> (number)</li>
+<li><code>platform</code> (<code>ios</code> | <code>android</code>)</li>
 </ul>
 <p>Async functions may also reject with the same <code>code</code>/<code>message</code> shape.</p>
 <h2 id="example">Example</h2>

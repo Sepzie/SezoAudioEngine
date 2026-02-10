@@ -1093,6 +1093,39 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#events" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Events
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#error-payload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error Payload
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#error-code-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error Code Policy
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1279,6 +1312,39 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#events" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Events
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#error-payload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error Payload
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#error-code-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error Code Policy
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1366,6 +1432,152 @@
 <li><code>updateNowPlayingInfo(metadata: Partial&lt;MediaMetadata&gt;): void</code></li>
 <li><code>disableBackgroundPlayback(): Promise&lt;void&gt;</code></li>
 </ul>
+<h2 id="events">Events</h2>
+<ul>
+<li><code>playbackStateChange</code></li>
+<li><code>positionUpdate</code></li>
+<li><code>playbackComplete</code></li>
+<li><code>trackLoaded</code></li>
+<li><code>trackUnloaded</code></li>
+<li><code>recordingStarted</code></li>
+<li><code>recordingStopped</code></li>
+<li><code>extractionProgress</code></li>
+<li><code>extractionComplete</code></li>
+<li><code>engineStateChanged</code></li>
+<li><code>debugLog</code></li>
+<li><code>error</code></li>
+</ul>
+<p>Listener signature:</p>
+<pre><code class="language-ts">addListener&lt;K extends keyof AudioEngineEventMap&gt;(
+  event: K,
+  callback: (payload: AudioEngineEventMap[K]) =&gt; void
+): { remove: () =&gt; void };
+</code></pre>
+<h2 id="error-payload">Error Payload</h2>
+<p><code>error</code> events use a canonical shape on both platforms:</p>
+<pre><code class="language-ts">{
+  code: string;
+  message: string;
+  details?: unknown;
+  severity: 'warning' | 'fatal';
+  recoverable: boolean;
+  source: 'engine' | 'session' | 'playback' | 'recording' | 'extraction' | 'focus' | 'system';
+  timestampMs: number;
+  platform: 'ios' | 'android';
+}
+</code></pre>
+<h2 id="error-code-policy">Error Code Policy</h2>
+<table>
+<thead>
+<tr>
+<th>code</th>
+<th>source</th>
+<th>severity</th>
+<th>recoverable</th>
+<th>expected app behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ENGINE_INIT_FAILED</code></td>
+<td><code>engine</code></td>
+<td><code>fatal</code></td>
+<td><code>false</code></td>
+<td>Show blocking error and disable engine-dependent controls.</td>
+</tr>
+<tr>
+<td><code>ENGINE_START_FAILED</code></td>
+<td><code>engine</code></td>
+<td><code>fatal</code></td>
+<td><code>false</code></td>
+<td>Show blocking playback/recording error; require user retry or restart flow.</td>
+</tr>
+<tr>
+<td><code>STREAM_DISCONNECTED</code></td>
+<td><code>engine</code></td>
+<td><code>fatal</code></td>
+<td><code>false</code></td>
+<td>Show blocking error and prompt user retry/reopen audio session.</td>
+</tr>
+<tr>
+<td><code>AUDIO_SESSION_FAILED</code></td>
+<td><code>session</code></td>
+<td><code>fatal</code></td>
+<td><code>false</code></td>
+<td>Show blocking error and stop active media actions.</td>
+</tr>
+<tr>
+<td><code>AUDIO_FOCUS_DENIED</code></td>
+<td><code>focus</code></td>
+<td><code>warning</code></td>
+<td><code>true</code></td>
+<td>Log and show lightweight non-blocking notice; allow retry.</td>
+</tr>
+<tr>
+<td><code>PLAYBACK_START_FAILED</code></td>
+<td><code>playback</code></td>
+<td><code>warning</code></td>
+<td><code>true</code></td>
+<td>Log and show inline playback failure state.</td>
+</tr>
+<tr>
+<td><code>NO_TRACKS_LOADED</code></td>
+<td><code>playback</code></td>
+<td><code>warning</code></td>
+<td><code>true</code></td>
+<td>Log only or show inline validation message.</td>
+</tr>
+<tr>
+<td><code>TRACK_LOAD_FAILED</code></td>
+<td><code>engine</code></td>
+<td><code>warning</code></td>
+<td><code>true</code></td>
+<td>Show per-track failure state; keep app usable.</td>
+</tr>
+<tr>
+<td><code>TRACK_UNLOAD_FAILED</code></td>
+<td><code>engine</code></td>
+<td><code>warning</code></td>
+<td><code>true</code></td>
+<td>Log only unless unload is required for current flow.</td>
+</tr>
+<tr>
+<td><code>RECORDING_START_FAILED</code></td>
+<td><code>recording</code></td>
+<td><code>warning</code></td>
+<td><code>true</code></td>
+<td>Show recording-blocking message with retry action.</td>
+</tr>
+<tr>
+<td><code>RECORDING_STOP_FAILED</code></td>
+<td><code>recording</code></td>
+<td><code>warning</code></td>
+<td><code>true</code></td>
+<td>Show stop/save failure; keep session recoverable.</td>
+</tr>
+<tr>
+<td><code>EXTRACTION_FAILED</code></td>
+<td><code>extraction</code></td>
+<td><code>warning</code></td>
+<td><code>true</code></td>
+<td>Show export failure state and allow retry.</td>
+</tr>
+<tr>
+<td><code>EXTRACTION_CANCELLED</code></td>
+<td><code>extraction</code></td>
+<td><code>warning</code></td>
+<td><code>true</code></td>
+<td>Log only or show non-blocking cancelled status.</td>
+</tr>
+<tr>
+<td><code>UNSUPPORTED_URI</code></td>
+<td><code>system</code></td>
+<td><code>warning</code></td>
+<td><code>true</code></td>
+<td>Show actionable validation message for URI format.</td>
+</tr>
+</tbody>
+</table>
 <p><code>MediaMetadata</code> supports:</p>
 <ul>
 <li><code>title</code>, <code>artist</code>, <code>album</code>, <code>artwork</code></li>
