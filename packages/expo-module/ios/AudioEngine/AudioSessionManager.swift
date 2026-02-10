@@ -1,102 +1,25 @@
 import AVFoundation
 
+/// Backward-compatibility shim for stale Pod project references.
+/// New architecture should use `AudioSessionCoordinator` directly.
 final class AudioSessionManager {
-  private let session = AVAudioSession.sharedInstance()
-  private var lastError: String?
+  private let coordinator = AudioSessionCoordinator()
 
   @discardableResult
   func configure(with config: AudioEngineConfig) -> Bool {
-    lastError = nil
-    do {
-      try session.setCategory(
-        .playAndRecord,
-        mode: .default,
-        options: [.defaultToSpeaker, .allowBluetoothHFP]
-      )
-    } catch {
-      lastError = "setCategory failed: \(error.localizedDescription)"
-      return false
-    }
-
-    if let sampleRate = config.sampleRate {
-      do {
-        try session.setPreferredSampleRate(sampleRate)
-      } catch {
-        lastError = "setPreferredSampleRate failed: \(error.localizedDescription)"
-      }
-    }
-
-    if let bufferSize = config.bufferSize {
-      let sampleRate = config.sampleRate ?? session.sampleRate
-      if sampleRate > 0 {
-        let duration = bufferSize / sampleRate
-        do {
-          try session.setPreferredIOBufferDuration(duration)
-        } catch {
-          lastError = "setPreferredIOBufferDuration failed: \(error.localizedDescription)"
-        }
-      }
-    }
-
-    do {
-      try session.setActive(true)
-    } catch {
-      lastError = "setActive failed: \(error.localizedDescription)"
-      return false
-    }
-    return true
+    return coordinator.configureForeground(with: config)
   }
 
   @discardableResult
   func enableBackgroundPlayback(with config: AudioEngineConfig) -> Bool {
-    lastError = nil
-    do {
-      // The current engine graph always includes an input-side recording mixer path.
-      // Keep an input-capable category in background mode so engine.start() remains valid.
-      try session.setCategory(
-        .playAndRecord,
-        mode: .default,
-        options: [.defaultToSpeaker, .allowBluetoothHFP, .allowAirPlay]
-      )
-    } catch {
-      lastError = "setCategory failed: \(error.localizedDescription)"
-      return false
-    }
-
-    if let sampleRate = config.sampleRate {
-      do {
-        try session.setPreferredSampleRate(sampleRate)
-      } catch {
-        lastError = "setPreferredSampleRate failed: \(error.localizedDescription)"
-      }
-    }
-
-    if let bufferSize = config.bufferSize {
-      let sampleRate = config.sampleRate ?? session.sampleRate
-      if sampleRate > 0 {
-        let duration = bufferSize / sampleRate
-        do {
-          try session.setPreferredIOBufferDuration(duration)
-        } catch {
-          lastError = "setPreferredIOBufferDuration failed: \(error.localizedDescription)"
-        }
-      }
-    }
-
-    do {
-      try session.setActive(true)
-    } catch {
-      lastError = "setActive failed: \(error.localizedDescription)"
-      return false
-    }
-    return true
+    return coordinator.configureBackground(with: config)
   }
 
   func lastErrorDescription() -> String? {
-    return lastError
+    return coordinator.lastErrorDescription()
   }
 
   func deactivate() {
-    try? session.setActive(false, options: .notifyOthersOnDeactivation)
+    coordinator.deactivate()
   }
 }
