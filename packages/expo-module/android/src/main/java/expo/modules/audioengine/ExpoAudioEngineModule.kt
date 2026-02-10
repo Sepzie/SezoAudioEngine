@@ -1,5 +1,7 @@
 package expo.modules.audioengine
 
+import android.media.AudioManager
+import android.os.Bundle
 import android.util.Log
 import com.sezo.audioengine.AudioEngine
 import expo.modules.kotlin.Promise
@@ -16,6 +18,38 @@ class ExpoAudioEngineModule : Module() {
   private var activeRecordingFormat: String = "aac"
   private var wasPlayingBeforePause: Boolean = false
   private var backgroundPlaybackEnabled: Boolean = false
+  private var shouldResumeAfterTransientFocusLoss: Boolean = false
+  private var volumeBeforeDuck: Float? = null
+  private var audioFocusManager: AudioFocusManager? = null
+  private val nowPlayingMetadata = mutableMapOf<String, Any?>()
+
+  private val backgroundController = object : BackgroundPlaybackBridge.Controller {
+    override fun play(): Boolean {
+      val engine = audioEngine ?: return false
+      return startPlaybackInternal(engine, fromSystem = true)
+    }
+
+    override fun pause() {
+      audioEngine?.let { pausePlaybackInternal(it, fromSystem = true) }
+    }
+
+    override fun stop() {
+      audioEngine?.let { stopPlaybackInternal(it, fromSystem = true) }
+    }
+
+    override fun seekTo(positionMs: Double) {
+      audioEngine?.seek(positionMs)
+      if (backgroundPlaybackEnabled) {
+        syncBackgroundService(isPlaying = audioEngine?.isPlaying() ?: false)
+      }
+    }
+
+    override fun isPlaying(): Boolean = audioEngine?.isPlaying() ?: false
+
+    override fun getCurrentPositionMs(): Double = audioEngine?.getCurrentPosition() ?: 0.0
+
+    override fun getDurationMs(): Double = audioEngine?.getDuration() ?: 0.0
+  }
 
   private data class PendingExtraction(
     val promise: Promise,
@@ -41,7 +75,7 @@ class ExpoAudioEngineModule : Module() {
       wasPlayingBeforePause = engine.isPlaying()
       if (wasPlayingBeforePause) {
         Log.d(TAG, "Pausing engine before background (was playing)")
-        engine.pause()
+        pausePlaybackInternal(engine, fromSystem = true, keepAudioFocus = false)
         sendEvent("engineStateChanged", mapOf(
           "reason" to "backgrounded",
           "wasPlaying" to true
@@ -74,17 +108,22 @@ class ExpoAudioEngineModule : Module() {
       // Resume playback if it was playing before backgrounding
       if (wasPlayingBeforePause && !backgroundPlaybackEnabled) {
         Log.d(TAG, "Resuming playback after returning to foreground")
-        engine.play()
+        val resumed = startPlaybackInternal(engine, fromSystem = true)
         wasPlayingBeforePause = false
-        sendEvent("engineStateChanged", mapOf(
-          "reason" to "resumed",
-          "wasPlaying" to true
-        ))
+        sendEvent(
+          "engineStateChanged",
+          mapOf(
+            "reason" to "resumed",
+            "wasPlaying" to true,
+            "success" to resumed
+          )
+        )
       }
     }
 
     OnDestroy {
       Log.d(TAG, "Module being destroyed, releasing engine")
+      teardownBackgroundPlayback(clearMetadata = true, stopService = true)
       audioEngine?.let { engine ->
         synchronized(pendingExtractions) {
           pendingExtractions.keys.forEach { engine.cancelExtraction(it) }
@@ -97,6 +136,7 @@ class ExpoAudioEngineModule : Module() {
         engine.release()
         engine.destroy()
       }
+      BackgroundPlaybackBridge.setController(null)
       audioEngine = null
       loadedTrackIds.clear()
     }
@@ -114,6 +154,9 @@ class ExpoAudioEngineModule : Module() {
         throw Exception("Failed to initialize audio engine")
       }
 
+      ensureAudioFocusManager()
+      BackgroundPlaybackBridge.setController(backgroundController)
+
       audioEngine?.setPlaybackStateListener { state, positionMs, durationMs ->
         sendEvent(
           "playbackStateChange",
@@ -123,6 +166,7 @@ class ExpoAudioEngineModule : Module() {
             "durationMs" to durationMs
           )
         )
+        handlePlaybackStateChange(state)
       }
 
       Log.d(TAG, "Audio engine initialized successfully")
@@ -130,6 +174,7 @@ class ExpoAudioEngineModule : Module() {
 
     AsyncFunction("release") {
       Log.d(TAG, "Release called")
+      teardownBackgroundPlayback(clearMetadata = false, stopService = true)
       audioEngine?.let { engine ->
         synchronized(pendingExtractions) {
           pendingExtractions.keys.forEach { engine.cancelExtraction(it) }
@@ -142,6 +187,7 @@ class ExpoAudioEngineModule : Module() {
         engine.release()
         engine.destroy()
       }
+      BackgroundPlaybackBridge.setController(null)
       audioEngine = null
       loadedTrackIds.clear()
       Log.d(TAG, "Audio engine released")
@@ -191,28 +237,21 @@ class ExpoAudioEngineModule : Module() {
 
     AsyncFunction("play") {
       val engine = audioEngine ?: throw Exception("Engine not initialized")
-
-      // Check stream health before playing, attempt recovery if needed
-      if (!engine.isStreamHealthy()) {
-        Log.w(TAG, "Stream unhealthy before play, attempting restart")
-        if (!engine.restartStream()) {
-          throw Exception("Audio stream is disconnected and could not be recovered")
-        }
+      if (!startPlaybackInternal(engine, fromSystem = false)) {
+        throw Exception("Failed to start playback")
       }
-
-      engine.play()
       Log.d(TAG, "Playback started")
     }
 
     Function("pause") {
       val engine = audioEngine ?: throw Exception("Engine not initialized")
-      engine.pause()
+      pausePlaybackInternal(engine, fromSystem = false)
       Log.d(TAG, "Playback paused")
     }
 
     Function("stop") {
       val engine = audioEngine ?: throw Exception("Engine not initialized")
-      engine.stop()
+      stopPlaybackInternal(engine, fromSystem = false)
       Log.d(TAG, "Playback stopped")
     }
 
@@ -487,9 +526,35 @@ class ExpoAudioEngineModule : Module() {
     Function("getOutputLevel") { 0.0 }
     Function("getTrackLevel") { _trackId: String -> 0.0 }
 
-    AsyncFunction("enableBackgroundPlayback") { _metadata: Map<String, Any?> -> }
-    Function("updateNowPlayingInfo") { _metadata: Map<String, Any?> -> }
-    AsyncFunction("disableBackgroundPlayback") { }
+    AsyncFunction("enableBackgroundPlayback") { metadata: Map<String, Any?> ->
+      val engine = audioEngine ?: throw Exception("Engine not initialized")
+      backgroundPlaybackEnabled = true
+      mergeNowPlayingMetadata(metadata)
+      ensureAudioFocusManager()
+      BackgroundPlaybackBridge.setController(backgroundController)
+      if (engine.isPlaying()) {
+        requestAudioFocus()
+      }
+      syncBackgroundService(engine.isPlaying())
+      sendEvent("engineStateChanged", mapOf("reason" to "backgroundPlaybackEnabled"))
+    }
+    Function("updateNowPlayingInfo") { metadata: Map<String, Any?> ->
+      mergeNowPlayingMetadata(metadata)
+      if (backgroundPlaybackEnabled) {
+        syncBackgroundService(audioEngine?.isPlaying() ?: false)
+      }
+    }
+    AsyncFunction("disableBackgroundPlayback") {
+      backgroundPlaybackEnabled = false
+      shouldResumeAfterTransientFocusLoss = false
+      volumeBeforeDuck = null
+      stopBackgroundService()
+      if (!(audioEngine?.isPlaying() ?: false)) {
+        abandonAudioFocus()
+      }
+      nowPlayingMetadata.clear()
+      sendEvent("engineStateChanged", mapOf("reason" to "backgroundPlaybackDisabled"))
+    }
 
     Events(
       "playbackStateChange",
@@ -609,6 +674,238 @@ class ExpoAudioEngineModule : Module() {
         engine.setExtractionCompletionListener(null)
       }
     }
+  }
+
+  private fun startPlaybackInternal(engine: AudioEngine, fromSystem: Boolean): Boolean {
+    if (!engine.isStreamHealthy()) {
+      Log.w(TAG, "Stream unhealthy before play, attempting restart")
+      if (!engine.restartStream()) {
+        if (!fromSystem) {
+          sendEvent(
+            "error",
+            mapOf(
+              "code" to "STREAM_DISCONNECTED",
+              "message" to "Audio stream is disconnected and could not be recovered"
+            )
+          )
+        }
+        return false
+      }
+    }
+
+    if (!requestAudioFocus()) {
+      Log.w(TAG, "Audio focus request denied")
+      if (!fromSystem) {
+        sendEvent(
+          "error",
+          mapOf(
+            "code" to "AUDIO_FOCUS_DENIED",
+            "message" to "Could not gain audio focus for playback"
+          )
+        )
+      }
+      return false
+    }
+
+    shouldResumeAfterTransientFocusLoss = false
+    restoreDuckedVolumeIfNeeded(engine)
+    engine.play()
+
+    if (backgroundPlaybackEnabled) {
+      syncBackgroundService(true)
+    }
+    return true
+  }
+
+  private fun pausePlaybackInternal(
+    engine: AudioEngine,
+    fromSystem: Boolean,
+    keepAudioFocus: Boolean = false
+  ) {
+    engine.pause()
+    shouldResumeAfterTransientFocusLoss = false
+    restoreDuckedVolumeIfNeeded(engine)
+
+    if (!keepAudioFocus) {
+      abandonAudioFocus()
+    }
+
+    if (backgroundPlaybackEnabled) {
+      syncBackgroundService(false)
+    }
+
+    if (fromSystem) {
+      sendEvent("engineStateChanged", mapOf("reason" to "pausedFromSystem"))
+    }
+  }
+
+  private fun stopPlaybackInternal(engine: AudioEngine, fromSystem: Boolean) {
+    engine.stop()
+    shouldResumeAfterTransientFocusLoss = false
+    restoreDuckedVolumeIfNeeded(engine)
+    abandonAudioFocus()
+
+    if (backgroundPlaybackEnabled) {
+      stopBackgroundService()
+    }
+
+    if (fromSystem) {
+      sendEvent("engineStateChanged", mapOf("reason" to "stoppedFromSystem"))
+    }
+  }
+
+  private fun handlePlaybackStateChange(state: String) {
+    if (!backgroundPlaybackEnabled) {
+      return
+    }
+
+    when (state) {
+      "playing" -> {
+        requestAudioFocus()
+        syncBackgroundService(true)
+      }
+      "paused" -> syncBackgroundService(false)
+      "stopped" -> stopBackgroundService()
+    }
+  }
+
+  private fun ensureAudioFocusManager(): AudioFocusManager? {
+    if (audioFocusManager != null) {
+      return audioFocusManager
+    }
+
+    val context = appContext.reactContext?.applicationContext ?: run {
+      Log.w(TAG, "React context unavailable; audio focus manager not initialized")
+      return null
+    }
+
+    audioFocusManager = AudioFocusManager(context) { focusChange ->
+      handleAudioFocusChange(focusChange)
+    }
+    return audioFocusManager
+  }
+
+  private fun requestAudioFocus(): Boolean {
+    return ensureAudioFocusManager()?.requestFocus() ?: false
+  }
+
+  private fun abandonAudioFocus() {
+    audioFocusManager?.abandonFocus()
+  }
+
+  private fun handleAudioFocusChange(focusChange: Int) {
+    val engine = audioEngine ?: return
+    when (focusChange) {
+      AudioManager.AUDIOFOCUS_GAIN -> {
+        restoreDuckedVolumeIfNeeded(engine)
+        if (shouldResumeAfterTransientFocusLoss) {
+          shouldResumeAfterTransientFocusLoss = false
+          startPlaybackInternal(engine, fromSystem = true)
+        }
+      }
+      AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+        if (engine.isPlaying()) {
+          shouldResumeAfterTransientFocusLoss = true
+          pausePlaybackInternal(engine, fromSystem = true, keepAudioFocus = true)
+          sendEvent("engineStateChanged", mapOf("reason" to "audioFocusLossTransient"))
+        }
+      }
+      AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+        if (volumeBeforeDuck == null) {
+          volumeBeforeDuck = engine.getMasterVolume()
+          val duckedVolume = (volumeBeforeDuck!! * 0.3f).coerceAtLeast(0.05f)
+          engine.setMasterVolume(duckedVolume)
+          sendEvent(
+            "engineStateChanged",
+            mapOf(
+              "reason" to "audioFocusDuck",
+              "volume" to duckedVolume.toDouble()
+            )
+          )
+        }
+      }
+      AudioManager.AUDIOFOCUS_LOSS -> {
+        shouldResumeAfterTransientFocusLoss = false
+        if (engine.isPlaying()) {
+          pausePlaybackInternal(engine, fromSystem = true)
+          sendEvent("engineStateChanged", mapOf("reason" to "audioFocusLoss"))
+        } else {
+          abandonAudioFocus()
+        }
+        restoreDuckedVolumeIfNeeded(engine)
+      }
+    }
+  }
+
+  private fun restoreDuckedVolumeIfNeeded(engine: AudioEngine) {
+    val previousVolume = volumeBeforeDuck ?: return
+    engine.setMasterVolume(previousVolume)
+    volumeBeforeDuck = null
+  }
+
+  private fun mergeNowPlayingMetadata(metadata: Map<String, Any?>) {
+    metadata.forEach { (key, value) ->
+      if (value == null) {
+        nowPlayingMetadata.remove(key)
+      } else {
+        nowPlayingMetadata[key] = value
+      }
+    }
+  }
+
+  private fun syncBackgroundService(isPlaying: Boolean) {
+    if (!backgroundPlaybackEnabled) {
+      return
+    }
+
+    val context = appContext.reactContext?.applicationContext ?: return
+    val metadataBundle = mapToBundle(nowPlayingMetadata)
+    MediaPlaybackService.sync(context, metadataBundle, isPlaying)
+  }
+
+  private fun stopBackgroundService() {
+    val context = appContext.reactContext?.applicationContext ?: return
+    MediaPlaybackService.stop(context)
+  }
+
+  private fun teardownBackgroundPlayback(clearMetadata: Boolean, stopService: Boolean) {
+    backgroundPlaybackEnabled = false
+    shouldResumeAfterTransientFocusLoss = false
+    volumeBeforeDuck = null
+    if (stopService) {
+      stopBackgroundService()
+    }
+    if (clearMetadata) {
+      nowPlayingMetadata.clear()
+    }
+    abandonAudioFocus()
+  }
+
+  private fun mapToBundle(map: Map<String, Any?>): Bundle {
+    val bundle = Bundle()
+    map.forEach { (key, value) ->
+      when (value) {
+        null -> Unit
+        is String -> bundle.putString(key, value)
+        is Boolean -> bundle.putBoolean(key, value)
+        is Int -> bundle.putInt(key, value)
+        is Long -> bundle.putLong(key, value)
+        is Float -> bundle.putFloat(key, value)
+        is Double -> bundle.putDouble(key, value)
+        is Number -> bundle.putDouble(key, value.toDouble())
+        is Map<*, *> -> {
+          val child = mutableMapOf<String, Any?>()
+          value.forEach { (nestedKey, nestedValue) ->
+            if (nestedKey is String) {
+              child[nestedKey] = nestedValue
+            }
+          }
+          bundle.putBundle(key, mapToBundle(child))
+        }
+        else -> bundle.putString(key, value.toString())
+      }
+    }
+    return bundle
   }
 
   private fun getCacheDir(): String {

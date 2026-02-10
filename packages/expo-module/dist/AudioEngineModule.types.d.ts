@@ -53,6 +53,16 @@ export interface MediaMetadata {
     artist?: string;
     album?: string;
     artwork?: string;
+    logo?: string;
+    playbackCard?: PlaybackCardOptions;
+}
+export interface PlaybackCardOptions {
+    smallIcon?: string;
+    accentColor?: string | number;
+    showPrevious?: boolean;
+    showNext?: boolean;
+    showStop?: boolean;
+    seekStepMs?: number;
 }
 export type AudioEngineEvent = 'playbackStateChange' | 'positionUpdate' | 'playbackComplete' | 'trackLoaded' | 'trackUnloaded' | 'recordingStarted' | 'recordingStopped' | 'extractionProgress' | 'extractionComplete' | 'error';
 export interface AudioEngineError {

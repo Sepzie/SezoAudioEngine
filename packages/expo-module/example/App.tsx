@@ -178,7 +178,7 @@ export default function App() {
   const supportsTrackSpeed = typeof engineAny.setTrackSpeed === 'function';
   const supportsRecording = typeof engineAny.startRecording === 'function';
   const recordingUnavailable = !supportsRecording;
-  const canUseBackground = Platform.OS === 'ios';
+  const canUseBackground = Platform.OS === 'ios' || Platform.OS === 'android';
   const introAnim = useState(() => new Animated.Value(0))[0];
   const controlsAnim = useState(() => new Animated.Value(0))[0];
   const tracksAnim = useState(() => new Animated.Value(0))[0];
@@ -459,7 +459,22 @@ export default function App() {
     const title = tracks[0]?.name ?? 'Sezo Audio Engine';
     const artist = 'Sezo Audio Engine';
     try {
-      AudioEngineModule.updateNowPlayingInfo({ title, artist });
+      AudioEngineModule.updateNowPlayingInfo({
+        title,
+        artist,
+        logo: 'ic_launcher',
+        playbackCard:
+          Platform.OS === 'android'
+            ? {
+                smallIcon: 'ic_launcher',
+                accentColor: '#0E9F6E',
+                showPrevious: true,
+                showNext: true,
+                showStop: true,
+                seekStepMs: 10000,
+              }
+            : undefined,
+      });
     } catch (error) {
       console.warn('[Background] Now playing update failed', error);
     }
@@ -749,7 +764,22 @@ export default function App() {
         if (value === 1) {
           const title = tracks[0]?.name ?? 'Sezo Audio Engine';
           const artist = 'Sezo Audio Engine';
-          AudioEngineModule.enableBackgroundPlayback({ title, artist });
+          AudioEngineModule.enableBackgroundPlayback({
+            title,
+            artist,
+            logo: 'ic_launcher',
+            playbackCard:
+              Platform.OS === 'android'
+                ? {
+                    smallIcon: 'ic_launcher',
+                    accentColor: '#0E9F6E',
+                    showPrevious: true,
+                    showNext: true,
+                    showStop: true,
+                    seekStepMs: 10000,
+                  }
+                : undefined,
+          });
         } else {
           AudioEngineModule.disableBackgroundPlayback();
         }

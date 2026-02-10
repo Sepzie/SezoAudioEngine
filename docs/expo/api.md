@@ -61,8 +61,20 @@ The API is defined in `packages/expo-module/src/AudioEngineModule.types.ts`.
 - `getOutputLevel(): number`
 - `getTrackLevel(trackId: string): number`
 
-## Background Playback (Planned)
+## Background Playback
 
 - `enableBackgroundPlayback(metadata: MediaMetadata): Promise<void>`
 - `updateNowPlayingInfo(metadata: Partial<MediaMetadata>): void`
 - `disableBackgroundPlayback(): Promise<void>`
+
+`MediaMetadata` supports:
+
+- `title`, `artist`, `album`, `artwork`
+- `logo` (app/brand logo resource name or local file path)
+- `playbackCard` (Android notification card options):
+  - `smallIcon`
+  - `accentColor`
+  - `showPrevious`
+  - `showNext`
+  - `showStop`
+  - `seekStepMs`

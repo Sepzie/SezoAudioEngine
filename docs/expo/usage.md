@@ -26,3 +26,21 @@ const result = await AudioEngineModule.stopRecording();
 ```ts
 const result = await AudioEngineModule.extractTrack('backing', { format: 'wav' });
 ```
+
+## Background Playback
+
+```ts
+await AudioEngineModule.enableBackgroundPlayback({
+  title: 'My Song',
+  artist: 'My Artist',
+  logo: 'ic_launcher',
+  playbackCard: {
+    smallIcon: 'ic_launcher',
+    accentColor: '#0E9F6E',
+    showPrevious: true,
+    showNext: true,
+    showStop: true,
+    seekStepMs: 10000,
+  },
+});
+```
