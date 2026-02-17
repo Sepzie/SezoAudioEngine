@@ -23,7 +23,7 @@ final class AudioSessionCoordinator {
     return configure(
       category: .playAndRecord,
       mode: .default,
-      options: [.defaultToSpeaker, .allowBluetoothHFP],
+      options: [.defaultToSpeaker, .allowBluetooth],
       config: config
     )
   }
@@ -33,7 +33,7 @@ final class AudioSessionCoordinator {
     return configure(
       category: .playAndRecord,
       mode: .default,
-      options: [.defaultToSpeaker, .allowBluetoothHFP, .allowAirPlay],
+      options: [.defaultToSpeaker, .allowBluetooth, .allowAirPlay],
       config: config
     )
   }
