@@ -23,7 +23,7 @@ final class AudioSessionCoordinator {
     return configure(
       category: .playAndRecord,
       mode: .default,
-      options: [.defaultToSpeaker, .allowBluetoothHFP],
+      options: [.defaultToSpeaker, .bluetoothHFPCompatible],
       config: config
     )
   }
@@ -33,7 +33,7 @@ final class AudioSessionCoordinator {
     return configure(
       category: .playAndRecord,
       mode: .default,
-      options: [.defaultToSpeaker, .allowBluetoothHFP, .allowAirPlay],
+      options: [.defaultToSpeaker, .bluetoothHFPCompatible, .allowAirPlay],
       config: config
     )
   }
@@ -189,4 +189,9 @@ final class AudioSessionCoordinator {
     }
     onRouteChanged?(reason)
   }
+}
+
+private extension AVAudioSession.CategoryOptions {
+  // Bit 0x4 maps to Bluetooth HFP behavior on newer SDKs and legacy Bluetooth input on older ones.
+  static let bluetoothHFPCompatible = AVAudioSession.CategoryOptions(rawValue: 1 << 2)
 }
