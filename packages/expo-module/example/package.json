@@ -10,13 +10,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "expo": "~52.0.0",
+    "expo": "~52.0.49",
     "expo-asset": "~10.0.10",
-    "expo-file-system": "~18.0.12",
-    "expo-intent-launcher": "~12.0.2",
-    "react": "18.2.0",
-    "react-native": "0.76.0",
-    "@react-native-community/slider": "4.5.2",
+    "expo-file-system": "~18.1.11",
+    "expo-intent-launcher": "~12.1.5",
+    "react": "18.3.1",
+    "react-native": "0.76.9",
+    "@react-native-community/slider": "4.5.7",
     "sezo-audio-engine": "*"
   },
   "devDependencies": {
