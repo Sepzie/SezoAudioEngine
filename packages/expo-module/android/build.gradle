@@ -5,12 +5,12 @@ plugins {
 
 android {
   namespace "expo.modules.audioengine"
-  compileSdk 34
-  ndkVersion "26.1.10909125"
+  compileSdk 35
+  ndkVersion "27.1.12297006"
 
   defaultConfig {
     minSdk 24
-    targetSdk 34
+    targetSdk 35
   }
 
   // Note: No native build needed here - we use the android-engine library
@@ -46,7 +46,7 @@ dependencies {
   if (androidEngineProject != null) {
     implementation androidEngineProject
   } else {
-    def sezoAudioEngineVersion = project.findProperty("sezoAudioEngineVersion") ?: "android-engine-v0.1.8"
+    def sezoAudioEngineVersion = project.findProperty("sezoAudioEngineVersion") ?: "android-engine-v0.1.9"
     implementation "com.github.Sepzie:SezoAudioEngine:${sezoAudioEngineVersion}"
   }
 }
