@@ -1,0 +1,229 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # Supersede stale PR runs; let every push to main finish.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CI: "true"
+  EXPO_NO_TELEMETRY: "1"
+  ANDROID_NDK_VERSION: "27.1.12297006"
+  ANDROID_CMAKE_VERSION: "3.22.1"
+
+jobs:
+  # Decides which of the heavy native jobs a PR can affect. Jobs skipped here
+  # report as "skipped", which satisfies required status checks.
+  changes:
+    name: detect changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      engine: ${{ steps.filter.outputs.engine }}
+      ios: ${{ steps.filter.outputs.ios }}
+      android: ${{ steps.filter.outputs.android }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: filter
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "Not a pull request: running every job."
+            { echo "engine=true"; echo "ios=true"; echo "android=true"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed="$(git diff --name-only "$BASE_SHA"...HEAD)"
+          echo "Changed files:"; echo "$changed"
+          shared='^(package\.json|yarn\.lock|\.github/workflows/ci\.yml)$'
+          match() { echo "$changed" | grep -Eq "$1|$shared" && echo true || echo false; }
+          {
+            echo "engine=$(match '^(packages/android-engine/|\.gitmodules$)')"
+            echo "ios=$(match '^packages/expo-module/(ios/|src/|example/|package\.json$|expo-module\.config\.json$)')"
+            echo "android=$(match '^packages/expo-module/(android/|src/|example/|package\.json$|expo-module\.config\.json$)')"
+          } | tee -a "$GITHUB_OUTPUT"
+
+  expo-module:
+    name: expo-module (build, test, typecheck, pack)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+      - name: Build (tsc)
+        run: yarn build:expo-module
+      - name: Check committed dist/ matches src/
+        run: |
+          if [ -n "$(git status --porcelain -- packages/expo-module/dist)" ]; then
+            git status --short -- packages/expo-module/dist
+            git diff -- packages/expo-module/dist
+            echo "::error::packages/expo-module/dist is out of date. Run 'yarn build:expo-module' and commit the result."
+            exit 1
+          fi
+      # No linter is configured for this repo yet; add a lint step here when one is.
+      - name: Jest
+        run: yarn test:expo-module --coverage
+      - name: Typecheck example app
+        run: yarn typecheck:example
+      - name: Check CHANGELOG has an entry for the package version
+        run: |
+          version="$(node -p "require('./packages/expo-module/package.json').version")"
+          node scripts/changelog-section.mjs "$version" > /dev/null
+      - name: npm pack --dry-run (what ships)
+        working-directory: packages/expo-module
+        run: npm pack --dry-run
+
+  android-engine:
+    name: android-engine (assembleRelease)
+    needs: changes
+    if: needs.changes.outputs.engine == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+          cache-dependency-path: |
+            packages/android-engine/android/**/*.gradle*
+            packages/android-engine/android/gradle/wrapper/gradle-wrapper.properties
+      - name: Install NDK and CMake
+        run: |
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$sdkmanager" --licenses > /dev/null || true
+          "$sdkmanager" --install "ndk;${ANDROID_NDK_VERSION}" "cmake;${ANDROID_CMAKE_VERSION}" > /dev/null
+          ls "$ANDROID_HOME/ndk"
+      - name: ./gradlew :engine:assembleRelease
+        working-directory: packages/android-engine/android
+        run: ./gradlew :engine:assembleRelease --stacktrace
+      - uses: actions/upload-artifact@v7
+        with:
+          name: android-engine-release-aar
+          path: packages/android-engine/android/engine/build/outputs/aar/*.aar
+          if-no-files-found: error
+          retention-days: 7
+
+  cpp-tests:
+    name: cpp-tests (host)
+    needs: changes
+    if: needs.changes.outputs.engine == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: "4"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+      - run: cmake --version
+      - name: yarn test:cpp:host
+        run: yarn test:cpp:host
+
+  example-ios:
+    name: example-ios (simulator build)
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+      - run: yarn build:expo-module
+      - uses: actions/cache@v6
+        with:
+          path: ~/Library/Caches/CocoaPods
+          key: cocoapods-${{ runner.os }}-${{ hashFiles('yarn.lock', 'packages/expo-module/ios/ExpoAudioEngine.podspec') }}
+          restore-keys: cocoapods-${{ runner.os }}-
+      - name: expo prebuild (ios)
+        working-directory: packages/expo-module/example
+        run: npx expo prebuild --platform ios --no-install
+      - name: pod install
+        working-directory: packages/expo-module/example/ios
+        run: pod install
+      - name: xcodebuild (iOS Simulator, Debug)
+        working-directory: packages/expo-module/example/ios
+        run: |
+          xcodebuild -version
+          workspace="$(ls -d *.xcworkspace | head -n1)"
+          scheme="${workspace%.xcworkspace}"
+          set -o pipefail
+          xcodebuild \
+            -workspace "$workspace" \
+            -scheme "$scheme" \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            build -quiet
+
+  example-android:
+    name: example-android (debug build)
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+          cache: yarn
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+      - run: yarn install --frozen-lockfile
+      - run: yarn build:expo-module
+      - name: expo prebuild (android)
+        working-directory: packages/expo-module/example
+        run: npx expo prebuild --platform android --no-install
+      - name: Add JitPack repository (engine AAR, as documented in docs/expo/install.md)
+        working-directory: packages/expo-module/example/android
+        run: |
+          cat >> build.gradle <<'GRADLE'
+
+          allprojects {
+            repositories {
+              maven { url "https://www.jitpack.io" }
+            }
+          }
+          GRADLE
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-example-${{ runner.os }}-${{ hashFiles('yarn.lock', 'packages/expo-module/android/build.gradle') }}
+          restore-keys: gradle-example-${{ runner.os }}-
+      - name: ./gradlew :app:assembleDebug
+        working-directory: packages/expo-module/example/android
+        run: ./gradlew :app:assembleDebug --stacktrace -PreactNativeArchitectures=x86_64
