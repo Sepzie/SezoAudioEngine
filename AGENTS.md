@@ -1,6 +1,6 @@
 # Sezo Audio Engine — Agent Guide
 
-Canonical instructions for AI coding agents working in this repo. `CLAUDE.md` points here.
+Canonical instructions for AI coding agents working in this repo. `CLAUDE.md` points here. This repo is self-contained: everything an agent needs to work on the engine is here or in this repo's GitHub issues.
 
 ## What this is
 Open-source (MIT) audio engine for Expo/React Native and Android: synchronized multi-track playback, real-time pitch and speed control, simultaneous recording, offline extraction. Published as `sezo-audio-engine` on npm (Expo module) and as `android-engine` on JitPack. Docs: https://sepzie.github.io/SezoAudioEngine/ (built from `docs/` by `.github/workflows/docs.yml`).
@@ -31,6 +31,7 @@ Requirements: Node LTS, Yarn 1, Xcode 26+, Android SDK + NDK 27.1, cmake for C++
 - Supported Expo SDK range is the `peerDependencies.expo` field; changing it is a release decision.
 - Native changes need a build on the affected platform before review; say in the PR what was built and run.
 - Don't rewrite `dist/`; it is generated.
+- Heavy builds: this engine is developed on a Mac mini that also hosts SingWithMe's self-hosted iOS CI runner. Run one Xcode/Gradle build at a time locally and prefer GitHub-hosted runners for CI.
 
 ## Roadmap
 GitHub milestones: **0.1.0 – Solid foundation** (CI, real tests, release workflow, contributor docs) → **Expo SDK 55–58 support** → **Robustness** (Android lifecycle, recording stop latency, error model) → **Adoption**. Pick issues labelled `agent-ready`.
