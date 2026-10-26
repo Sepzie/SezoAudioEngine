@@ -1,6 +1,6 @@
 {
   "name": "sezo-audio-engine",
-  "version": "0.0.18",
+  "version": "0.0.19",
   "description": "Cross-platform Expo module for the Sezo Audio Engine with iOS implementation and background playback.",
   "license": "MIT",
   "author": "Sezo",
@@ -54,7 +54,7 @@
     "prepublishOnly": "npm run build"
   },
   "peerDependencies": {
-    "expo": ">=51.0.0 <54.0.0",
+    "expo": ">=51.0.0 <59.0.0",
     "react-native": ">=0.74.0"
   },
   "devDependencies": {
