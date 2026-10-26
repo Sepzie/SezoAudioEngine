@@ -18,6 +18,8 @@
     "run:example:android": "yarn workspace sezo-audio-engine-example android",
     "run:example:ios": "yarn workspace sezo-audio-engine-example ios",
     "test": "yarn test:cpp:host",
+    "test:expo-module": "yarn workspace sezo-audio-engine test",
+    "typecheck:example": "yarn workspace sezo-audio-engine-example typecheck",
     "test:cpp:host": "cmake -S packages/android-engine/android/engine/src/test/cpp -B build/sezo-tests-host && cmake --build build/sezo-tests-host && ctest --test-dir build/sezo-tests-host --output-on-failure",
     "test:cpp:host:clean": "rm -rf build/sezo-tests-host",
     "test:cpp:android": "bash packages/android-engine/android/engine/src/test/cpp/scripts/run_android_tests.sh",

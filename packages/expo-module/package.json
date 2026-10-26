@@ -50,14 +50,18 @@
     "build": "tsc -p tsconfig.json",
     "clean": "rm -rf dist",
     "prepack": "rm -rf ios/build",
-    "test": "echo \"TODO: add tests\"",
-    "prepublishOnly": "npm run build"
+    "test": "jest",
+    "prepublishOnly": "npm run build",
+    "test:coverage": "jest --coverage"
   },
   "peerDependencies": {
     "expo": ">=51.0.0 <59.0.0",
     "react-native": ">=0.74.0"
   },
   "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.4.0",
     "typescript": "^5.4.5"
   }
 }
