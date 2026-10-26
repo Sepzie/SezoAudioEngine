@@ -56,7 +56,9 @@ xcodebuild -workspace ios/SezoAudioEngineExample.xcworkspace -scheme SezoAudioEn
   CODE_SIGNING_ALLOWED=NO build
 ```
 
-**`example-android`**
+**`example-android`** (currently non-blocking: `continue-on-error` until the example moves off
+Expo SDK 52 in #7; its pinned `react-native@0.76.0` uses Kotlin 1.9.24 while SDK 52's
+`expo-modules-core` needs 1.9.25, so `:expo-modules-core:compileDebugKotlin` fails)
 
 ```bash
 yarn install --frozen-lockfile && yarn build:expo-module

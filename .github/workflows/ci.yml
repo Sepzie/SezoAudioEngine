@@ -191,6 +191,10 @@ jobs:
     if: needs.changes.outputs.android == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    # Non-blocking until the example moves off Expo SDK 52 (#7): the example pins
+    # react-native 0.76.0 (Kotlin 1.9.24) while SDK 52's expo-modules-core needs the
+    # Compose compiler for Kotlin 1.9.25, so :expo-modules-core fails to compile.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
