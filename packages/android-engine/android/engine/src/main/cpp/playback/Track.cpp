@@ -1,5 +1,7 @@
 #include "Track.h"
-#include "audio/M4ADecoder.h"
+#if defined(__ANDROID__)
+#include "audio/M4ADecoder.h"  // NDK MediaCodec; not available in host test builds
+#endif
 #include "audio/MP3Decoder.h"
 #include "audio/WAVDecoder.h"
 
@@ -37,7 +39,11 @@ bool Track::Load() {
     decoder_ = std::make_unique<audio::MP3Decoder>();
   } else if (file_path_.find(".m4a") != std::string::npos ||
              file_path_.find(".mp4") != std::string::npos) {
+#if defined(__ANDROID__)
     decoder_ = std::make_unique<audio::M4ADecoder>();
+#else
+    return false;  // M4A decoding requires the Android NDK media APIs
+#endif
   } else if (file_path_.find(".wav") != std::string::npos) {
     decoder_ = std::make_unique<audio::WAVDecoder>();
   } else {

@@ -1,0 +1,140 @@
+name: release
+
+# Publishes sezo-audio-engine to npm and creates a GitHub release when a tag
+# `expo-module-vX.Y.Z` is pushed. See CONTRIBUTING.md ("Releasing").
+#
+# On pull requests that touch the release tooling (and on manual dispatch) it
+# runs as a dry run: every check, build and pack step runs, but nothing is
+# published and no release is created.
+on:
+  push:
+    tags:
+      - "expo-module-v*"
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - scripts/changelog-section.mjs
+  workflow_dispatch:
+
+permissions:
+  contents: write # create the GitHub release
+  id-token: write # npm provenance attestation
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: publish sezo-audio-engine
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PACKAGE_DIR: packages/expo-module
+      DRY_RUN: ${{ github.event_name != 'push' }}
+    steps:
+      - name: Require the NPM_TOKEN secret
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NPM_TOKEN" ]; then
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "::warning title=NPM_TOKEN missing::NPM_TOKEN is not set; a real tag release would fail here. See CONTRIBUTING.md."
+              exit 0
+            fi
+            echo "::error title=NPM_TOKEN missing::The NPM_TOKEN repository secret is not set. Add an npm automation/granular access token with publish rights for sezo-audio-engine under Settings > Secrets and variables > Actions, then re-run this workflow. See CONTRIBUTING.md."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+          cache: yarn
+
+      - name: Verify tag matches package.json version
+        id: version
+        run: |
+          pkg_version="$(node -p "require('./${PACKAGE_DIR}/package.json').version")"
+          if [ "$DRY_RUN" = "true" ]; then
+            tag="expo-module-v${pkg_version}"
+          else
+            tag="$GITHUB_REF_NAME"
+          fi
+          tag_version="${tag#expo-module-v}"
+          echo "tag: ${tag} -> ${tag_version}; package.json: ${pkg_version}; dry run: ${DRY_RUN}"
+          if [ "$tag_version" != "$pkg_version" ]; then
+            echo "::error title=Version mismatch::Tag ${tag} does not match ${PACKAGE_DIR}/package.json version ${pkg_version}. Bump package.json or re-tag as expo-module-v${pkg_version}."
+            exit 1
+          fi
+          if [ "$(npm view "sezo-audio-engine@${pkg_version}" version 2>/dev/null)" = "$pkg_version" ]; then
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "::warning::sezo-audio-engine@${pkg_version} is already on npm; a real release of this version would fail."
+            else
+              echo "::error title=Already published::sezo-audio-engine@${pkg_version} is already on npm. Bump the version before tagging."
+              exit 1
+            fi
+          fi
+          echo "version=${pkg_version}" >> "$GITHUB_OUTPUT"
+
+      - name: Extract release notes from CHANGELOG.md
+        run: node scripts/changelog-section.mjs "${{ steps.version.outputs.version }}" > "$RUNNER_TEMP/release-notes.md"
+
+      - run: yarn install --frozen-lockfile
+
+      - name: Build
+        run: yarn build:expo-module
+
+      - name: Check committed dist/ matches src/
+        run: |
+          if [ -n "$(git status --porcelain -- "${PACKAGE_DIR}/dist")" ]; then
+            git status --short -- "${PACKAGE_DIR}/dist"
+            echo "::error::${PACKAGE_DIR}/dist is out of date with src/. Run 'yarn build:expo-module', commit, and re-tag."
+            exit 1
+          fi
+
+      - name: Test
+        run: yarn test:expo-module
+
+      - name: npm pack
+        id: pack
+        working-directory: ${{ env.PACKAGE_DIR }}
+        run: |
+          out="$RUNNER_TEMP/pack"
+          mkdir -p "$out"
+          npm pack --pack-destination "$out"
+          tarball="$(ls "$out"/sezo-audio-engine-*.tgz)"
+          tar -tzf "$tarball"
+          for f in package/package.json package/dist/index.js package/dist/index.d.ts package/ios/ExpoAudioEngine.podspec package/android/build.gradle package/expo-module.config.json; do
+            tar -tzf "$tarball" | grep -qx "$f" || { echo "::error::$f missing from the packed tarball"; exit 1; }
+          done
+          echo "tarball=${tarball}" >> "$GITHUB_OUTPUT"
+
+      - name: Release notes preview
+        run: cat "$RUNNER_TEMP/release-notes.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: npm publish
+        if: env.DRY_RUN != 'true'
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          # Token is written only for this step, not exposed to install/build scripts.
+          npmrc="$RUNNER_TEMP/publish.npmrc"
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > "$npmrc"
+          NPM_CONFIG_USERCONFIG="$npmrc" npm publish "${{ steps.pack.outputs.tarball }}" --provenance --access public
+          rm -f "$npmrc"
+
+      - name: npm publish --dry-run
+        if: env.DRY_RUN == 'true'
+        run: npm publish "${{ steps.pack.outputs.tarball }}" --access public --dry-run
+
+      - name: Create GitHub release
+        if: env.DRY_RUN != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "${{ steps.pack.outputs.tarball }}" \
+            --title "sezo-audio-engine ${{ steps.version.outputs.version }}" \
+            --notes-file "$RUNNER_TEMP/release-notes.md" \
+            --verify-tag

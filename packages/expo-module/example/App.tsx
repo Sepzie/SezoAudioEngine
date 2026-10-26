@@ -346,40 +346,6 @@ export default function App() {
   }, [extractionFormat]);
 
   useEffect(() => {
-    const recordingStartedSub = AudioEngineModule.addListener('recordingStarted', () => {
-      setRecordingStatus('Recording');
-      setIsRecording(true);
-      recordingStartRef.current = Date.now();
-    });
-
-    const recordingStoppedSub = AudioEngineModule.addListener('recordingStopped', (event: any) => {
-      if (event?.uri) {
-        handleRecordingResult({
-          uri: event.uri,
-          duration: event?.duration ?? 0,
-          startTimeMs: event?.startTimeMs ?? 0,
-          startTimeSamples: event?.startTimeSamples,
-          sampleRate: event?.sampleRate ?? 44100,
-          channels: event?.channels ?? 1,
-          format: event?.format ?? recordingFormat,
-          fileSize: event?.fileSize ?? 0,
-          bitrate: event?.bitrate,
-        });
-      }
-      recordingStartRef.current = null;
-      setRecordingElapsed(0);
-      setRecordingLevel(0);
-      setIsRecording(false);
-      setRecordingStatus(event?.uri ? 'Recording saved' : 'Recording stopped');
-    });
-
-    return () => {
-      recordingStartedSub?.remove?.();
-      recordingStoppedSub?.remove?.();
-    };
-  }, [handleRecordingResult, recordingFormat]);
-
-  useEffect(() => {
     const errorSub = AudioEngineModule.addListener('error', (event) => {
       const normalized = normalizeEngineError(event);
       setLastEngineError(normalized);
@@ -560,35 +526,6 @@ export default function App() {
       }),
     ]).start();
   }, [introAnim, controlsAnim, tracksAnim]);
-
-  // Position update loop
-  useEffect(() => {
-    if (!isPlaying) return;
-
-    const interval = setInterval(() => {
-      try {
-        const pos = AudioEngineModule.getCurrentPosition();
-        const dur = AudioEngineModule.getDuration();
-        if (Math.abs(pos - positionRef.current) >= 20) {
-          positionRef.current = pos;
-          setPosition(pos);
-        }
-        if (Math.abs(dur - durationRef.current) >= 20) {
-          durationRef.current = dur;
-          setDuration(dur);
-        }
-
-        // Auto-stop at end
-        if (pos >= dur && dur > 0) {
-          handleStop();
-        }
-      } catch (error) {
-        console.error('Position update error:', error);
-      }
-    }, POSITION_POLL_MS);
-
-    return () => clearInterval(interval);
-  }, [handleStop, isPlaying]);
 
   useEffect(() => {
     if (!canUseBackground || backgroundEnabled === 0) {
@@ -791,6 +728,40 @@ export default function App() {
     },
     [appendRecordingTrack, isPlaying]
   );
+
+  useEffect(() => {
+    const recordingStartedSub = AudioEngineModule.addListener('recordingStarted', () => {
+      setRecordingStatus('Recording');
+      setIsRecording(true);
+      recordingStartRef.current = Date.now();
+    });
+
+    const recordingStoppedSub = AudioEngineModule.addListener('recordingStopped', (event: any) => {
+      if (event?.uri) {
+        handleRecordingResult({
+          uri: event.uri,
+          duration: event?.duration ?? 0,
+          startTimeMs: event?.startTimeMs ?? 0,
+          startTimeSamples: event?.startTimeSamples,
+          sampleRate: event?.sampleRate ?? 44100,
+          channels: event?.channels ?? 1,
+          format: event?.format ?? recordingFormat,
+          fileSize: event?.fileSize ?? 0,
+          bitrate: event?.bitrate,
+        });
+      }
+      recordingStartRef.current = null;
+      setRecordingElapsed(0);
+      setRecordingLevel(0);
+      setIsRecording(false);
+      setRecordingStatus(event?.uri ? 'Recording saved' : 'Recording stopped');
+    });
+
+    return () => {
+      recordingStartedSub?.remove?.();
+      recordingStoppedSub?.remove?.();
+    };
+  }, [handleRecordingResult, recordingFormat]);
 
   useEffect(() => {
     if (isPlaying) {
@@ -1021,6 +992,35 @@ export default function App() {
       console.error('Stop error:', error);
     }
   }, [queuePlaybackExpectation]);
+
+  // Position update loop
+  useEffect(() => {
+    if (!isPlaying) return;
+
+    const interval = setInterval(() => {
+      try {
+        const pos = AudioEngineModule.getCurrentPosition();
+        const dur = AudioEngineModule.getDuration();
+        if (Math.abs(pos - positionRef.current) >= 20) {
+          positionRef.current = pos;
+          setPosition(pos);
+        }
+        if (Math.abs(dur - durationRef.current) >= 20) {
+          durationRef.current = dur;
+          setDuration(dur);
+        }
+
+        // Auto-stop at end
+        if (pos >= dur && dur > 0) {
+          handleStop();
+        }
+      } catch (error) {
+        console.error('Position update error:', error);
+      }
+    }, POSITION_POLL_MS);
+
+    return () => clearInterval(interval);
+  }, [handleStop, isPlaying]);
 
   const handleReset = useCallback(() => {
     try {
@@ -1727,7 +1727,7 @@ export default function App() {
             >
               <TogglePillGroup
                 value={recordingFormat}
-                onChange={setRecordingFormat}
+                onChange={(value) => setRecordingFormat(value)}
                 disabled={isRecording || recordingUnavailable}
                 options={AUDIO_FORMAT_OPTIONS}
               />
@@ -1746,7 +1746,7 @@ export default function App() {
 
               <TogglePillGroup
                 value={recordingQuality}
-                onChange={setRecordingQuality}
+                onChange={(value) => setRecordingQuality(value)}
                 disabled={isRecording || recordingUnavailable}
                 options={RECORDING_QUALITY_OPTIONS}
               />
@@ -1863,7 +1863,7 @@ export default function App() {
             >
               <TogglePillGroup
                 value={extractionFormat}
-                onChange={setExtractionFormat}
+                onChange={(value) => setExtractionFormat(value)}
                 disabled={isExtracting}
                 options={AUDIO_FORMAT_OPTIONS}
               />
