@@ -1,16 +1,26 @@
+import groovy.json.JsonSlurper
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
   id "com.android.library"
-  id "org.jetbrains.kotlin.android"
+  // Applies kotlin-android (or relies on AGP 9's built-in Kotlin), kotlin-stdlib matching the app's
+  // kotlinVersion, compileOnly expo-modules-core, and the app's compileSdk/minSdk.
+  id "expo-module-gradle-plugin"
 }
+
+// The version lives only in package.json; the Expo plugin needs it for its publication metadata.
+def packageVersion = new JsonSlurper().parse(file("../package.json")).version
+
+group = "expo.modules.audioengine"
+version = packageVersion
 
 android {
   namespace "expo.modules.audioengine"
-  compileSdk 35
   ndkVersion "27.1.12297006"
 
   defaultConfig {
-    minSdk 24
-    targetSdk 35
+    versionCode 1
+    versionName packageVersion
   }
 
   // Note: No native build needed here - we use the android-engine library
@@ -29,15 +39,15 @@ android {
     sourceCompatibility JavaVersion.VERSION_17
     targetCompatibility JavaVersion.VERSION_17
   }
+}
 
-  kotlinOptions {
-    jvmTarget = "17"
+kotlin {
+  compilerOptions {
+    jvmTarget = JvmTarget.JVM_17
   }
 }
 
 dependencies {
-  implementation "org.jetbrains.kotlin:kotlin-stdlib:1.9.0"
-  implementation project(":expo-modules-core")
   implementation "androidx.core:core-ktx:1.13.1"
   implementation "androidx.media:media:1.7.0"
 
