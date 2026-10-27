@@ -18,9 +18,13 @@ compatible with SDK 55–57. Version 0.0.20, not published, not tagged.
 - **TypeScript 6**: devDependency `~6.0.3`; TS 6 requires `rootDir`
   with `outDir` (TS5011) and rejects `moduleResolution: node10` (TS5107), fixed in `tsconfig.json` / `test/tsconfig.json`.
   `dist/` is byte-identical.
-- **Example (SDK 52).** `expo-build-properties` `ios.deploymentTarget: "16.4"`, otherwise `pod install` in the
-  blocking `example-ios` CI job would reject the 16.4 pod. Pinned `typescript ~5.3.3`, because `expo/tsconfig.base`
-  from SDK 52 uses `node10` resolution and does not type-check under TS 6.
+- **Example → SDK 56** (Refs #7, which asked for SDK 54 + New Architecture; SDK 56 has New Architecture always on).
+  `expo install expo@^56` then `expo install --fix`, after removing `"sdkVersion": "52.0.0"` from `app.json` (with it,
+  `--fix` keeps resolving SDK 52 versions). Result: expo ~56.0.24, RN 0.85.3, React 19.2.3, slider 5.2.0, expo-asset /
+  expo-file-system / expo-intent-launcher / expo-build-properties 56.x, `@types/react` ~19.2.14, typescript ~6.0.3.
+  Code fixes: `StyleSheet.absoluteFillObject` → `absoluteFill` (gone in RN 0.85), `expo-file-system` → `expo-file-system/legacy`
+  (`getInfoAsync`/`getContentUriAsync` on the main entry are throwing stubs since SDK 54). `expo-build-properties` keeps
+  `ios.deploymentTarget: "16.4"`. CI's `example-android` job is blocking again (its `continue-on-error` was only until this move).
 
 ## Verification
 Harness: scratch `create-expo-app` projects (blank-typescript template), module installed from `npm pack`,
@@ -32,6 +36,9 @@ Harness: scratch `create-expo-app` projects (blank-typescript template), module 
 | SDK 58 built-in Kotlin | same | | | | | `builtInKotlin=true`, `newDsl=false` | ✅ (old build.gradle: ❌ "Cannot add extension with name 'kotlin'") |
 | SDK 58 new DSL | same | | | | | `builtInKotlin=true`, `newDsl=true` | n/a: Expo's own `expo-constants` fails (`libraryVariants`) before our module |
 
+Example (SDK 56: AGP 8.12.0 / Kotlin 2.1.20 / Gradle 9.3.1): `expo prebuild -p android` + `./gradlew :app:assembleDebug
+-PreactNativeArchitectures=x86_64` → `app-debug.apk`. Example typecheck under TS 6 passes.
+
 iOS: `pod ipc spec` → platforms `{ios: 16.4}`. Example `expo prebuild -p ios` → `Podfile.properties.json` has
 `ios.deploymentTarget: 16.4`. No xcodebuild or pod install run locally. TS: build, Jest (76 tests, 100%), example typecheck,
 `yarn install --frozen-lockfile` all pass.
@@ -42,9 +49,9 @@ iOS: `pod ipc spec` → platforms `{ios: 16.4}`. Example `expo prebuild -p ios` 
 - `expo-module-gradle-plugin` first shipped in expo-modules-core 2.5.0 (SDK 53). This module now needs SDK 53+ on
   Android and an iOS 16.4 app target; `peerDependencies.expo` still says `>=51`, which is a release decision for the owner.
 - `example/ios` and `example/android` are git-ignored but not cleaned by anything; remove them after a local prebuild.
+- `expo install --fix` honours a stale `expo.sdkVersion` in `app.json` over the installed `expo`.
 
 ## Follow-ups
 - Narrow `peerDependencies.expo` (suggest `>=55.0.0 <59.0.0`) when tagging.
-- The `example-android` CI job (non-blocking, already failing on SDK 52) now also lacks `expo-module-gradle-plugin`;
-  moving the example to SDK 55+ (#7) fixes both.
+- Close #7 if SDK 56 satisfies it. The example app was not run on a device or simulator, only built.
 - The Swift capture change is unverified against Xcode 27; `example-ios` CI compiles it.

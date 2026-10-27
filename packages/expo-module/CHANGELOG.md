@@ -7,7 +7,7 @@
 - iOS: podspec deployment target 15.1 → 16.4 (Expo SDK 56+ floor). Apps must target iOS 16.4 or later.
 - iOS: capture `self` explicitly where the module wires engine callbacks in `OnCreate` (Xcode 27 `ImplicitStrongCapture` warnings).
 - Dev: `typescript` devDependency `^5.4.5` → `~6.0.3` (Expo SDK 56+ ships TypeScript 6; a TS 5 devDependency made pnpm resolve a second `expo` in consumer workspaces). `tsconfig.json` sets `rootDir` (TS 6 requires it with `outDir`), the Jest tsconfig moves off the deprecated `node10` resolution; `dist/` output is unchanged.
-- Example app: `expo-build-properties` sets the iOS deployment target to 16.4; pinned to TypeScript ~5.3.3 (its Expo SDK 52 base config does not type-check under TS 6).
+- Example app: moved from Expo SDK 52 to SDK 56 (React Native 0.85, New Architecture); `expo-build-properties` sets the iOS deployment target to 16.4; file access uses `expo-file-system/legacy`. The `example-android` CI job is blocking again.
 - Requires Expo SDK 53+ on Android (first SDK that ships `expo-module-gradle-plugin`) and an iOS 16.4 deployment target; `peerDependencies.expo` is unchanged.
 
 ## 0.0.19
