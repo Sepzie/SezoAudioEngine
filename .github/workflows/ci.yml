@@ -56,6 +56,22 @@ jobs:
             echo "android=$(match '^packages/(expo-module/(android/|src/|example/|package\.json$|expo-module\.config\.json$|app\.plugin\.js$)|android-engine/)|^\.gitmodules$')"
           } | tee -a "$GITHUB_OUTPUT"
 
+  # A change to the shipped core must come with a new core version, and the
+  # Expo module's default JitPack version must point at it (AGENTS.md "Releases").
+  android-engine-version:
+    name: android-engine version pairing
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Check VERSION and the module default
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: scripts/android-engine-release.sh check-pairing "$BASE_SHA"
+
   expo-module:
     name: expo-module (build, test, typecheck, pack)
     runs-on: ubuntu-latest

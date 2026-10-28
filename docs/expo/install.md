@@ -34,8 +34,17 @@ allprojects {
 Optionally pin the engine version in `android/gradle.properties`:
 
 ```properties
-sezoAudioEngineVersion=android-engine-v0.1.9
+sezoAudioEngineVersion=android-engine-v0.1.10
 ```
+
+### Core versions
+
+The module's default `sezoAudioEngineVersion` always names the core release it
+was built against. Core changes bump `packages/android-engine/VERSION` and that
+default in the same change; the `android-engine-v<VERSION>` tag and its JitPack
+build are created automatically when the change lands on `main`. Override the
+default only to test another core build. Apps that build the core from source
+(below) do not use the tag at all.
 
 ### Building the core from source
 
