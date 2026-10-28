@@ -1,0 +1,61 @@
+name: android-engine-release
+
+# Tags the Android C++ core and builds it on JitPack when a change to the core
+# lands on main. The version comes from packages/android-engine/VERSION; the
+# tag is android-engine-v<VERSION>. An existing tag is left alone, so merges
+# that do not bump VERSION only re-check the JitPack build of the current tag.
+# See AGENTS.md ("Releases").
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - packages/android-engine/**
+      - jitpack.yml
+      - scripts/android-engine-release.sh
+      - .github/workflows/android-engine-release.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write # push the release tag
+
+concurrency:
+  group: android-engine-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: tag and build on JitPack
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Read and check the core version
+        id: version
+        run: |
+          version="$(scripts/android-engine-release.sh version)"
+          module_default="$(scripts/android-engine-release.sh module-default)"
+          if [ "$module_default" != "android-engine-v${version}" ]; then
+            echo "::error::Module default $module_default does not match VERSION $version"
+            exit 1
+          fi
+          echo "tag=android-engine-v${version}" >> "$GITHUB_OUTPUT"
+      - name: Create the tag if it does not exist
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" > /dev/null; then
+            echo "Tag ${TAG} already exists at $(git rev-parse "${TAG}^{commit}" 2>/dev/null || echo '?'); not moving it."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${TAG}" -m "Android engine ${TAG#android-engine-v}" "${GITHUB_SHA}"
+          git push origin "refs/tags/${TAG}"
+          echo "Created ${TAG} at ${GITHUB_SHA}"
+      - name: Build on JitPack and wait for the result
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: scripts/android-engine-release.sh wait-jitpack "${TAG}"

@@ -17,7 +17,7 @@ A downstream app vendors this repo as a git submodule and pins production to `ex
 - `TODOs/` — older audits (Android lifecycle/background playback, AAR packaging); tracked as GitHub issues now
 
 ## Android core: source or JitPack
-The Expo module's Android code links the C++ core (`packages/android-engine`) either from JitPack (`sezoAudioEngineVersion`, default in `packages/expo-module/android/build.gradle`; what npm consumers get) or from source when the app's Gradle build has an `:android-engine` project. The config plugin `packages/expo-module/app.plugin.js` adds that project at prebuild when the package sits in a checkout of this repo (the example app and submodule consumers); opt out with `{ android: { engineFromSource: false } }` or `SEZO_AUDIO_ENGINE_FROM_SOURCE=0`. When the Kotlin module starts using a new core API, the next npm release needs a new `android-engine-v*` tag and a bump of the default `sezoAudioEngineVersion`.
+The Expo module's Android code links the C++ core (`packages/android-engine`) either from JitPack (`sezoAudioEngineVersion`, default in `packages/expo-module/android/build.gradle`; what npm consumers get) or from source when the app's Gradle build has an `:android-engine` project. The config plugin `packages/expo-module/app.plugin.js` adds that project at prebuild when the package sits in a checkout of this repo (the example app and submodule consumers); opt out with `{ android: { engineFromSource: false } }` or `SEZO_AUDIO_ENGINE_FROM_SOURCE=0`. See "Releases" for how the two stay paired.
 
 ## Commands
 ```bash
@@ -38,6 +38,10 @@ Requirements: Node LTS, Yarn 1, Xcode 26+, Android SDK + NDK 27.1, cmake for C++
 - Native changes need a build on the affected platform before review; say in the PR what was built and run.
 - Don't rewrite `dist/`; it is generated.
 - Heavy builds: this engine is developed on a shared machine. Run one Xcode/Gradle build at a time locally and prefer GitHub-hosted runners for CI.
+
+## Releases
+- **Android core** (`packages/android-engine`, JitPack `com.github.Sepzie:SezoAudioEngine:android-engine-vX.Y.Z`): its version lives in `packages/android-engine/VERSION`. A PR that changes shipped core files (anything under `packages/android-engine/` except `src/test/` and Markdown) bumps `VERSION` and the module's default `sezoAudioEngineVersion` in `packages/expo-module/android/build.gradle` to `android-engine-v<VERSION>`; the `android-engine version pairing` CI job enforces both. On merge, `.github/workflows/android-engine-release.yml` pushes the tag if it does not exist and waits for the JitPack build, failing on a JitPack error. Logic: `scripts/android-engine-release.sh`.
+- **Expo module** (npm): see Conventions; tag `expo-module-vX.Y.Z`, published by the owner. Apps that use the module from a checkout of this repo build the core from source through the config plugin and do not need the core tag; npm consumers get the core from JitPack.
 
 ## Roadmap
 GitHub milestones: **0.1.0 – Solid foundation** (CI, real tests, release workflow, contributor docs) → **Expo SDK 55–58 support** → **Robustness** (Android lifecycle, recording stop latency, error model) → **Adoption**. Pick issues labelled `agent-ready`.

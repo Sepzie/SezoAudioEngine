@@ -56,7 +56,8 @@ dependencies {
   if (androidEngineProject != null) {
     implementation androidEngineProject
   } else {
-    def sezoAudioEngineVersion = project.findProperty("sezoAudioEngineVersion") ?: "android-engine-v0.1.9"
+    // Must equal "android-engine-v" + packages/android-engine/VERSION (checked in CI).
+    def sezoAudioEngineVersion = project.findProperty("sezoAudioEngineVersion") ?: "android-engine-v0.1.10"
     implementation "com.github.Sepzie:SezoAudioEngine:${sezoAudioEngineVersion}"
   }
 }
