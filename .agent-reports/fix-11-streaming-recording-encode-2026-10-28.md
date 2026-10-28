@@ -70,6 +70,19 @@ Suites: host `yarn test:cpp:host` 40 tests, 33 passed, 7 skipped (Android-only),
   builds the AAR.
 - Not run in the example app or on other devices; no real-microphone long take.
 
+## Follow-up in the same PR: core from source (#23)
+CI's `example-android` failed (`Unresolved reference 'channels'`): the example links the published core
+`android-engine-v0.1.9`, which predates `RecordingResult.sampleRate`/`channels`. Added an Expo config plugin
+`packages/expo-module/app.plugin.js` (ESM, the package is `"type": "module"`; Expo's loader handles it) that adds
+`packages/android-engine/android/engine` to the app's `settings.gradle` as `:android-engine` when the package is
+used from a checkout of this repo and the engine's submodules are present (warns and falls back to JitPack if not).
+The module's `build.gradle` already links that project when it exists. Opt out with
+`{ android: { engineFromSource: false } }` or `SEZO_AUDIO_ENGINE_FROM_SOURCE=0`. The example registers it; CI's
+`example-android` checks out submodules, installs NDK/CMake and now also runs on `packages/android-engine/` changes.
+Verified locally with `npx expo prebuild --platform android --no-install` (generated `settings.gradle` checked,
+then deleted). CI run 40781633867: all 6 jobs green; `example-android` compiled `:android-engine` from source (CMake x86_64) and assembled the app. Next npm release needs tag `android-engine-v0.1.10` and a
+bump of the default `sezoAudioEngineVersion`.
+
 ## Status
 Done; PR open against `main`, not merged.
 
