@@ -6,6 +6,9 @@
 #include <cinttypes>
 #include <cmath>
 #include <cstring>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #define LOG_TAG "M4ADecoder"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
@@ -45,7 +48,24 @@ bool M4ADecoder::Open(const std::string& file_path) {
     return false;
   }
 
-  media_status_t status = AMediaExtractor_setDataSource(extractor_, file_path.c_str());
+  // Local files go through a file descriptor. The path-based call needs the
+  // Java HTTP service, so it fails in processes without a JVM (native test
+  // binaries) even for a plain file; keep it as the fallback for URLs.
+  std::string local_path = file_path;
+  constexpr const char kFileScheme[] = "file://";
+  if (local_path.rfind(kFileScheme, 0) == 0) {
+    local_path = local_path.substr(sizeof(kFileScheme) - 1);
+  }
+  media_status_t status = AMEDIA_ERROR_UNKNOWN;
+  fd_ = ::open(local_path.c_str(), O_RDONLY | O_CLOEXEC);
+  if (fd_ >= 0) {
+    struct stat st {};
+    if (::fstat(fd_, &st) == 0) {
+      status = AMediaExtractor_setDataSourceFd(extractor_, fd_, 0, static_cast<off64_t>(st.st_size));
+    }
+  } else {
+    status = AMediaExtractor_setDataSource(extractor_, file_path.c_str());
+  }
   if (status != AMEDIA_OK) {
     LOGE("Failed to set data source: %s", file_path.c_str());
     Close();
@@ -162,6 +182,10 @@ void M4ADecoder::Close() {
   if (extractor_) {
     AMediaExtractor_delete(extractor_);
     extractor_ = nullptr;
+  }
+  if (fd_ >= 0) {
+    ::close(fd_);
+    fd_ = -1;
   }
   pending_samples_.clear();
   pending_offset_ = 0;

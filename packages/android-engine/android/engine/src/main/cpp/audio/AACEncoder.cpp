@@ -19,6 +19,8 @@ namespace {
 
 constexpr int kAdtsHeaderSize = 7;
 constexpr int64_t kCodecTimeoutUs = 10000;
+constexpr int kEosInputAttempts = 50;  // x kCodecTimeoutUs
+constexpr int32_t kMaxInputFrames = 8192;
 
 int GetAdtsSampleRateIndex(int sample_rate) {
   switch (sample_rate) {
@@ -111,6 +113,11 @@ bool AACEncoder::Open(const std::string& output_path, const EncoderConfig& confi
   AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_CHANNEL_COUNT, channels_);
   AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_BIT_RATE, bitrate_);
   AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_AAC_PROFILE, 2);  // AAC LC
+  // The default input buffer holds one 1024-frame AAC packet of mono PCM, so
+  // every packet costs a round trip to the codec. Larger buffers let a
+  // Write() of a few thousand frames go through in one or two.
+  AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_MAX_INPUT_SIZE,
+                        kMaxInputFrames * channels_ * static_cast<int32_t>(sizeof(int16_t)));
 
   auto* codec = AMediaCodec_createEncoderByType("audio/mp4a-latm");
   if (!codec) {
@@ -178,7 +185,17 @@ bool AACEncoder::Close() {
 
   auto* codec = static_cast<AMediaCodec*>(codec_);
 
-  ssize_t input_index = AMediaCodec_dequeueInputBuffer(codec, kCodecTimeoutUs);
+  // Every input buffer can still be held by the codec when the last Write()
+  // returns; keep collecting output until one frees up for the EOS flag,
+  // otherwise the tail of the take is never flushed.
+  ssize_t input_index = AMEDIACODEC_INFO_TRY_AGAIN_LATER;
+  for (int attempt = 0; attempt < kEosInputAttempts; ++attempt) {
+    input_index = AMediaCodec_dequeueInputBuffer(codec, kCodecTimeoutUs);
+    if (input_index != AMEDIACODEC_INFO_TRY_AGAIN_LATER) {
+      break;
+    }
+    DrainOutput(false);
+  }
   if (input_index >= 0) {
     int64_t pts_us = (total_frames_queued_ * 1000000LL) / sample_rate_;
     AMediaCodec_queueInputBuffer(
@@ -274,7 +291,11 @@ bool AACEncoder::DrainOutput(bool end_of_stream) {
   int empty_tries = 0;
 
   while (true) {
-    ssize_t output_index = AMediaCodec_dequeueOutputBuffer(codec, &info, kCodecTimeoutUs);
+    // While capturing, only collect what is ready: waiting here would stall
+    // the caller for the full timeout on every Write(). Back-pressure comes
+    // from dequeueInputBuffer() instead. At end of stream, wait for the tail.
+    const int64_t timeout_us = end_of_stream ? kCodecTimeoutUs : 0;
+    ssize_t output_index = AMediaCodec_dequeueOutputBuffer(codec, &info, timeout_us);
     if (output_index >= 0) {
       if (info.flags & AMEDIACODEC_BUFFER_FLAG_CODEC_CONFIG) {
         AMediaCodec_releaseOutputBuffer(codec, output_index, false);
