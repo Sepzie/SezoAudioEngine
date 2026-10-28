@@ -43,6 +43,7 @@
     "ios/ExpoAudioEngineModule.swift",
     "dist",
     "expo-module.config.json",
+    "app.plugin.js",
     "README.md",
     "LICENSE"
   ],

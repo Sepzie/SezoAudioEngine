@@ -52,8 +52,8 @@ jobs:
           match() { echo "$changed" | grep -Eq "$1|$shared" && echo true || echo false; }
           {
             echo "engine=$(match '^(packages/android-engine/|\.gitmodules$)')"
-            echo "ios=$(match '^packages/expo-module/(ios/|src/|example/|package\.json$|expo-module\.config\.json$)')"
-            echo "android=$(match '^packages/expo-module/(android/|src/|example/|package\.json$|expo-module\.config\.json$)')"
+            echo "ios=$(match '^packages/expo-module/(ios/|src/|example/|package\.json$|expo-module\.config\.json$|app\.plugin\.js$)')"
+            echo "android=$(match '^packages/(expo-module/(android/|src/|example/|package\.json$|expo-module\.config\.json$|app\.plugin\.js$)|android-engine/)|^\.gitmodules$')"
           } | tee -a "$GITHUB_OUTPUT"
 
   expo-module:
@@ -192,7 +192,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
+      # The example builds the Android core from source (app.plugin.js), which
+      # needs the engine's third-party submodules, the NDK and CMake.
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - name: Install NDK and CMake
+        run: |
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$sdkmanager" --licenses > /dev/null || true
+          "$sdkmanager" --install "ndk;${ANDROID_NDK_VERSION}" "cmake;${ANDROID_CMAKE_VERSION}" > /dev/null
+          ls "$ANDROID_HOME/ndk"
       - uses: actions/setup-node@v7
         with:
           node-version: lts/*
@@ -206,7 +216,7 @@ jobs:
       - name: expo prebuild (android)
         working-directory: packages/expo-module/example
         run: npx expo prebuild --platform android --no-install
-      - name: Add JitPack repository (engine AAR, as documented in docs/expo/install.md)
+      - name: Add JitPack repository (as documented in docs/expo/install.md; unused while the core builds from source)
         working-directory: packages/expo-module/example/android
         run: |
           cat >> build.gradle <<'GRADLE'
@@ -222,7 +232,7 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-example-${{ runner.os }}-${{ hashFiles('yarn.lock', 'packages/expo-module/android/build.gradle') }}
+          key: gradle-example-${{ runner.os }}-${{ hashFiles('yarn.lock', 'packages/expo-module/android/build.gradle', 'packages/android-engine/android/engine/build.gradle') }}
           restore-keys: gradle-example-${{ runner.os }}-
       - name: ./gradlew :app:assembleDebug
         working-directory: packages/expo-module/example/android

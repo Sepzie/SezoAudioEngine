@@ -16,6 +16,9 @@ A downstream app vendors this repo as a git submodule and pins production to `ex
 - `docs/` + `mkdocs.yml` — docs site
 - `TODOs/` — older audits (Android lifecycle/background playback, AAR packaging); tracked as GitHub issues now
 
+## Android core: source or JitPack
+The Expo module's Android code links the C++ core (`packages/android-engine`) either from JitPack (`sezoAudioEngineVersion`, default in `packages/expo-module/android/build.gradle`; what npm consumers get) or from source when the app's Gradle build has an `:android-engine` project. The config plugin `packages/expo-module/app.plugin.js` adds that project at prebuild when the package sits in a checkout of this repo (the example app and submodule consumers); opt out with `{ android: { engineFromSource: false } }` or `SEZO_AUDIO_ENGINE_FROM_SOURCE=0`. When the Kotlin module starts using a new core API, the next npm release needs a new `android-engine-v*` tag and a bump of the default `sezoAudioEngineVersion`.
+
 ## Commands
 ```bash
 yarn install                      # root workspaces (yarn classic)

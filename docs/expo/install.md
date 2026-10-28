@@ -37,8 +37,24 @@ Optionally pin the engine version in `android/gradle.properties`:
 sezoAudioEngineVersion=android-engine-v0.1.9
 ```
 
-If you want to build from source instead, include the local engine module in
-`android/settings.gradle` and it will be picked up automatically.
+### Building the core from source
+
+When the package comes from a checkout of this repository (a git clone, or the
+repo vendored as a git submodule) instead of npm, the Android C++ core can be
+built from source so native changes need no JitPack release. Add the config
+plugin to `app.json` and run `npx expo prebuild`:
+
+```json
+{ "expo": { "plugins": ["sezo-audio-engine"] } }
+```
+
+If `packages/android-engine/android/engine` exists next to the package (with
+its submodules: `git submodule update --init --recursive`), the plugin includes
+it in `android/settings.gradle` as `:android-engine` and the module links that
+project; the app then needs the NDK (27.1) and CMake 3.22.1. Installed from
+npm, the directory is absent, the plugin does nothing and JitPack is used.
+Opt out with `["sezo-audio-engine", { "android": { "engineFromSource": false } }]`
+or `SEZO_AUDIO_ENGINE_FROM_SOURCE=0`.
 
 ## iOS Info.plist
 
