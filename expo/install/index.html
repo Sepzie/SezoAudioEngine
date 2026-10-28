@@ -980,6 +980,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Android Engine Dependency">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#building-the-core-from-source" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Building the core from source
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1189,6 +1206,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Android Engine Dependency">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#building-the-core-from-source" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Building the core from source
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1255,8 +1289,20 @@ allprojects {
 <p>Optionally pin the engine version in <code>android/gradle.properties</code>:</p>
 <pre><code class="language-properties">sezoAudioEngineVersion=android-engine-v0.1.9
 </code></pre>
-<p>If you want to build from source instead, include the local engine module in
-<code>android/settings.gradle</code> and it will be picked up automatically.</p>
+<h3 id="building-the-core-from-source">Building the core from source</h3>
+<p>When the package comes from a checkout of this repository (a git clone, or the
+repo vendored as a git submodule) instead of npm, the Android C++ core can be
+built from source so native changes need no JitPack release. Add the config
+plugin to <code>app.json</code> and run <code>npx expo prebuild</code>:</p>
+<pre><code class="language-json">{ &quot;expo&quot;: { &quot;plugins&quot;: [&quot;sezo-audio-engine&quot;] } }
+</code></pre>
+<p>If <code>packages/android-engine/android/engine</code> exists next to the package (with
+its submodules: <code>git submodule update --init --recursive</code>), the plugin includes
+it in <code>android/settings.gradle</code> as <code>:android-engine</code> and the module links that
+project; the app then needs the NDK (27.1) and CMake 3.22.1. Installed from
+npm, the directory is absent, the plugin does nothing and JitPack is used.
+Opt out with <code>["sezo-audio-engine", { "android": { "engineFromSource": false } }]</code>
+or <code>SEZO_AUDIO_ENGINE_FROM_SOURCE=0</code>.</p>
 <h2 id="ios-infoplist">iOS Info.plist</h2>
 <p>If you use recording or background playback, add:</p>
 <pre><code class="language-json">{

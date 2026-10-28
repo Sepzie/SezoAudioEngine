@@ -1410,7 +1410,7 @@
 <h2 id="recording">Recording</h2>
 <ul>
 <li><code>startRecording(config?: RecordingConfig): Promise&lt;void&gt;</code></li>
-<li><code>stopRecording(): Promise&lt;RecordingResult&gt;</code></li>
+<li><code>stopRecording(): Promise&lt;RecordingResult&gt;</code> — resolves once the file is complete and playable; encoding happens during capture, so this does not scale with the length of the take. <code>sampleRate</code> and <code>channels</code> in the result are what the input actually delivered.</li>
 <li><code>isRecording(): boolean</code></li>
 <li><code>setRecordingVolume(volume: number): void</code></li>
 </ul>
