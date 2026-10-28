@@ -50,6 +50,8 @@ iOS: `pod ipc spec` → platforms `{ios: 16.4}`. Example `expo prebuild -p ios` 
   Android and an iOS 16.4 app target; `peerDependencies.expo` still says `>=51`, which is a release decision for the owner.
 - `example/ios` and `example/android` are git-ignored but not cleaned by anything; remove them after a local prebuild.
 - `expo install --fix` honours a stale `expo.sdkVersion` in `app.json` over the installed `expo`.
+- SDK 56's iOS dependencies need Swift tools 6.2 (Xcode 26); `macos-15` defaults to Xcode 16.4, so `example-ios` now runs on `macos-26`.
+- `AGENTS.md` gained a Public repository rule; downstream consumers are described generically.
 
 ## Follow-ups
 - Narrow `peerDependencies.expo` (suggest `>=55.0.0 <59.0.0`) when tagging.
