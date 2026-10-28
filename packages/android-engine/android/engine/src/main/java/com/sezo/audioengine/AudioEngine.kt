@@ -166,8 +166,16 @@ class AudioEngine {
     val startTimeSamples: Long,
     val startTimeMs: Double,
     val fileSize: Long,
+    /** Sample rate the input stream actually delivered. */
+    val sampleRate: Int,
+    /** Channel count the input stream actually delivered. */
+    val channels: Int,
     val errorMessage: String?
-  )
+  ) {
+    /** Duration of the take in milliseconds, from the frames written. */
+    val durationMs: Double
+      get() = if (sampleRate > 0) durationSamples * 1000.0 / sampleRate else 0.0
+  }
 
   fun startRecording(
     outputPath: String,
@@ -197,6 +205,8 @@ class AudioEngine {
       startTimeSamples = (resultMap["startTimeSamples"] as? Number)?.toLong() ?: 0L,
       startTimeMs = (resultMap["startTimeMs"] as? Number)?.toDouble() ?: 0.0,
       fileSize = resultMap["fileSize"] as? Long ?: 0L,
+      sampleRate = (resultMap["sampleRate"] as? Number)?.toInt() ?: 0,
+      channels = (resultMap["channels"] as? Number)?.toInt() ?: 0,
       errorMessage = resultMap["errorMessage"] as? String
     )
   }

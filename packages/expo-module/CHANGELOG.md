@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+- Android: recordings are encoded while they are captured. The recording pipeline used to buffer the whole take as float PCM in memory and run it through the encoder inside `stopRecording()`, so stop latency and peak memory grew with the take (a minute or more for long takes on some devices). The worker thread now writes each chunk from the input ring buffer to the encoder as it arrives; `stopRecording()` drains the ring, finalises the container and returns a complete file in bounded time.
+- Android: `stopRecording()` reports the sample rate and channel count the input stream actually delivered, and derives `duration` from them, instead of assuming 44.1 kHz mono.
+- iOS: `stopRecording()` releases the recording file before reading `fileSize`, so the reported size is the finalised one.
+- Engine: `RecordingPipeline` reads from an `AudioSource` interface (implemented by `MicrophoneCapture`) and builds on the host; host tests cover streaming, no-loss and bounded-stop behaviour.
+
 ## 0.0.20
 - Android: build with `expo-module-gradle-plugin` (current Expo module template) instead of applying `org.jetbrains.kotlin.android` directly, so the module builds on AGP 9 with built-in Kotlin (Expo SDK 58) as well as AGP 8 + Kotlin 2.1 (SDK 55).
 - Android: drop the hard-coded `kotlin-stdlib:1.9.0` (the plugin adds the stdlib matching the app's `kotlinVersion`) and the explicit `expo-modules-core` dependency (the plugin adds it); `kotlinOptions` → `kotlin { compilerOptions { jvmTarget } }`.

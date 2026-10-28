@@ -14,10 +14,16 @@ android {
 
   defaultConfig {
     minSdk 24
-    targetSdk 35
 
     ndk {
-      abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
+      // When built inside a React Native app, follow the app's architecture list
+      // (expo run:android passes only the connected device's ABI).
+      def requestedAbis = project.findProperty("reactNativeArchitectures")
+      if (requestedAbis) {
+        abiFilters(*requestedAbis.toString().split(",").collect { it.trim() })
+      } else {
+        abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
+      }
     }
 
     externalNativeBuild {
@@ -49,8 +55,10 @@ android {
     targetCompatibility JavaVersion.VERSION_17
   }
 
-  kotlinOptions {
-    jvmTarget = "17"
+  kotlin {
+    compilerOptions {
+      jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
   }
 
   publishing {

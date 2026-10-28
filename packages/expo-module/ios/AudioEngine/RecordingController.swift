@@ -157,7 +157,7 @@ final class RecordingController {
   }
 
   func stopRecording(state: EngineState) -> [String: Any] {
-    guard let activeRecording = state.recordingState else {
+    guard let finished = state.recordingState.map(summarize) else {
       state.isRecording = false
       return [
         "uri": "",
@@ -170,21 +170,50 @@ final class RecordingController {
       ]
     }
 
+    // `state.recordingState` now holds the only reference to the AVAudioFile.
+    // The tap wrote every buffer as it arrived, so releasing the file here
+    // finalises the container and the size below is the final one.
     stopRecordingInternal(state: state)
 
-    let durationMs = (Double(activeRecording.file.length) / activeRecording.sampleRate) * 1000.0
-    let fileSize = resolveFileSize(url: activeRecording.url)
+    let fileSize = resolveFileSize(url: finished.url)
 
     return [
-      "uri": activeRecording.url.absoluteString,
-      "duration": durationMs,
-      "startTimeMs": activeRecording.startTimeMs,
-      "startTimeSamples": activeRecording.startTimeSamples,
-      "sampleRate": activeRecording.sampleRate,
-      "channels": activeRecording.channels,
-      "format": activeRecording.format,
+      "uri": finished.url.absoluteString,
+      "duration": finished.durationMs,
+      "startTimeMs": finished.startTimeMs,
+      "startTimeSamples": finished.startTimeSamples,
+      "sampleRate": finished.sampleRate,
+      "channels": finished.channels,
+      "format": finished.format,
       "fileSize": fileSize
     ]
+  }
+
+  /// Scalar summary of a take, so the recording state (and its file handle)
+  /// can be released before the result is assembled.
+  private struct FinishedRecording {
+    let url: URL
+    let format: String
+    let sampleRate: Double
+    let channels: Int
+    let startTimeMs: Double
+    let startTimeSamples: Int64
+    let durationMs: Double
+  }
+
+  private func summarize(_ recording: RecordingState) -> FinishedRecording {
+    let durationMs = recording.sampleRate > 0
+      ? (Double(recording.file.length) / recording.sampleRate) * 1000.0
+      : 0.0
+    return FinishedRecording(
+      url: recording.url,
+      format: recording.format,
+      sampleRate: recording.sampleRate,
+      channels: recording.channels,
+      startTimeMs: recording.startTimeMs,
+      startTimeSamples: recording.startTimeSamples,
+      durationMs: durationMs
+    )
   }
 
   func stopRecordingInternal(state: EngineState) {

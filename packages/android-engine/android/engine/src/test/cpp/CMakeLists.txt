@@ -30,6 +30,7 @@ set(SEZO_ENGINE_SOURCES
   "${SEZO_ENGINE_ROOT}/playback/TimeStretch.cpp"
   "${SEZO_ENGINE_ROOT}/playback/Track.cpp"
   "${SEZO_ENGINE_ROOT}/playback/MultiTrackMixer.cpp"
+  "${SEZO_ENGINE_ROOT}/recording/RecordingPipeline.cpp"
 )
 
 if (ANDROID)
@@ -37,7 +38,6 @@ if (ANDROID)
     "${SEZO_ENGINE_ROOT}/audio/AACEncoder.cpp"
     "${SEZO_ENGINE_ROOT}/playback/OboePlayer.cpp"
     "${SEZO_ENGINE_ROOT}/recording/MicrophoneCapture.cpp"
-    "${SEZO_ENGINE_ROOT}/recording/RecordingPipeline.cpp"
     "${SEZO_ENGINE_ROOT}/extraction/ExtractionPipeline.cpp"
     "${SEZO_ENGINE_ROOT}/AudioEngine.cpp"
   )

@@ -1,20 +1,13 @@
 #pragma once
 
-#include "MicrophoneCapture.h"
+#include "AudioSource.h"
 #include "audio/AudioEncoder.h"
-#include "audio/AACEncoder.h"
-#include "audio/M4AEncoder.h"
-#include "audio/MP3Encoder.h"
-#include "audio/WAVEncoder.h"
 
 #include <atomic>
-#include <condition_variable>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <thread>
-#include <vector>
 
 namespace sezo {
 namespace recording {
@@ -38,7 +31,9 @@ struct RecordingConfig {
 struct RecordingResult {
   bool success = false;
   std::string output_path;
-  int64_t duration_samples = 0;
+  int64_t duration_samples = 0;  // Frames written to the file
+  int32_t sample_rate = 0;       // Actual capture sample rate
+  int32_t channels = 0;          // Actual capture channel count
   int64_t start_time_samples = 0;
   double start_time_ms = 0.0;
   int64_t file_size = 0;
@@ -46,7 +41,13 @@ struct RecordingResult {
 };
 
 /**
- * Recording pipeline that captures audio and encodes to file.
+ * Captures audio from an AudioSource and encodes it to a file.
+ *
+ * Encoding runs concurrently with capture on a worker thread: every chunk read
+ * from the source is written to the encoder immediately, so memory stays
+ * bounded by the source's buffer and StopRecording() only has to drain what is
+ * left in that buffer and finalise the container. Its cost therefore does not
+ * depend on the length of the take.
  */
 class RecordingPipeline {
  public:
@@ -56,9 +57,10 @@ class RecordingPipeline {
   using RecordingCallback = std::function<void(const RecordingResult&)>;
 
   /**
-   * Start recording audio.
+   * Start recording from the device microphone (Android only).
    * @param output_path Path to output file
-   * @param config Recording configuration
+   * @param config Recording configuration; sample rate and channels are
+   *        replaced by what the input stream actually provides
    * @param callback Completion callback (called when recording stops)
    * @return true if recording started successfully
    */
@@ -68,14 +70,24 @@ class RecordingPipeline {
       RecordingCallback callback = nullptr);
 
   /**
-   * Stop recording and save to file.
-   * @return Recording result
+   * Start recording from an arbitrary source. The pipeline takes ownership of
+   * the source and starts it; the source's sample rate and channel count
+   * override the ones in config.
+   */
+  bool StartRecording(
+      std::unique_ptr<AudioSource> source,
+      const std::string& output_path,
+      const RecordingConfig& config,
+      RecordingCallback callback = nullptr);
+
+  /**
+   * Stop recording and finalise the file.
+   * Returns once the file is complete and playable.
    */
   RecordingResult StopRecording();
 
   /**
    * Check if currently recording.
-   * @return true if recording
    */
   bool IsRecording() const;
 
@@ -92,17 +104,16 @@ class RecordingPipeline {
   void SetVolume(float volume);
 
   /**
-   * Get duration of current recording in samples.
-   * @return Sample count
+   * Frames written to the file so far.
    */
   int64_t GetRecordedSamples() const;
 
  private:
+  bool OpenEncoder(const std::string& output_path);
   void RecordingWorkerLoop();
   void StopWorker();
-  RecordingResult EncodeRecording();
 
-  std::unique_ptr<MicrophoneCapture> microphone_;
+  std::unique_ptr<AudioSource> source_;
   std::unique_ptr<audio::AudioEncoder> encoder_;
 
   std::string output_path_;
@@ -111,16 +122,11 @@ class RecordingPipeline {
 
   std::atomic<bool> is_recording_{false};
   std::atomic<int64_t> recorded_samples_{0};
+  std::atomic<bool> encode_failed_{false};
 
-  // Worker thread for reading from microphone and encoding
+  // Worker thread that reads from the source and feeds the encoder
   std::thread worker_thread_;
-  std::atomic<bool> worker_running_{false};
   std::atomic<bool> worker_shutdown_{false};
-  std::mutex worker_mutex_;
-  std::condition_variable worker_cv_;
-
-  // Temporary buffer for recorded audio
-  std::vector<float> recording_buffer_;
 };
 
 }  // namespace recording

@@ -45,7 +45,7 @@ The API is defined in `packages/expo-module/src/AudioEngineModule.types.ts`.
 ## Recording
 
 - `startRecording(config?: RecordingConfig): Promise<void>`
-- `stopRecording(): Promise<RecordingResult>`
+- `stopRecording(): Promise<RecordingResult>` — resolves once the file is complete and playable; encoding happens during capture, so this does not scale with the length of the take. `sampleRate` and `channels` in the result are what the input actually delivered.
 - `isRecording(): boolean`
 - `setRecordingVolume(volume: number): void`
 
