@@ -660,6 +660,16 @@ Java_com_sezo_audioengine_AudioEngine_nativeStopRecording(
   jobject fileSizeObj = env->NewObject(longClass, longInit, result.file_size);
   env->CallObjectMethod(resultMap, hashMapPut, env->NewStringUTF("fileSize"), fileSizeObj);
 
+  // Add sampleRate / channels (what the input stream actually delivered)
+  jclass integerClass = env->FindClass("java/lang/Integer");
+  jmethodID integerInit = env->GetMethodID(integerClass, "<init>", "(I)V");
+  jobject sampleRateObj = env->NewObject(integerClass, integerInit,
+                                         static_cast<jint>(result.sample_rate));
+  env->CallObjectMethod(resultMap, hashMapPut, env->NewStringUTF("sampleRate"), sampleRateObj);
+  jobject channelsObj = env->NewObject(integerClass, integerInit,
+                                       static_cast<jint>(result.channels));
+  env->CallObjectMethod(resultMap, hashMapPut, env->NewStringUTF("channels"), channelsObj);
+
   // Add errorMessage if present
   if (!result.error_message.empty()) {
     env->CallObjectMethod(resultMap, hashMapPut, env->NewStringUTF("errorMessage"),

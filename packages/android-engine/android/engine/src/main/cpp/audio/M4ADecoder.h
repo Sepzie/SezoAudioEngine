@@ -38,6 +38,7 @@ class M4ADecoder : public AudioDecoder {
   AMediaCodec* codec_ = nullptr;
   AMediaFormat* track_format_ = nullptr;
   int audio_track_index_ = -1;
+  int fd_ = -1;  // local file backing the extractor, if opened by path
 
   bool is_open_ = false;
   bool input_eos_ = false;

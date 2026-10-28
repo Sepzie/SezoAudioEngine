@@ -498,31 +498,20 @@ class ExpoAudioEngineModule : Module() {
 
       Log.d(TAG, "Recording stopped: ${result.fileSize} bytes, ${result.durationSamples} samples")
 
-      sendEvent(
-        "recordingStopped",
-        mapOf(
-          "uri" to "file://${result.outputPath}",
-          "duration" to (result.durationSamples / 44.1).toInt(),
-          "startTimeMs" to result.startTimeMs,
-          "startTimeSamples" to result.startTimeSamples,
-          "sampleRate" to 44100,
-          "channels" to 1,
-          "format" to activeRecordingFormat,
-          "fileSize" to result.fileSize
-        )
-      )
-      emitEngineStateChanged("recordingStopped")
-
-      mapOf(
+      val recordingResult = mapOf(
         "uri" to "file://${result.outputPath}",
-        "duration" to (result.durationSamples / 44.1).toInt(),
+        "duration" to result.durationMs,
         "startTimeMs" to result.startTimeMs,
         "startTimeSamples" to result.startTimeSamples,
-        "sampleRate" to 44100,
-        "channels" to 1,
+        "sampleRate" to result.sampleRate,
+        "channels" to result.channels,
         "format" to activeRecordingFormat,
         "fileSize" to result.fileSize
       )
+      sendEvent("recordingStopped", recordingResult)
+      emitEngineStateChanged("recordingStopped")
+
+      recordingResult
     }
 
     Function("isRecording") {

@@ -32,7 +32,8 @@
           }
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      "sezo-audio-engine"
     ]
   }
 }

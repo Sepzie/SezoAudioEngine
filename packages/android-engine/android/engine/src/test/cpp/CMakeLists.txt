@@ -30,14 +30,16 @@ set(SEZO_ENGINE_SOURCES
   "${SEZO_ENGINE_ROOT}/playback/TimeStretch.cpp"
   "${SEZO_ENGINE_ROOT}/playback/Track.cpp"
   "${SEZO_ENGINE_ROOT}/playback/MultiTrackMixer.cpp"
+  "${SEZO_ENGINE_ROOT}/recording/RecordingPipeline.cpp"
 )
 
 if (ANDROID)
   list(APPEND SEZO_ENGINE_SOURCES
     "${SEZO_ENGINE_ROOT}/audio/AACEncoder.cpp"
+    "${SEZO_ENGINE_ROOT}/audio/M4ADecoder.cpp"
+    "${SEZO_ENGINE_ROOT}/audio/M4AEncoder.cpp"
     "${SEZO_ENGINE_ROOT}/playback/OboePlayer.cpp"
     "${SEZO_ENGINE_ROOT}/recording/MicrophoneCapture.cpp"
-    "${SEZO_ENGINE_ROOT}/recording/RecordingPipeline.cpp"
     "${SEZO_ENGINE_ROOT}/extraction/ExtractionPipeline.cpp"
     "${SEZO_ENGINE_ROOT}/AudioEngine.cpp"
   )
@@ -84,5 +86,7 @@ if (CMAKE_CROSSCOMPILING)
   add_test(NAME sezo_engine_tests COMMAND sezo_engine_tests)
 else()
   include(GoogleTest)
-  gtest_discover_tests(sezo_engine_tests)
+  # Listing tests runs the fresh binary; on a busy machine that can exceed
+  # the 5 s default (first launch of a new executable on macOS is slow).
+  gtest_discover_tests(sezo_engine_tests DISCOVERY_TIMEOUT 60)
 endif()

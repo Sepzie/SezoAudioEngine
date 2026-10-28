@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AudioSource.h"
 #include "core/CircularBuffer.h"
 
 #include <oboe/Oboe.h>
@@ -14,7 +15,7 @@ namespace recording {
  * Captures audio from microphone using Oboe.
  * Implements a duplex stream callback for synchronized recording.
  */
-class MicrophoneCapture : public oboe::AudioStreamDataCallback {
+class MicrophoneCapture : public AudioSource, public oboe::AudioStreamDataCallback {
  public:
   /**
    * Constructor.
@@ -34,13 +35,13 @@ class MicrophoneCapture : public oboe::AudioStreamDataCallback {
    * Start capturing audio.
    * @return true if successful
    */
-  bool Start();
+  bool Start() override;
 
   /**
    * Stop capturing audio.
    * @return true if successful
    */
-  bool Stop();
+  bool Stop() override;
 
   /**
    * Close the stream and release resources.
@@ -59,35 +60,35 @@ class MicrophoneCapture : public oboe::AudioStreamDataCallback {
    * @param frame_count Number of frames to read
    * @return Number of frames actually read
    */
-  size_t ReadData(float* data, size_t frame_count);
+  size_t ReadData(float* data, size_t frame_count) override;
 
   /**
    * Get the number of available frames in the buffer.
    * @return Available frame count
    */
-  size_t GetAvailableFrames() const;
+  size_t GetAvailableFrames() const override;
 
   /**
    * Get current input level (peak amplitude).
    * @return Peak level (0.0 to 1.0)
    */
-  float GetInputLevel() const;
+  float GetInputLevel() const override;
 
   /**
    * Get the actual sample rate of the input stream.
    */
-  int32_t GetSampleRate() const;
+  int32_t GetSampleRate() const override;
 
   /**
    * Get the actual channel count of the input stream.
    */
-  int32_t GetChannelCount() const;
+  int32_t GetChannelCount() const override;
 
   /**
    * Set recording volume/gain.
    * @param volume Volume multiplier (0.0 to 2.0)
    */
-  void SetVolume(float volume);
+  void SetVolume(float volume) override;
 
   /**
    * Oboe audio callback for input stream.
