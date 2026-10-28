@@ -984,6 +984,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#core-versions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Core versions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#building-the-core-from-source" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1210,6 +1221,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#core-versions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Core versions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#building-the-core-from-source" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1287,8 +1309,15 @@ allprojects {
 }
 </code></pre>
 <p>Optionally pin the engine version in <code>android/gradle.properties</code>:</p>
-<pre><code class="language-properties">sezoAudioEngineVersion=android-engine-v0.1.9
+<pre><code class="language-properties">sezoAudioEngineVersion=android-engine-v0.1.10
 </code></pre>
+<h3 id="core-versions">Core versions</h3>
+<p>The module's default <code>sezoAudioEngineVersion</code> always names the core release it
+was built against. Core changes bump <code>packages/android-engine/VERSION</code> and that
+default in the same change; the <code>android-engine-v&lt;VERSION&gt;</code> tag and its JitPack
+build are created automatically when the change lands on <code>main</code>. Override the
+default only to test another core build. Apps that build the core from source
+(below) do not use the tag at all.</p>
 <h3 id="building-the-core-from-source">Building the core from source</h3>
 <p>When the package comes from a checkout of this repository (a git clone, or the
 repo vendored as a git submodule) instead of npm, the Android C++ core can be
