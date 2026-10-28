@@ -2,9 +2,11 @@
 
 ## Unreleased
 - Android: recordings are encoded while they are captured. The recording pipeline used to buffer the whole take as float PCM in memory and run it through the encoder inside `stopRecording()`, so stop latency and peak memory grew with the take (a minute or more for long takes on some devices). The worker thread now writes each chunk from the input ring buffer to the encoder as it arrives; `stopRecording()` drains the ring, finalises the container and returns a complete file in bounded time.
+- Android: the AAC and M4A encoders no longer wait 10 ms for codec output on every write, request input buffers large enough for several AAC packets, and keep draining until the end-of-stream flag can be queued (it used to be dropped if every input buffer was busy, losing the tail of the take). On a Pixel 8 this lifts encoding from about 3x to 8x real time; a 5-minute take stops in 120 to 180 ms.
+- Android: the M4A decoder opens local files through a file descriptor, falling back to the path-based extractor only when the file cannot be opened locally (the path call needs the Java HTTP service).
 - Android: `stopRecording()` reports the sample rate and channel count the input stream actually delivered, and derives `duration` from them, instead of assuming 44.1 kHz mono.
 - iOS: `stopRecording()` releases the recording file before reading `fileSize`, so the reported size is the finalised one.
-- Engine: `RecordingPipeline` reads from an `AudioSource` interface (implemented by `MicrophoneCapture`) and builds on the host; host tests cover streaming, no-loss and bounded-stop behaviour.
+- Engine: `RecordingPipeline` reads from an `AudioSource` interface (implemented by `MicrophoneCapture`) and builds on the host; host tests cover streaming, no-loss and bounded-stop behaviour, and on-device tests push 10-second and 5-minute takes through the MediaCodec M4A and AAC encoders and decode the result. The Android C++ test build now links the M4A encoder and decoder (it failed to link before) and starts a binder thread pool so MediaCodec delivers output in a bare native test binary.
 
 ## 0.0.20
 - Android: build with `expo-module-gradle-plugin` (current Expo module template) instead of applying `org.jetbrains.kotlin.android` directly, so the module builds on AGP 9 with built-in Kotlin (Expo SDK 58) as well as AGP 8 + Kotlin 2.1 (SDK 55).
