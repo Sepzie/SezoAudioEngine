@@ -8,7 +8,7 @@ public class ExpoAudioEngineModule: Module {
     Name("ExpoAudioEngineModule")
     OnCreate {
       emitDebugLog(level: "info", message: "ExpoAudioEngineModule created")
-      engine.onPlaybackStateChange = { [weak self] state, positionMs, durationMs in
+      self.engine.onPlaybackStateChange = { [weak self] state, positionMs, durationMs in
         DispatchQueue.main.async {
           self?.sendEvent(
             "playbackStateChange",
@@ -27,7 +27,7 @@ public class ExpoAudioEngineModule: Module {
           )
         }
       }
-      engine.onPlaybackComplete = { [weak self] positionMs, durationMs in
+      self.engine.onPlaybackComplete = { [weak self] positionMs, durationMs in
         DispatchQueue.main.async {
           self?.sendEvent(
             "playbackComplete",
@@ -38,7 +38,7 @@ public class ExpoAudioEngineModule: Module {
           )
         }
       }
-      engine.onError = { [weak self] code, message, details in
+      self.engine.onError = { [weak self] code, message, details in
         DispatchQueue.main.async {
           self?.emitEngineError(code: code, message: message, details: details)
         }

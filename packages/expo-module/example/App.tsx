@@ -18,7 +18,7 @@ import {
 } from 'sezo-audio-engine';
 import Slider from '@react-native-community/slider';
 import { Asset } from 'expo-asset';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as IntentLauncher from 'expo-intent-launcher';
 import CollapsibleSection from './components/CollapsibleSection';
 import LabeledSlider from './components/LabeledSlider';

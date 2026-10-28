@@ -28,7 +28,7 @@ export const styles = StyleSheet.create({
     backgroundColor: theme.colors.background,
   },
   background: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   glowTop: {
     position: 'absolute',

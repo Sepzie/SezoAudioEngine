@@ -2,6 +2,9 @@
 
 Canonical instructions for AI coding agents working in this repo. `CLAUDE.md` points here. This repo is self-contained: everything an agent needs to work on the engine is here or in this repo's GitHub issues.
 
+## Public repository
+This repo is public. Never name, link or describe downstream consumers (app names, private repositories or issues, bundle ids, what their product does, their infrastructure) in code, docs, commits, PR or issue text, comments, `CHANGELOG.md` or `.agent-reports/`. Write "the consumer" or "a downstream app". Task context handed to you may name the consumer; leave it out of everything you write here.
+
 ## What this is
 Open-source (MIT) audio engine for Expo/React Native and Android: synchronized multi-track playback, real-time pitch and speed control, simultaneous recording, offline extraction. Published as `sezo-audio-engine` on npm (Expo module) and as `android-engine` on JitPack. Docs: https://sepzie.github.io/SezoAudioEngine/ (built from `docs/` by `.github/workflows/docs.yml`).
 

@@ -2,7 +2,8 @@
   "extends": "../tsconfig.json",
   "compilerOptions": {
     "module": "CommonJS",
-    "moduleResolution": "Node10",
+    "moduleResolution": "Bundler",
+    "rootDir": "..",
     "noEmit": true,
     "declaration": false,
     "types": ["jest"]

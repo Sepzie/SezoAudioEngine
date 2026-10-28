@@ -10,16 +10,18 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "expo": "~52.0.0",
-    "expo-asset": "~10.0.10",
-    "expo-file-system": "~18.0.12",
-    "expo-intent-launcher": "~12.0.2",
-    "react": "18.2.0",
-    "react-native": "0.76.0",
-    "@react-native-community/slider": "4.5.2",
+    "@react-native-community/slider": "5.2.0",
+    "expo": "~56.0.24",
+    "expo-asset": "~56.0.25",
+    "expo-build-properties": "~56.0.27",
+    "expo-file-system": "~56.0.11",
+    "expo-intent-launcher": "~56.0.4",
+    "react": "19.2.3",
+    "react-native": "0.85.3",
     "sezo-audio-engine": "*"
   },
   "devDependencies": {
-    "@types/react": "~18.3.12"
+    "@types/react": "~19.2.14",
+    "typescript": "~6.0.3"
   }
 }
