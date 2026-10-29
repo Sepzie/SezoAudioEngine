@@ -39,6 +39,8 @@ export interface RecordingResult {
   fileSize: number;
 }
 
+export type RecordingStopReason = 'requested' | 'interrupted';
+
 export interface ExtractionConfig {
   format?: 'aac' | 'm4a' | 'mp3' | 'wav';
   bitrate?: number;
@@ -124,6 +126,12 @@ export interface AudioEngineEventMap {
     channels: number;
     format: 'aac' | 'm4a' | 'mp3' | 'wav';
     fileSize: number;
+    /**
+     * Why the take ended: `requested` for `stopRecording()`, `interrupted` when
+     * the engine finalised it itself (iOS audio session interruption). Absent
+     * from older module versions.
+     */
+    reason?: RecordingStopReason;
   };
   extractionProgress: Record<string, unknown>;
   extractionComplete: Record<string, unknown>;

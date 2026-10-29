@@ -32,6 +32,9 @@ describe('public types', () => {
         assertType<Equals<typeof e, AudioEngineError>>();
         assertType<Equals<typeof e.severity, 'warning' | 'fatal'>>();
       });
+      engine.addListener('recordingStopped', (p) => {
+        assertType<Equals<typeof p.reason, 'requested' | 'interrupted' | undefined>>();
+      });
       engine.addListener('trackLoaded', (p) => {
         // @ts-expect-error trackLoaded payloads have no positionMs
         void p.positionMs;

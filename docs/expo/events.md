@@ -17,6 +17,20 @@ The module emits events for playback, recording, and extraction.
 - `debugLog`
 - `error`
 
+## Recording Lifecycle
+
+- `recordingStopped` carries the take (`uri`, `duration`, `startTimeMs`, …)
+  and `reason`: `requested` after `stopRecording()`, `interrupted` when the
+  engine ended the take itself (iOS audio session interruption). Treat an
+  `interrupted` take like a normal one: the file is finalised.
+- `engineStateChanged` reasons related to recording:
+  - `recordingStarted` (Android adds `foregroundService: boolean`, whether the
+    recording foreground service was started)
+  - `recordingForegroundServiceStarted` (Android; `foregroundServiceTypes`,
+    e.g. `['microphone']` or `['microphone', 'mediaPlayback']`)
+  - `recordingStopped`
+  - `recordingInterrupted` (iOS; `uri` of the finalised take)
+
 ## Error Payload
 
 `error` events include:

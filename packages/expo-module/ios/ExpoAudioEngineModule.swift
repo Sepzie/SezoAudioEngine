@@ -43,11 +43,23 @@ public class ExpoAudioEngineModule: Module {
           self?.emitEngineError(code: code, message: message, details: details)
         }
       }
+      self.engine.onRecordingInterrupted = { [weak self] result in
+        DispatchQueue.main.async {
+          var payload = result
+          payload["reason"] = "interrupted"
+          self?.sendEvent("recordingStopped", payload)
+          self?.emitEngineStateChanged(
+            reason: "recordingInterrupted",
+            payload: ["uri": result["uri"] ?? ""]
+          )
+        }
+      }
     }
     OnDestroy {
       engine.onPlaybackStateChange = nil
       engine.onPlaybackComplete = nil
       engine.onError = nil
+      engine.onRecordingInterrupted = nil
       emitDebugLog(level: "info", message: "ExpoAudioEngineModule destroyed")
     }
 
@@ -186,7 +198,9 @@ public class ExpoAudioEngineModule: Module {
     }
     AsyncFunction("stopRecording") {
       let result = engine.stopRecording()
-      sendEvent("recordingStopped", result)
+      var payload = result
+      payload["reason"] = "requested"
+      sendEvent("recordingStopped", payload)
       emitEngineStateChanged(reason: "recordingStopped")
       return result
     }

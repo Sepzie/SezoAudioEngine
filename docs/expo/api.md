@@ -123,6 +123,8 @@ addListener<K extends keyof AudioEngineEventMap>(
 | `TRACK_UNLOAD_FAILED` | `engine` | `warning` | `true` | Log only unless unload is required for current flow. |
 | `RECORDING_START_FAILED` | `recording` | `warning` | `true` | Show recording-blocking message with retry action. |
 | `RECORDING_STOP_FAILED` | `recording` | `warning` | `true` | Show stop/save failure; keep session recoverable. |
+| `RECORDING_PERMISSION_DENIED` | `recording` | `warning` | `true` | Android: `RECORD_AUDIO` is not granted; `startRecording()` rejects. Request the permission and retry. |
+| `RECORDING_FOREGROUND_SERVICE_FAILED` | `recording` | `warning` | `true` | Android: the take is recording but is not protected in the background (`details.reason`: `appNotInForeground`, `startRejected` or `promotionRejected`). Keep the app in the foreground until `stopRecording()`. |
 | `EXTRACTION_FAILED` | `extraction` | `warning` | `true` | Show export failure state and allow retry. |
 | `EXTRACTION_CANCELLED` | `extraction` | `warning` | `true` | Log only or show non-blocking cancelled status. |
 | `UNSUPPORTED_URI` | `system` | `warning` | `true` | Show actionable validation message for URI format. |
