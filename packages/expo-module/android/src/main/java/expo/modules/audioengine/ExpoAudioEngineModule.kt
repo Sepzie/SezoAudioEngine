@@ -1,8 +1,13 @@
 package expo.modules.audioengine
 
+import android.Manifest
+import android.app.ActivityManager
+import android.content.Context
+import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.os.Bundle
 import android.util.Log
+import androidx.core.content.ContextCompat
 import com.sezo.audioengine.AudioEngine
 import expo.modules.kotlin.Promise
 import expo.modules.kotlin.exception.CodedException
@@ -23,6 +28,33 @@ class ExpoAudioEngineModule : Module() {
   private var volumeBeforeDuck: Float? = null
   private var audioFocusManager: AudioFocusManager? = null
   private val nowPlayingMetadata = mutableMapOf<String, Any?>()
+  @Volatile
+  private var recordingServiceRunning: Boolean = false
+
+  private val recordingServiceListener = object : RecordingForegroundService.StatusListener {
+    override fun onStarted(foregroundServiceType: Int) {
+      val types = mutableListOf<String>()
+      if (foregroundServiceType and RecordingForegroundService.FOREGROUND_SERVICE_TYPE_MICROPHONE != 0) {
+        types.add("microphone")
+      }
+      if (foregroundServiceType and RecordingForegroundService.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK != 0) {
+        types.add("mediaPlayback")
+      }
+      emitEngineStateChanged(
+        reason = "recordingForegroundServiceStarted",
+        payload = mapOf("foregroundServiceTypes" to types)
+      )
+    }
+
+    override fun onFailed(message: String) {
+      emitEngineError(
+        code = "RECORDING_FOREGROUND_SERVICE_FAILED",
+        message = message,
+        details = mapOf("reason" to "promotionRejected"),
+        source = "recording"
+      )
+    }
+  }
 
   private val backgroundController = object : BackgroundPlaybackBridge.Controller {
     override fun play(): Boolean {
@@ -85,6 +117,14 @@ class ExpoAudioEngineModule : Module() {
         return@OnActivityEntersBackground
       }
 
+      if (engine.isRecording()) {
+        // The recording foreground service keeps the process alive; pausing
+        // playback here would desynchronise the take from the backing tracks.
+        Log.d(TAG, "Recording in progress, keeping engine running in background")
+        emitDebugLog("info", "Recording in progress, keeping engine running in background")
+        return@OnActivityEntersBackground
+      }
+
       wasPlayingBeforePause = engine.isPlaying()
       if (wasPlayingBeforePause) {
         Log.d(TAG, "Pausing engine before background (was playing)")
@@ -138,6 +178,8 @@ class ExpoAudioEngineModule : Module() {
     OnDestroy {
       Log.d(TAG, "Module being destroyed, releasing engine")
       teardownBackgroundPlayback(clearMetadata = true, stopService = true)
+      stopRecordingService()
+      RecordingForegroundService.statusListener = null
       audioEngine?.let { engine ->
         synchronized(pendingExtractions) {
           pendingExtractions.keys.forEach { engine.cancelExtraction(it) }
@@ -176,6 +218,7 @@ class ExpoAudioEngineModule : Module() {
 
       ensureAudioFocusManager()
       BackgroundPlaybackBridge.setController(backgroundController)
+      RecordingForegroundService.statusListener = recordingServiceListener
 
       audioEngine?.setPlaybackStateListener { state, positionMs, durationMs ->
         sendEvent(
@@ -203,6 +246,7 @@ class ExpoAudioEngineModule : Module() {
       Log.d(TAG, "Release called")
       emitDebugLog("info", "Release called")
       teardownBackgroundPlayback(clearMetadata = false, stopService = true)
+      stopRecordingService()
       audioEngine?.let { engine ->
         synchronized(pendingExtractions) {
           pendingExtractions.keys.forEach { engine.cancelExtraction(it) }
@@ -441,6 +485,20 @@ class ExpoAudioEngineModule : Module() {
         else -> bitrate
       }
 
+      if (!hasRecordAudioPermission()) {
+        emitEngineError(
+          code = "RECORDING_PERMISSION_DENIED",
+          message = "Microphone permission (RECORD_AUDIO) is not granted",
+          details = mapOf("permission" to Manifest.permission.RECORD_AUDIO),
+          source = "recording"
+        )
+        throw CodedException(
+          "RECORDING_PERMISSION_DENIED",
+          "Microphone permission (RECORD_AUDIO) is not granted",
+          null
+        )
+      }
+
       val outputDir = getCacheDir()
       val fileName = "recording_${System.currentTimeMillis()}.$format"
       val outputPath = "$outputDir/$fileName"
@@ -472,8 +530,12 @@ class ExpoAudioEngineModule : Module() {
 
       activeRecordingFormat = format
       Log.d(TAG, "Recording started successfully")
+      val foregroundServiceStarted = startRecordingService(includePlayback = engine.isPlaying())
       sendEvent("recordingStarted", mapOf<String, Any>())
-      emitEngineStateChanged("recordingStarted")
+      emitEngineStateChanged(
+        reason = "recordingStarted",
+        payload = mapOf("foregroundService" to foregroundServiceStarted)
+      )
     }
 
     AsyncFunction("stopRecording") {
@@ -481,6 +543,7 @@ class ExpoAudioEngineModule : Module() {
 
       Log.d(TAG, "Stopping recording")
       val result = engine.stopRecording()
+      stopRecordingService()
 
       if (!result.success) {
         emitEngineError(
@@ -508,7 +571,7 @@ class ExpoAudioEngineModule : Module() {
         "format" to activeRecordingFormat,
         "fileSize" to result.fileSize
       )
-      sendEvent("recordingStopped", recordingResult)
+      sendEvent("recordingStopped", recordingResult + ("reason" to "requested"))
       emitEngineStateChanged("recordingStopped")
 
       recordingResult
@@ -991,6 +1054,67 @@ class ExpoAudioEngineModule : Module() {
       nowPlayingMetadata.clear()
     }
     abandonAudioFocus()
+  }
+
+  private fun hasRecordAudioPermission(): Boolean {
+    val context = appContext.reactContext?.applicationContext ?: return true
+    return ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+      PackageManager.PERMISSION_GRANTED
+  }
+
+  private fun isAppInForeground(): Boolean {
+    val info = ActivityManager.RunningAppProcessInfo()
+    ActivityManager.getMyMemoryState(info)
+    return info.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
+  }
+
+  /**
+   * Promotes the recording foreground service (type microphone, plus
+   * mediaPlayback when playback is running). Returns true when the start was
+   * accepted; failures are reported as RECORDING_FOREGROUND_SERVICE_FAILED and
+   * never fail the recording itself.
+   */
+  private fun startRecordingService(includePlayback: Boolean): Boolean {
+    val context: Context = appContext.reactContext?.applicationContext ?: return false
+
+    if (!RecordingForegroundService.isDeclared(context)) {
+      // Removed by the config plugin (`android.recordingForegroundService: false`).
+      emitDebugLog("info", "Recording foreground service not declared; recording is not protected in background")
+      return false
+    }
+
+    if (!isAppInForeground()) {
+      // Android 14+ rejects a microphone foreground service started from the background.
+      emitEngineError(
+        code = "RECORDING_FOREGROUND_SERVICE_FAILED",
+        message = "Recording started while the app is in the background; it is not protected by a foreground service",
+        details = mapOf("reason" to "appNotInForeground"),
+        source = "recording"
+      )
+      return false
+    }
+
+    if (!RecordingForegroundService.start(context, includePlayback)) {
+      emitEngineError(
+        code = "RECORDING_FOREGROUND_SERVICE_FAILED",
+        message = "The system refused to start the recording foreground service",
+        details = mapOf("reason" to "startRejected"),
+        source = "recording"
+      )
+      return false
+    }
+
+    recordingServiceRunning = true
+    return true
+  }
+
+  private fun stopRecordingService() {
+    if (!recordingServiceRunning) {
+      return
+    }
+    recordingServiceRunning = false
+    val context = appContext.reactContext?.applicationContext ?: return
+    RecordingForegroundService.stop(context)
   }
 
   private fun emitEngineStateChanged(

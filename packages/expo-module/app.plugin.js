@@ -10,6 +10,11 @@
 //
 // Opt out with the plugin option `{ android: { engineFromSource: false } }` or
 // the environment variable SEZO_AUDIO_ENGINE_FROM_SOURCE=0.
+//
+// Android also declares a `microphone` foreground service (and the
+// FOREGROUND_SERVICE_MICROPHONE permission) that keeps a recording alive in the
+// background. Apps that never record can remove both from the merged manifest
+// with `{ android: { recordingForegroundService: false } }`.
 
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
@@ -19,6 +24,9 @@ const PACKAGE_NAME = 'sezo-audio-engine';
 const ENGINE_PROJECT = ':android-engine';
 const BLOCK_BEGIN = '// @generated begin sezo-audio-engine engine-from-source';
 const BLOCK_END = '// @generated end sezo-audio-engine engine-from-source';
+const RECORDING_SERVICE = 'expo.modules.audioengine.RecordingForegroundService';
+const MICROPHONE_FGS_PERMISSION = 'android.permission.FOREGROUND_SERVICE_MICROPHONE';
+const TOOLS_NAMESPACE = 'http://schemas.android.com/tools';
 
 function projectRootOf(config) {
   return (config._internal && config._internal.projectRoot) || process.cwd();
@@ -30,6 +38,39 @@ function sourceBuildEnabled(props) {
     return false;
   }
   return !(props && props.android && props.android.engineFromSource === false);
+}
+
+function recordingServiceEnabled(props) {
+  return !(props && props.android && props.android.recordingForegroundService === false);
+}
+
+function addRemoveEntry(list, name) {
+  const entries = list || [];
+  const existing = entries.find((entry) => entry.$ && entry.$['android:name'] === name);
+  if (existing) {
+    existing.$['tools:node'] = 'remove';
+  } else {
+    entries.push({ $: { 'android:name': name, 'tools:node': 'remove' } });
+  }
+  return entries;
+}
+
+/**
+ * Marks the recording foreground service and the FOREGROUND_SERVICE_MICROPHONE
+ * permission `tools:node="remove"` in an AndroidManifest (xml2js shape), so the
+ * manifest merger drops the module's declarations. Idempotent.
+ */
+export function removeRecordingServiceFromManifest(androidManifest) {
+  const manifest = androidManifest.manifest;
+  manifest.$ = manifest.$ || {};
+  manifest.$['xmlns:tools'] = TOOLS_NAMESPACE;
+  manifest['uses-permission'] = addRemoveEntry(manifest['uses-permission'], MICROPHONE_FGS_PERMISSION);
+  if (!manifest.application || manifest.application.length === 0) {
+    manifest.application = [{ $: {} }];
+  }
+  const application = manifest.application[0];
+  application.service = addRemoveEntry(application.service, RECORDING_SERVICE);
+  return androidManifest;
 }
 
 // The package root as the app resolves it (workspaces and submodules resolve
@@ -92,19 +133,19 @@ export function addEngineToSettings(contents, engineDirFromAndroidRoot, language
   return `${contents.replace(/\s*$/, '')}\n\n${block}\n`;
 }
 
-export default function withSezoAudioEngine(config, props = {}) {
-  if (!sourceBuildEnabled(props)) {
-    return config;
-  }
-  const projectRoot = projectRootOf(config);
+function withoutRecordingService(config, configPlugins) {
+  return configPlugins.withAndroidManifest(config, (modConfig) => {
+    modConfig.modResults = removeRecordingServiceFromManifest(modConfig.modResults);
+    return modConfig;
+  });
+}
+
+function withEngineFromSource(config, configPlugins, projectRoot) {
   const engineDir = findEngineDir(projectRoot);
   if (!engineDir) {
     return config;
   }
-
-  const requireFromApp = createRequire(path.join(projectRoot, 'package.json'));
-  const { withSettingsGradle } = requireFromApp('expo/config-plugins');
-  return withSettingsGradle(config, (modConfig) => {
+  return configPlugins.withSettingsGradle(config, (modConfig) => {
     const androidRoot = modConfig.modRequest.platformProjectRoot;
     modConfig.modResults.contents = addEngineToSettings(
       modConfig.modResults.contents,
@@ -113,4 +154,25 @@ export default function withSezoAudioEngine(config, props = {}) {
     );
     return modConfig;
   });
+}
+
+export default function withSezoAudioEngine(config, props = {}) {
+  const fromSource = sourceBuildEnabled(props);
+  const withRecordingService = recordingServiceEnabled(props);
+  if (!fromSource && withRecordingService) {
+    return config;
+  }
+
+  const projectRoot = projectRootOf(config);
+  const requireFromApp = createRequire(path.join(projectRoot, 'package.json'));
+  const configPlugins = requireFromApp('expo/config-plugins');
+
+  let result = config;
+  if (!withRecordingService) {
+    result = withoutRecordingService(result, configPlugins);
+  }
+  if (fromSource) {
+    result = withEngineFromSource(result, configPlugins, projectRoot);
+  }
+  return result;
 }

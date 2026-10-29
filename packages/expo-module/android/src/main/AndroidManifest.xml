@@ -1,11 +1,20 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+  <!-- Recording foreground service (RecordingForegroundService). Apps that never
+       record can remove it and this permission with the config plugin option
+       `android.recordingForegroundService: false`. RECORD_AUDIO itself is
+       declared by the app. -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
   <application>
     <service
       android:name=".MediaPlaybackService"
       android:exported="false"
       android:foregroundServiceType="mediaPlayback" />
+    <service
+      android:name=".RecordingForegroundService"
+      android:exported="false"
+      android:foregroundServiceType="mediaPlayback|microphone" />
   </application>
 </manifest>

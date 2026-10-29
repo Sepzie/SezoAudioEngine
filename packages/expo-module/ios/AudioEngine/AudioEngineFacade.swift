@@ -28,6 +28,10 @@ final class AudioEngineFacade {
     set { eventEmitter.onError = newValue }
   }
 
+  /// Called (on the state queue) with the finished take when the engine ends a
+  /// recording on its own, e.g. because an audio session interruption began.
+  var onRecordingInterrupted: (([String: Any]) -> Void)?
+
   init() {
     wireSubsystemCallbacks()
   }
@@ -296,6 +300,12 @@ final class AudioEngineFacade {
     }
   }
 
+  /// Starts a recording. The controller configures `.playAndRecord` and
+  /// activates the session (`setActive(true)`); the session and the engine
+  /// then stay active until `stopRecording`, an interruption or `release`:
+  /// pausing or stopping playback does not stop the engine while recording,
+  /// so the take keeps receiving input and, with `UIBackgroundModes: audio`,
+  /// the app keeps running in the background.
   @discardableResult
   func startRecording(config: [String: Any]?) -> Bool {
     return queue.sync {
@@ -312,7 +322,13 @@ final class AudioEngineFacade {
 
   func stopRecording() -> [String: Any] {
     return queue.sync {
-      return recordingController.stopRecording(state: state)
+      let result = recordingController.stopRecording(state: state)
+      // The engine was kept running for the take; release the input once
+      // nothing else needs it.
+      if !state.isPlaying {
+        runtime.stopEngineIfRunning()
+      }
+      return result
     }
   }
 
@@ -510,7 +526,7 @@ final class AudioEngineFacade {
     state.currentPositionMs = runtime.currentPlaybackPositionMs(state: state)
     state.isPlaying = false
     runtime.stopAllPlayers(state: state)
-    runtime.stopEngineIfRunning()
+    stopEngineUnlessRecording()
     syncBackgroundNowPlaying()
     eventEmitter.emitPlaybackState(
       .paused,
@@ -527,7 +543,7 @@ final class AudioEngineFacade {
     state.playbackStartPositionMs = 0.0
     state.playbackToken = UUID()
     runtime.stopAllPlayers(state: state)
-    runtime.stopEngineIfRunning()
+    stopEngineUnlessRecording()
     syncBackgroundNowPlaying()
     if shouldEmit {
       eventEmitter.emitPlaybackState(
@@ -566,7 +582,7 @@ final class AudioEngineFacade {
     state.playbackStartHostTime = nil
     state.playbackStartPositionMs = 0.0
     runtime.stopAllPlayers(state: state)
-    runtime.stopEngineIfRunning()
+    stopEngineUnlessRecording()
     syncBackgroundNowPlaying()
     eventEmitter.emitPlaybackState(
       .stopped,
@@ -576,9 +592,28 @@ final class AudioEngineFacade {
     eventEmitter.emitPlaybackComplete(positionMs: state.currentPositionMs, durationMs: state.durationMs)
   }
 
+  /// Playback paths call this instead of stopping the engine directly: while a
+  /// take is in progress the engine (and with it the active session and the
+  /// input tap) must keep running.
+  private func stopEngineUnlessRecording() {
+    if state.isRecording {
+      return
+    }
+    runtime.stopEngineIfRunning()
+  }
+
   private func handleSessionInterruptionBegan() {
+    if state.isRecording {
+      // The system has stopped the engine (a call, Siri, another app's
+      // session). Finalise the take now so the file is complete and the app
+      // learns about it, instead of leaving an open file that receives no input.
+      let result = recordingController.stopRecording(state: state)
+      onRecordingInterrupted?(result)
+    }
     if state.isPlaying {
       pauseInternal()
+    } else {
+      runtime.stopEngineIfRunning()
     }
   }
 
