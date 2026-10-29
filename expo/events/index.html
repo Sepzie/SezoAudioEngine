@@ -1045,6 +1045,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#recording-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recording Lifecycle
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#error-payload" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1148,6 +1159,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#recording-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recording Lifecycle
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#error-payload" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1205,6 +1227,20 @@
 <li><code>engineStateChanged</code></li>
 <li><code>debugLog</code></li>
 <li><code>error</code></li>
+</ul>
+<h2 id="recording-lifecycle">Recording Lifecycle</h2>
+<ul>
+<li><code>recordingStopped</code> carries the take (<code>uri</code>, <code>duration</code>, <code>startTimeMs</code>, …)
+  and <code>reason</code>: <code>requested</code> after <code>stopRecording()</code>, <code>interrupted</code> when the
+  engine ended the take itself (iOS audio session interruption). Treat an
+  <code>interrupted</code> take like a normal one: the file is finalised.</li>
+<li><code>engineStateChanged</code> reasons related to recording:</li>
+<li><code>recordingStarted</code> (Android adds <code>foregroundService: boolean</code>, whether the
+    recording foreground service was started)</li>
+<li><code>recordingForegroundServiceStarted</code> (Android; <code>foregroundServiceTypes</code>,
+    e.g. <code>['microphone']</code> or <code>['microphone', 'mediaPlayback']</code>)</li>
+<li><code>recordingStopped</code></li>
+<li><code>recordingInterrupted</code> (iOS; <code>uri</code> of the finalised take)</li>
 </ul>
 <h2 id="error-payload">Error Payload</h2>
 <p><code>error</code> events include:</p>

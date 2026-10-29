@@ -969,6 +969,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Android Permissions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#recording-in-the-background" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recording in the background
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1018,6 +1035,23 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="iOS Info.plist">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#recording-and-the-audio-session-on-ios" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recording and the audio session on iOS
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -1206,6 +1240,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Android Permissions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#recording-in-the-background" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recording in the background
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1256,6 +1307,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="iOS Info.plist">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#recording-and-the-audio-session-on-ios" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recording and the audio session on iOS
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1299,6 +1367,36 @@
 <p>If you use recording, add:</p>
 <pre><code class="language-xml">&lt;uses-permission android:name=&quot;android.permission.RECORD_AUDIO&quot; /&gt;
 </code></pre>
+<p>Request it at runtime before calling <code>startRecording()</code>; without it
+<code>startRecording()</code> rejects with <code>RECORDING_PERMISSION_DENIED</code>.</p>
+<h3 id="recording-in-the-background">Recording in the background</h3>
+<p>While a recording is in progress the module runs a foreground service with the
+<code>microphone</code> type (plus <code>mediaPlayback</code> when playback was running at
+<code>startRecording()</code>), so the process and microphone access survive the app going
+to the background. It starts in <code>startRecording()</code> (Android 14+ only allows a
+microphone foreground service to start while the app is in the foreground and
+<code>RECORD_AUDIO</code> is granted) and stops in <code>stopRecording()</code> or <code>release()</code>. While
+it runs, the module does not pause playback when the app is backgrounded, even
+if background playback is not enabled. The service shows an ongoing
+"Recording" notification; override its texts and icon with app resources named
+<code>sezo_audio_engine_recording_notification_title</code>,
+<code>sezo_audio_engine_recording_notification_text</code>,
+<code>sezo_audio_engine_recording_channel_name</code> (strings) and
+<code>sezo_audio_engine_recording_icon</code> (drawable).</p>
+<p>The module's manifest declares the service and the
+<code>FOREGROUND_SERVICE_MICROPHONE</code> permission. <strong>Google Play requires a
+foreground service declaration in Play Console for the <code>microphone</code> type</strong>
+(App content → Foreground service permissions) for apps targeting Android 14+.
+Apps that never record can remove both from their manifest with the config
+plugin:</p>
+<pre><code class="language-json">{
+  &quot;expo&quot;: {
+    &quot;plugins&quot;: [[&quot;sezo-audio-engine&quot;, { &quot;android&quot;: { &quot;recordingForegroundService&quot;: false } }]]
+  }
+}
+</code></pre>
+<p>Without the service, recordings still work in the foreground but are not
+protected in the background.</p>
 <h2 id="android-engine-dependency">Android Engine Dependency</h2>
 <p>The Expo module links to the Android engine from JitPack by default. Add the JitPack repository to your app:</p>
 <pre><code class="language-gradle">// android/build.gradle
@@ -1333,7 +1431,10 @@ npm, the directory is absent, the plugin does nothing and JitPack is used.
 Opt out with <code>["sezo-audio-engine", { "android": { "engineFromSource": false } }]</code>
 or <code>SEZO_AUDIO_ENGINE_FROM_SOURCE=0</code>.</p>
 <h2 id="ios-infoplist">iOS Info.plist</h2>
-<p>If you use recording or background playback, add:</p>
+<p>If you use recording or background playback, add the keys below.
+<code>NSMicrophoneUsageDescription</code> is required to record at all, and
+<code>UIBackgroundModes: ["audio"]</code> is what keeps a recording (or playback) running
+while the app is in the background:</p>
 <pre><code class="language-json">{
   &quot;expo&quot;: {
     &quot;ios&quot;: {
@@ -1345,6 +1446,15 @@ or <code>SEZO_AUDIO_ENGINE_FROM_SOURCE=0</code>.</p>
   }
 }
 </code></pre>
+<h3 id="recording-and-the-audio-session-on-ios">Recording and the audio session on iOS</h3>
+<p><code>startRecording()</code> configures the session as <code>.playAndRecord</code> and activates it;
+the session and the audio engine stay active until <code>stopRecording()</code> (pausing
+or stopping playback during a take does not stop the engine). If the system
+interrupts the session (a phone call, Siri, another app taking the session),
+the engine finalises the take and emits <code>recordingStopped</code> with
+<code>reason: 'interrupted'</code> and the file's <code>uri</code>, plus <code>engineStateChanged</code> with
+<code>reason: 'recordingInterrupted'</code>; a later <code>stopRecording()</code> call returns an
+empty result. Listen for the event to keep the take.</p>
 <h2 id="expo-config">Expo Config</h2>
 <p>The module is built with Expo Modules and is auto-registered by <code>expo-module.config.json</code>.</p>
 

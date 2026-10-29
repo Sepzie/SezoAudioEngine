@@ -1556,6 +1556,20 @@
 <td>Show stop/save failure; keep session recoverable.</td>
 </tr>
 <tr>
+<td><code>RECORDING_PERMISSION_DENIED</code></td>
+<td><code>recording</code></td>
+<td><code>warning</code></td>
+<td><code>true</code></td>
+<td>Android: <code>RECORD_AUDIO</code> is not granted; <code>startRecording()</code> rejects. Request the permission and retry.</td>
+</tr>
+<tr>
+<td><code>RECORDING_FOREGROUND_SERVICE_FAILED</code></td>
+<td><code>recording</code></td>
+<td><code>warning</code></td>
+<td><code>true</code></td>
+<td>Android: the take is recording but is not protected in the background (<code>details.reason</code>: <code>appNotInForeground</code>, <code>startRejected</code> or <code>promotionRejected</code>). Keep the app in the foreground until <code>stopRecording()</code>.</td>
+</tr>
+<tr>
 <td><code>EXTRACTION_FAILED</code></td>
 <td><code>extraction</code></td>
 <td><code>warning</code></td>
