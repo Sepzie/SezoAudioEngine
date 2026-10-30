@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <string>
@@ -92,6 +94,39 @@ inline bool AllFinite(const float* data, size_t count) {
     }
   }
   return true;
+}
+
+// Frequency of a tone from its rising zero crossings (first channel only).
+inline float EstimateFrequencyHz(const float* data,
+                                 size_t frames,
+                                 int32_t channels,
+                                 int32_t sample_rate) {
+  if (!data || frames < 2 || channels <= 0 || sample_rate <= 0) {
+    return 0.0f;
+  }
+  size_t first = 0;
+  size_t last = 0;
+  size_t crossings = 0;
+  for (size_t i = 1; i < frames; ++i) {
+    const float prev = data[(i - 1) * static_cast<size_t>(channels)];
+    const float curr = data[i * static_cast<size_t>(channels)];
+    if (prev < 0.0f && curr >= 0.0f) {
+      if (crossings == 0) {
+        first = i;
+      }
+      last = i;
+      ++crossings;
+    }
+  }
+  if (crossings < 2) {
+    return 0.0f;
+  }
+  return static_cast<float>(crossings - 1) * static_cast<float>(sample_rate) /
+      static_cast<float>(last - first);
+}
+
+inline float SemitonesToRatio(float semitones) {
+  return std::pow(2.0f, semitones / 12.0f);
 }
 
 }  // namespace test

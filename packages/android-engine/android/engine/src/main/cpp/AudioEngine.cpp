@@ -197,6 +197,9 @@ bool AudioEngine::LoadTrack(const std::string& track_id,
       LOGD("Track %s already loaded (concurrent)", track_id.c_str());
       return true;
     }
+    // Under tracks_mutex_ so a concurrent SetPitch/SetSpeed reaches this track.
+    track->SetMasterPitchSemitones(pitch_.load(std::memory_order_acquire));
+    track->SetMasterStretchFactor(speed_.load(std::memory_order_acquire));
     mixer_->AddTrack(track);
     tracks_[track_id] = track;
   }
@@ -453,29 +456,30 @@ float AudioEngine::GetTrackSpeed(const std::string& track_id) const {
   return 1.0f;
 }
 
-// Phase 2: Master effects (apply to all tracks)
+// Phase 2: Master effects, composed with each track's own value
+// (pitch = track + master, speed = track * master).
 void AudioEngine::SetPitch(float semitones) {
-  pitch_ = semitones;
   std::lock_guard<std::mutex> lock(tracks_mutex_);
+  pitch_.store(semitones, std::memory_order_release);
   for (auto& pair : tracks_) {
-    pair.second->SetPitchSemitones(semitones);
+    pair.second->SetMasterPitchSemitones(semitones);
   }
 }
 
 float AudioEngine::GetPitch() const {
-  return pitch_;
+  return pitch_.load(std::memory_order_acquire);
 }
 
 void AudioEngine::SetSpeed(float rate) {
-  speed_ = rate;
   std::lock_guard<std::mutex> lock(tracks_mutex_);
+  speed_.store(rate, std::memory_order_release);
   for (auto& pair : tracks_) {
-    pair.second->SetStretchFactor(rate);
+    pair.second->SetMasterStretchFactor(rate);
   }
 }
 
 float AudioEngine::GetSpeed() const {
-  return speed_;
+  return speed_.load(std::memory_order_acquire);
 }
 
 // Phase 3: Recording

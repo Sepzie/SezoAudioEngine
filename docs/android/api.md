@@ -42,6 +42,8 @@
 - `setSpeed(rate: Float)`
 - `getSpeed(): Float`
 
+Master and per-track pitch/speed compose: a track plays at `trackPitch + masterPitch` semitones and `trackSpeed * masterSpeed`. The master setters leave each track's own value in place, the track getters return that own value, and tracks loaded after a master call get the stored master. A per-track value is therefore an offset from the master (for example a track recorded 2 semitones up keeps `setTrackPitch(id, -2)` whatever the master is).
+
 ## Recording
 
 - `startRecording(outputPath: String, sampleRate: Int = 44100, channels: Int = 1, format: String = "aac", bitrate: Int = 128000, bitsPerSample: Int = 16): Boolean`

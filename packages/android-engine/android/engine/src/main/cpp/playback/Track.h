@@ -76,13 +76,21 @@ class Track {
   float GetPan() const;
 
   // Phase 2: Real-time effects
+  // The track plays its own value composed with the engine's master value:
+  // pitch = track + master (semitones), speed = track * master.
+  // The getters without "Effective" return the track's own value.
   void SetPitchSemitones(float semitones);
   float GetPitchSemitones() const;
   void SetStretchFactor(float factor);
   float GetStretchFactor() const;
+  void SetMasterPitchSemitones(float semitones);
+  void SetMasterStretchFactor(float factor);
+  float GetEffectivePitchSemitones() const;
+  float GetEffectiveStretchFactor() const;
 
  private:
   void StreamingThreadFunc();
+  void ApplyPitchSpeed();
 
   std::string id_;
   std::string file_path_;
@@ -106,6 +114,10 @@ class Track {
 
   // Phase 2: Real-time effects
   std::unique_ptr<TimeStretch> time_stretcher_;
+  std::atomic<float> pitch_semitones_{0.0f};
+  std::atomic<float> master_pitch_semitones_{0.0f};
+  std::atomic<float> stretch_factor_{1.0f};
+  std::atomic<float> master_stretch_factor_{1.0f};
   std::vector<float> stretch_input_buffer_;
   double stretch_input_fraction_ = 0.0;
   uint32_t stretch_log_counter_ = 0;

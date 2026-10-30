@@ -39,6 +39,24 @@ float ChannelRms(const std::vector<float>& samples, int channel, int channels) {
   return count == 0 ? 0.0f : static_cast<float>(std::sqrt(sum / static_cast<double>(count)));
 }
 
+// Reads `frames` frames after letting the streaming thread buffer the file,
+// skipping the time-stretcher's start-up so the tone has settled.
+std::vector<float> ReadSettled(Track& track, size_t frames, int32_t channels) {
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  const size_t warmup = 4096;
+  std::vector<float> discard(warmup * static_cast<size_t>(channels), 0.0f);
+  track.ReadSamples(discard.data(), warmup);
+  std::vector<float> output(frames * static_cast<size_t>(channels), 0.0f);
+  track.ReadSamples(output.data(), frames);
+  return output;
+}
+
+float PlayedFrequencyHz(Track& track) {
+  const int32_t channels = track.GetChannels();
+  auto output = ReadSettled(track, 16384, channels);
+  return test::EstimateFrequencyHz(output.data(), 16384, channels, track.GetSampleRate());
+}
+
 }  // namespace
 
 TEST(TrackTest, MuteOutputsSilence) {
@@ -125,6 +143,72 @@ TEST(TrackTest, VolumeAndPanApplied) {
   auto hard_left = ReadSamplesWithRetry(track, frames, 2);
   const float hard_left_right = ChannelRms(hard_left, 1, 2);
   EXPECT_LT(hard_left_right, 1e-3f);
+}
+
+TEST(TrackTest, PitchComposesTrackAndMaster) {
+  const std::string path = test::FixturePath("mono_1khz_1s.wav");
+  if (!test::FileExists(path)) {
+    GTEST_SKIP() << "Missing fixture: " << path;
+  }
+
+  Track track("track_compose", path);
+  ASSERT_TRUE(track.Load());
+  track.SetMasterPitchSemitones(2.0f);
+  track.SetPitchSemitones(-2.0f);
+
+  EXPECT_FLOAT_EQ(track.GetPitchSemitones(), -2.0f);
+  EXPECT_FLOAT_EQ(track.GetEffectivePitchSemitones(), 0.0f);
+  EXPECT_NEAR(PlayedFrequencyHz(track), 1000.0f, 10.0f);
+}
+
+TEST(TrackTest, TrackPitchIsAnOffsetFromTheMaster) {
+  const std::string path = test::FixturePath("mono_1khz_1s.wav");
+  if (!test::FileExists(path)) {
+    GTEST_SKIP() << "Missing fixture: " << path;
+  }
+
+  Track track("track_offset", path);
+  ASSERT_TRUE(track.Load());
+  track.SetPitchSemitones(-2.0f);
+  track.SetMasterPitchSemitones(-3.0f);
+
+  // A later master change keeps the track's own value.
+  EXPECT_FLOAT_EQ(track.GetPitchSemitones(), -2.0f);
+  EXPECT_FLOAT_EQ(track.GetEffectivePitchSemitones(), -5.0f);
+  EXPECT_NEAR(PlayedFrequencyHz(track), 1000.0f * test::SemitonesToRatio(-5.0f), 15.0f);
+}
+
+TEST(TrackTest, MasterPitchSetBeforeLoadApplies) {
+  const std::string path = test::FixturePath("mono_1khz_1s.wav");
+  if (!test::FileExists(path)) {
+    GTEST_SKIP() << "Missing fixture: " << path;
+  }
+
+  Track track("track_master_first", path);
+  track.SetMasterPitchSemitones(3.0f);
+  ASSERT_TRUE(track.Load());
+
+  EXPECT_FLOAT_EQ(track.GetPitchSemitones(), 0.0f);
+  EXPECT_NEAR(PlayedFrequencyHz(track), 1000.0f * test::SemitonesToRatio(3.0f), 15.0f);
+}
+
+TEST(TrackTest, SpeedMultipliesTrackAndMaster) {
+  const std::string path = test::FixturePath("mono_1khz_1s.wav");
+  if (!test::FileExists(path)) {
+    GTEST_SKIP() << "Missing fixture: " << path;
+  }
+
+  Track track("track_speed", path);
+  ASSERT_TRUE(track.Load());
+  track.SetStretchFactor(0.5f);
+  track.SetMasterStretchFactor(2.0f);
+
+  EXPECT_FLOAT_EQ(track.GetStretchFactor(), 0.5f);
+  EXPECT_FLOAT_EQ(track.GetEffectiveStretchFactor(), 1.0f);
+
+  track.SetMasterStretchFactor(1.2f);
+  EXPECT_FLOAT_EQ(track.GetStretchFactor(), 0.5f);
+  EXPECT_FLOAT_EQ(track.GetEffectiveStretchFactor(), 0.6f);
 }
 
 }  // namespace playback

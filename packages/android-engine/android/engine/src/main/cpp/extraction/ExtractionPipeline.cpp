@@ -109,8 +109,8 @@ bool InitOfflineState(OfflineTrackState& state, bool include_effects, std::strin
     state.time_stretcher = std::make_unique<sezo::playback::TimeStretch>(
         state.decoder->GetFormat().sample_rate,
         state.channels);
-    state.time_stretcher->SetPitchSemitones(state.track->GetPitchSemitones());
-    state.time_stretcher->SetStretchFactor(state.track->GetStretchFactor());
+    state.time_stretcher->SetPitchSemitones(state.track->GetEffectivePitchSemitones());
+    state.time_stretcher->SetStretchFactor(state.track->GetEffectiveStretchFactor());
     if (!state.time_stretcher->IsActive()) {
       state.time_stretcher.reset();
     }
