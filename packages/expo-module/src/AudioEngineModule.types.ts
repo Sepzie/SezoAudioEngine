@@ -161,17 +161,39 @@ export interface AudioEngine {
   setTrackMuted(trackId: string, muted: boolean): void;
   setTrackSolo(trackId: string, solo: boolean): void;
   setTrackPan(trackId: string, pan: number): void;
+  /**
+   * Sets the track's own pitch shift in semitones. It is an offset from the master
+   * pitch: the track plays at `trackPitch + masterPitch` (see `setPitch`), on iOS and
+   * Android. The composed value is clamped to the engine's range (±12 semitones on Android).
+   */
   setTrackPitch(trackId: string, semitones: number): void;
+  /** The track's own pitch from `setTrackPitch` (0 by default), without the master pitch. */
   getTrackPitch(trackId: string): number;
+  /**
+   * Sets the track's own playback rate. It multiplies the master speed: the track plays
+   * at `trackSpeed * masterSpeed` (see `setSpeed`), on iOS and Android. The composed rate
+   * is clamped to the engine's range (0.5x to 2x on Android).
+   */
   setTrackSpeed(trackId: string, rate: number): void;
+  /** The track's own rate from `setTrackSpeed` (1 by default), without the master speed. */
   getTrackSpeed(trackId: string): number;
 
   setMasterVolume(volume: number): void;
   getMasterVolume(): number;
 
+  /**
+   * Sets the master pitch shift in semitones. It is added to every track's own pitch
+   * (`setTrackPitch`) and leaves those values unchanged; tracks loaded later get it too.
+   */
   setPitch(semitones: number): void;
+  /** The master pitch from `setPitch` (0 by default). */
   getPitch(): number;
+  /**
+   * Sets the master playback rate. It multiplies every track's own rate
+   * (`setTrackSpeed`) and leaves those values unchanged; tracks loaded later get it too.
+   */
   setSpeed(rate: number): void;
+  /** The master rate from `setSpeed` (1 by default). */
   getSpeed(): number;
   setTempoAndPitch(tempo: number, pitch: number): void;
 

@@ -63,6 +63,7 @@ bool Track::Load() {
   time_stretcher_ = std::make_unique<TimeStretch>(
       decoder_->GetFormat().sample_rate,
       decoder_->GetFormat().channels);
+  ApplyPitchSpeed();
 
   // Start streaming thread
   streaming_active_.store(true, std::memory_order_release);
@@ -281,23 +282,49 @@ float Track::GetPan() const {
 
 // Phase 2: Real-time effects methods
 void Track::SetPitchSemitones(float semitones) {
-  if (time_stretcher_) {
-    time_stretcher_->SetPitchSemitones(semitones);
-  }
+  pitch_semitones_.store(semitones, std::memory_order_release);
+  ApplyPitchSpeed();
 }
 
 float Track::GetPitchSemitones() const {
-  return time_stretcher_ ? time_stretcher_->GetPitchSemitones() : 0.0f;
+  return pitch_semitones_.load(std::memory_order_acquire);
 }
 
 void Track::SetStretchFactor(float factor) {
-  if (time_stretcher_) {
-    time_stretcher_->SetStretchFactor(factor);
-  }
+  stretch_factor_.store(factor, std::memory_order_release);
+  ApplyPitchSpeed();
 }
 
 float Track::GetStretchFactor() const {
-  return time_stretcher_ ? time_stretcher_->GetStretchFactor() : 1.0f;
+  return stretch_factor_.load(std::memory_order_acquire);
+}
+
+void Track::SetMasterPitchSemitones(float semitones) {
+  master_pitch_semitones_.store(semitones, std::memory_order_release);
+  ApplyPitchSpeed();
+}
+
+void Track::SetMasterStretchFactor(float factor) {
+  master_stretch_factor_.store(factor, std::memory_order_release);
+  ApplyPitchSpeed();
+}
+
+float Track::GetEffectivePitchSemitones() const {
+  return pitch_semitones_.load(std::memory_order_acquire) +
+      master_pitch_semitones_.load(std::memory_order_acquire);
+}
+
+float Track::GetEffectiveStretchFactor() const {
+  return stretch_factor_.load(std::memory_order_acquire) *
+      master_stretch_factor_.load(std::memory_order_acquire);
+}
+
+void Track::ApplyPitchSpeed() {
+  // The stretcher clamps the composed values to its supported range.
+  if (time_stretcher_) {
+    time_stretcher_->SetPitchSemitones(GetEffectivePitchSemitones());
+    time_stretcher_->SetStretchFactor(GetEffectiveStretchFactor());
+  }
 }
 
 void Track::StreamingThreadFunc() {

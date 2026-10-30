@@ -253,9 +253,9 @@ class AudioEngine {
   mutable std::mutex tracks_mutex_;
   std::map<std::string, std::shared_ptr<playback::Track>> tracks_;
 
-  // Effects state (for Phase 2)
-  float pitch_ = 0.0f;
-  float speed_ = 1.0f;
+  // Master effects, composed with each track's own pitch/speed
+  std::atomic<float> pitch_{0.0f};
+  std::atomic<float> speed_{1.0f};
 
   mutable std::mutex error_mutex_;
   ErrorCallback error_callback_;

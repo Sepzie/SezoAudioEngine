@@ -42,6 +42,8 @@ The API is defined in `packages/expo-module/src/AudioEngineModule.types.ts`.
 - `getSpeed(): number`
 - `setTempoAndPitch(tempo: number, pitch: number): void`
 
+Master and per-track pitch/speed compose: a track plays at `trackPitch + masterPitch` semitones and `trackSpeed * masterSpeed`. The master setters leave each track's own value in place, the track getters return that own value, and tracks loaded after a master call get the stored master. A per-track value is therefore an offset from the master (for example a track recorded 2 semitones up keeps `setTrackPitch(id, -2)` whatever the master is).
+
 ## Recording
 
 - `startRecording(config?: RecordingConfig): Promise<void>`

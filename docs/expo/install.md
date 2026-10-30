@@ -71,7 +71,7 @@ allprojects {
 Optionally pin the engine version in `android/gradle.properties`:
 
 ```properties
-sezoAudioEngineVersion=android-engine-v0.1.10
+sezoAudioEngineVersion=android-engine-v0.1.11
 ```
 
 ### Core versions
