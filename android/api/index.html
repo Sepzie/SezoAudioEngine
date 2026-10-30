@@ -1342,6 +1342,7 @@
 <li><code>setSpeed(rate: Float)</code></li>
 <li><code>getSpeed(): Float</code></li>
 </ul>
+<p>Master and per-track pitch/speed compose: a track plays at <code>trackPitch + masterPitch</code> semitones and <code>trackSpeed * masterSpeed</code>. The master setters leave each track's own value in place, the track getters return that own value, and tracks loaded after a master call get the stored master. A per-track value is therefore an offset from the master (for example a track recorded 2 semitones up keeps <code>setTrackPitch(id, -2)</code> whatever the master is).</p>
 <h2 id="recording">Recording</h2>
 <ul>
 <li><code>startRecording(outputPath: String, sampleRate: Int = 44100, channels: Int = 1, format: String = "aac", bitrate: Int = 128000, bitsPerSample: Int = 16): Boolean</code></li>

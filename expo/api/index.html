@@ -1407,6 +1407,7 @@
 <li><code>getSpeed(): number</code></li>
 <li><code>setTempoAndPitch(tempo: number, pitch: number): void</code></li>
 </ul>
+<p>Master and per-track pitch/speed compose: a track plays at <code>trackPitch + masterPitch</code> semitones and <code>trackSpeed * masterSpeed</code>. The master setters leave each track's own value in place, the track getters return that own value, and tracks loaded after a master call get the stored master. A per-track value is therefore an offset from the master (for example a track recorded 2 semitones up keeps <code>setTrackPitch(id, -2)</code> whatever the master is).</p>
 <h2 id="recording">Recording</h2>
 <ul>
 <li><code>startRecording(config?: RecordingConfig): Promise&lt;void&gt;</code></li>
