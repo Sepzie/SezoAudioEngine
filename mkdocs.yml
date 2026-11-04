@@ -60,4 +60,5 @@ nav:
       - Usage: expo/usage.md
       - API: expo/api.md
       - Events: expo/events.md
+      - Input Pitch Monitor: expo/input-monitor.md
       - Troubleshooting: expo/troubleshooting.md
