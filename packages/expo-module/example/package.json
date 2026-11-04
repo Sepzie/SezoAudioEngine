@@ -10,14 +10,14 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@react-native-community/slider": "5.2.0",
+    "@react-native-community/slider": "4.5.7",
     "expo": "~56.0.24",
     "expo-asset": "~56.0.25",
     "expo-build-properties": "~56.0.27",
     "expo-file-system": "~56.0.11",
     "expo-intent-launcher": "~56.0.4",
-    "react": "19.2.3",
-    "react-native": "0.85.3",
+    "react": "18.3.1",
+    "react-native": "0.76.9",
     "sezo-audio-engine": "*"
   },
   "devDependencies": {
