@@ -41,6 +41,10 @@ final class EngineState {
   var lastRecordingError: String?
   var inputLevel: Double = 0.0
 
+  /// Set while the input pitch monitor runs; fed from the recording mixer tap.
+  var inputMonitor: InputPitchAnalyzer?
+  var isInputMonitoring: Bool { inputMonitor != nil }
+
   var lastEngineError: String?
 
   var backgroundPlaybackEnabled: Bool = false

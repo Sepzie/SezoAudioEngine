@@ -32,6 +32,14 @@ final class AudioEngineFacade {
   /// recording on its own, e.g. because an audio session interruption began.
   var onRecordingInterrupted: (([String: Any]) -> Void)?
 
+  /// Called (on the state queue) with an `inputPitch` payload for every window
+  /// the input monitor analyses.
+  var onInputPitch: (([String: Any]) -> Void)?
+
+  /// Called (on the state queue) when the engine stops the input monitor on its
+  /// own; the argument says why (`interrupted`).
+  var onInputMonitorStopped: ((String) -> Void)?
+
   init() {
     wireSubsystemCallbacks()
   }
@@ -65,6 +73,7 @@ final class AudioEngineFacade {
 
   func releaseResources() {
     queue.sync {
+      recordingController.stopInputMonitor(state: state)
       runtime.stopEngineIfRunning()
       runtime.stopAllPlayers(state: state)
       recordingController.stopRecordingInternal(state: state)
@@ -114,6 +123,11 @@ final class AudioEngineFacade {
       runtime.applyPitchSpeedForAllTracks(state: state)
       runtime.recalculateDuration(state: state)
       runtime.prepare(masterVolume: state.masterVolume)
+      // Loading stops the engine to attach the players; the input tap needs it
+      // running again when the monitor or a take is using it.
+      if state.isInputMonitoring || state.isRecording {
+        runtime.startEngineIfNeeded(state: state, sessionCoordinator: sessionCoordinator, eventEmitter: eventEmitter)
+      }
       backgroundController.updateRemoteCommandStates(state: state)
       syncBackgroundNowPlaying()
 
@@ -324,8 +338,8 @@ final class AudioEngineFacade {
     return queue.sync {
       let result = recordingController.stopRecording(state: state)
       // The engine was kept running for the take; release the input once
-      // nothing else needs it.
-      if !state.isPlaying {
+      // nothing else (playback, the input monitor) needs it.
+      if !state.isPlaying && !state.isInputMonitoring {
         runtime.stopEngineIfRunning()
       }
       return result
@@ -374,6 +388,56 @@ final class AudioEngineFacade {
   func cancelExtraction(jobId: Double?) -> Bool {
     _ = jobId
     return false
+  }
+
+  /// Starts the input pitch monitor, or applies a new config to a running one.
+  /// Returns nil on success, otherwise the error code and message.
+  func startInputMonitor(config: [String: Any]?) -> (code: String, message: String)? {
+    return queue.sync {
+      ensureInitializedIfNeeded()
+      var monitorConfig = InputMonitorConfig()
+      if let minHz = (config?["minHz"] as? NSNumber)?.floatValue {
+        monitorConfig.minHz = minHz
+      }
+      if let maxHz = (config?["maxHz"] as? NSNumber)?.floatValue {
+        monitorConfig.maxHz = maxHz
+      }
+      if let intervalMs = (config?["intervalMs"] as? NSNumber)?.doubleValue {
+        guard intervalMs.isFinite else {
+          return ("INPUT_MONITOR_START_FAILED", "Failed to start input monitor: intervalMs must be a finite number")
+        }
+        monitorConfig.intervalMs = Int(intervalMs.rounded())
+      }
+
+      let failure = recordingController.startInputMonitor(
+        config: monitorConfig,
+        runtime: runtime,
+        sessionCoordinator: sessionCoordinator,
+        eventEmitter: eventEmitter,
+        state: state
+      )
+      switch failure {
+      case .none:
+        return nil
+      case .permissionDenied:
+        return ("INPUT_MONITOR_PERMISSION_DENIED", "Microphone permission is not granted")
+      case .startFailed(let detail):
+        return ("INPUT_MONITOR_START_FAILED", "Failed to start input monitor: \(detail)")
+      }
+    }
+  }
+
+  func stopInputMonitor() {
+    queue.sync {
+      guard state.isInputMonitoring else { return }
+      recordingController.stopInputMonitor(state: state)
+      // Release the input once nothing else needs the engine.
+      stopEngineUnlessInputActive()
+    }
+  }
+
+  func isInputMonitoring() -> Bool {
+    return queue.sync { state.isInputMonitoring }
   }
 
   func getInputLevel() -> Double {
@@ -430,6 +494,10 @@ final class AudioEngineFacade {
   private func wireSubsystemCallbacks() {
     runtime.onPlaybackCompleted = { [weak self] in
       self?.handlePlaybackCompleted()
+    }
+
+    recordingController.onInputPitchWindow = { [weak self] estimate in
+      self?.emitInputPitch(estimate)
     }
 
     backgroundController.onPlayRequested = { [weak self] in
@@ -526,7 +594,7 @@ final class AudioEngineFacade {
     state.currentPositionMs = runtime.currentPlaybackPositionMs(state: state)
     state.isPlaying = false
     runtime.stopAllPlayers(state: state)
-    stopEngineUnlessRecording()
+    stopEngineUnlessInputActive()
     syncBackgroundNowPlaying()
     eventEmitter.emitPlaybackState(
       .paused,
@@ -543,7 +611,7 @@ final class AudioEngineFacade {
     state.playbackStartPositionMs = 0.0
     state.playbackToken = UUID()
     runtime.stopAllPlayers(state: state)
-    stopEngineUnlessRecording()
+    stopEngineUnlessInputActive()
     syncBackgroundNowPlaying()
     if shouldEmit {
       eventEmitter.emitPlaybackState(
@@ -582,7 +650,7 @@ final class AudioEngineFacade {
     state.playbackStartHostTime = nil
     state.playbackStartPositionMs = 0.0
     runtime.stopAllPlayers(state: state)
-    stopEngineUnlessRecording()
+    stopEngineUnlessInputActive()
     syncBackgroundNowPlaying()
     eventEmitter.emitPlaybackState(
       .stopped,
@@ -593,16 +661,46 @@ final class AudioEngineFacade {
   }
 
   /// Playback paths call this instead of stopping the engine directly: while a
-  /// take is in progress the engine (and with it the active session and the
-  /// input tap) must keep running.
-  private func stopEngineUnlessRecording() {
-    if state.isRecording {
+  /// take is in progress or the input monitor runs, the engine (and with it the
+  /// active session and the input tap) must keep running.
+  private func stopEngineUnlessInputActive() {
+    if state.isRecording || state.isInputMonitoring || state.isPlaying {
       return
     }
     runtime.stopEngineIfRunning()
   }
 
+  /// Runs on the state queue, once per analysed window.
+  private func emitInputPitch(_ estimate: PitchEstimate) {
+    guard let onInputPitch = onInputPitch else { return }
+    onInputPitch([
+      "hz": Double(estimate.hz),
+      "confidence": Double(estimate.confidence),
+      "level": Double(estimate.level),
+      "positionMs": inputMonitorPositionMs(),
+      "timestampMs": Date().timeIntervalSince1970 * 1000.0
+    ])
+  }
+
+  /// Transport position for `inputPitch`: -1 when nothing is loaded or the
+  /// transport is stopped (not playing, at position 0).
+  private func inputMonitorPositionMs() -> Double {
+    if state.tracks.isEmpty {
+      return -1.0
+    }
+    if state.isPlaying {
+      return runtime.currentPlaybackPositionMs(state: state)
+    }
+    return state.currentPositionMs > 0 ? state.currentPositionMs : -1.0
+  }
+
   private func handleSessionInterruptionBegan() {
+    if state.isInputMonitoring {
+      // The system stopped the engine; the tap delivers nothing until it is
+      // restarted, so end the monitor and let the consumer restart it.
+      recordingController.stopInputMonitor(state: state)
+      onInputMonitorStopped?("interrupted")
+    }
     if state.isRecording {
       // The system has stopped the engine (a call, Siri, another app's
       // session). Finalise the take now so the file is complete and the app

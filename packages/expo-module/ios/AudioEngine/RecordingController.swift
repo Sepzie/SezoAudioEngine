@@ -1,10 +1,20 @@
 import AVFoundation
 
+enum InputMonitorStartError {
+  /// Record permission is not granted (the module never asks for it).
+  case permissionDenied
+  /// The session, the input or the engine could not start; the message says why.
+  case startFailed(String)
+}
+
 final class RecordingController {
   private let queue: DispatchQueue
   private let recordingMixer = AVAudioMixerNode()
   private var recordingMixerConnected = false
   private var recordingTapInstalled = false
+
+  /// Called on the state queue for every window the input monitor analyses.
+  var onInputPitchWindow: ((PitchEstimate) -> Void)?
 
   init(queue: DispatchQueue) {
     self.queue = queue
@@ -233,6 +243,78 @@ final class RecordingController {
     return state.inputLevel
   }
 
+  /// Starts (or restarts with a new config) the input pitch monitor. It reads
+  /// the same tap buffers as a recording, so the recording mixer must be
+  /// connected and the engine running; the engine is started here if nothing
+  /// else runs it. Called on the state queue.
+  func startInputMonitor(
+    config requested: InputMonitorConfig,
+    runtime: EngineRuntime,
+    sessionCoordinator: AudioSessionCoordinator,
+    eventEmitter: EngineEventEmitter,
+    state: EngineState
+  ) -> InputMonitorStartError? {
+    if sessionCoordinator.recordPermission() != .granted {
+      return .permissionDenied
+    }
+
+    var config = requested
+    if !config.normalize() {
+      return .startFailed("invalid config: minHz and maxHz must be positive and minHz below maxHz")
+    }
+
+    let configured = state.backgroundPlaybackEnabled
+      ? sessionCoordinator.configureBackground(with: state.lastConfig)
+      : sessionCoordinator.configureForeground(with: state.lastConfig)
+    if !configured {
+      return .startFailed(sessionCoordinator.lastErrorDescription() ?? "audio session configuration failed")
+    }
+
+    if !sessionCoordinator.isInputAvailable() {
+      return .startFailed("audio input not available (category=\(sessionCoordinator.categoryRawValue()), route=\(sessionCoordinator.describeRoute()))")
+    }
+
+    // Connected at prepare time; connecting needs the engine stopped.
+    if !ensureRecordingMixerConnected(
+      engine: runtime.engine,
+      sampleRate: sessionCoordinator.currentSampleRate(),
+      channels: sessionCoordinator.inputChannelCount(),
+      config: state.lastConfig,
+      sessionCoordinator: sessionCoordinator,
+      state: state
+    ) {
+      return .startFailed(state.lastRecordingError ?? "recording mixer could not be connected")
+    }
+
+    let tapFormat = recordingMixer.outputFormat(forBus: 0)
+    guard tapFormat.sampleRate > 0, tapFormat.channelCount > 0 else {
+      return .startFailed("input format invalid (sampleRate=\(tapFormat.sampleRate), channels=\(tapFormat.channelCount))")
+    }
+
+    let previous = state.inputMonitor
+    state.inputMonitor = InputPitchAnalyzer(
+      inputRate: Int(tapFormat.sampleRate.rounded()),
+      channels: Int(tapFormat.channelCount),
+      config: config
+    )
+
+    // The tap only delivers buffers while the engine runs.
+    guard runtime.startEngineIfNeeded(state: state, sessionCoordinator: sessionCoordinator, eventEmitter: eventEmitter) else {
+      state.inputMonitor = previous
+      return .startFailed(state.lastEngineError ?? "audio engine failed to start")
+    }
+    return nil
+  }
+
+  /// Stops the monitor. Leaves the engine alone; the caller decides whether
+  /// anything still needs it.
+  func stopInputMonitor(state: EngineState) {
+    state.inputMonitor = nil
+    if !state.isRecording {
+      state.inputLevel = 0.0
+    }
+  }
+
   func detach(runtime: EngineRuntime) {
     detachRecordingMixer(engine: runtime.engine)
   }
@@ -295,10 +377,19 @@ final class RecordingController {
     if !recordingTapInstalled {
       recordingMixer.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
         guard let self = self else { return }
+        // The tap closure only hands the buffer over; analysis and file writes
+        // run on the state queue.
         self.queue.async {
+          // Monitor first: it analyses the input before the recording gain.
+          if let monitor = state.inputMonitor {
+            self.analyzeForInputMonitor(buffer: buffer, monitor: monitor, state: state)
+          }
           guard let activeRecording = state.recordingState else { return }
           self.applyRecordingGain(buffer: buffer, gain: state.recordingVolume)
-          self.updateInputLevel(buffer: buffer, state: state)
+          if !state.isInputMonitoring {
+            // While monitoring, the input level is the monitor's window RMS.
+            self.updateInputLevel(buffer: buffer, state: state)
+          }
           do {
             try activeRecording.file.write(from: buffer)
           } catch {
@@ -421,6 +512,18 @@ final class RecordingController {
       }
     default:
       break
+    }
+  }
+
+  private func analyzeForInputMonitor(buffer: AVAudioPCMBuffer, monitor: InputPitchAnalyzer, state: EngineState) {
+    guard let channelData = buffer.floatChannelData else { return }
+    let frames = Int(buffer.frameLength)
+    if frames == 0 || Int(buffer.format.channelCount) < monitor.channels {
+      return
+    }
+    monitor.process(channelData: channelData, frames: frames) { [weak self] estimate, _ in
+      state.inputLevel = Double(estimate.level)
+      self?.onInputPitchWindow?(estimate)
     }
   }
 

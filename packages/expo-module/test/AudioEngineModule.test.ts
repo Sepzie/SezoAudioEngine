@@ -66,6 +66,9 @@ const FORWARD_CASES: ForwardCase[] = [
   { method: 'extractTrack', args: ['vocals', { format: 'wav' }], returns: Promise.resolve(extraction) },
   { method: 'extractAllTracks', args: [{ includeEffects: true }], returns: Promise.resolve([extraction]) },
   { method: 'cancelExtraction', args: [7], returns: true },
+  { method: 'startInputMonitor', args: [{ minHz: 80, maxHz: 1000, intervalMs: 20 }], returns: Promise.resolve() },
+  { method: 'stopInputMonitor', args: [], returns: Promise.resolve() },
+  { method: 'isInputMonitoring', args: [], returns: true },
   { method: 'getInputLevel', args: [], returns: -12 },
   { method: 'getOutputLevel', args: [], returns: -6 },
   { method: 'getTrackLevel', args: ['vocals'], returns: -9 },
@@ -164,6 +167,7 @@ describe('argument passing', () => {
 
   it.each([
     ['startRecording', () => engine.startRecording(), [undefined]],
+    ['startInputMonitor', () => engine.startInputMonitor(), [undefined]],
     ['extractTrack', () => engine.extractTrack('vocals'), ['vocals', undefined]],
     ['extractAllTracks', () => engine.extractAllTracks(), [undefined]],
     ['cancelExtraction', () => engine.cancelExtraction(), [undefined]],
