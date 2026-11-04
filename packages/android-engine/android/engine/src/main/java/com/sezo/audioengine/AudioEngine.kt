@@ -7,6 +7,8 @@ class AudioEngine {
   private var extractionProgressListener: ((Long, Float) -> Unit)? = null
   private var extractionCompletionListener: ((Long, ExtractionResult) -> Unit)? = null
   private var playbackStateListener: ((String, Double, Double) -> Unit)? = null
+  @Volatile
+  private var inputPitchListener: ((InputPitch) -> Unit)? = null
 
   init {
     System.loadLibrary("sezo_audio_engine")
@@ -19,12 +21,14 @@ class AudioEngine {
 
   fun release() {
     setPlaybackStateListener(null)
+    setInputPitchListener(null)
     nativeRelease(nativeHandle)
   }
 
   fun destroy() {
     if (nativeHandle != 0L) {
       setPlaybackStateListener(null)
+      setInputPitchListener(null)
       nativeDestroy(nativeHandle)
       nativeHandle = 0
     }
@@ -223,6 +227,54 @@ class AudioEngine {
     nativeSetRecordingVolume(nativeHandle, volume)
   }
 
+  // Input pitch monitor
+  /** One analysed input window. */
+  data class InputPitch(
+    /** Fundamental frequency in Hz; 0 when no pitch was detected. */
+    val hz: Float,
+    /** Detector confidence 0..1 (0 when hz is 0). */
+    val confidence: Float,
+    /** RMS level of the analysed window, linear 0..1. */
+    val level: Float,
+    /** Transport position (ms) when the window was analysed; -1 without a position. */
+    val positionMs: Double,
+    /** Wall clock (ms since the epoch) when the window was analysed. */
+    val timestampMs: Long
+  )
+
+  /**
+   * Opens the microphone (or shares the stream of a running recording) and
+   * reports its fundamental frequency every [intervalMs] through
+   * [setInputPitchListener]. Independent of playback and recording.
+   * The caller must hold RECORD_AUDIO.
+   * @return false when the stream could not start; see [getInputMonitorError].
+   */
+  @JvmOverloads
+  fun startInputMonitor(minHz: Float = 50f, maxHz: Float = 1500f, intervalMs: Int = 25): Boolean {
+    return nativeStartInputMonitor(nativeHandle, minHz, maxHz, intervalMs)
+  }
+
+  fun stopInputMonitor() {
+    nativeStopInputMonitor(nativeHandle)
+  }
+
+  fun isInputMonitoring(): Boolean {
+    return nativeIsInputMonitoring(nativeHandle)
+  }
+
+  /** Why the last [startInputMonitor] failed; empty after a successful start. */
+  fun getInputMonitorError(): String {
+    return nativeGetInputMonitorError(nativeHandle)
+  }
+
+  /** Called on the monitor's worker thread for every analysed window. */
+  fun setInputPitchListener(listener: ((InputPitch) -> Unit)?) {
+    inputPitchListener = listener
+    if (nativeHandle != 0L) {
+      nativeSetInputPitchListener(nativeHandle, listener != null)
+    }
+  }
+
   // Extraction (Phase 6)
   data class ExtractionResult(
     val success: Boolean,
@@ -361,6 +413,17 @@ class AudioEngine {
   }
 
   @Keep
+  private fun onNativeInputPitch(
+    hz: Float,
+    confidence: Float,
+    level: Float,
+    positionMs: Double,
+    timestampMs: Long
+  ) {
+    inputPitchListener?.invoke(InputPitch(hz, confidence, level, positionMs, timestampMs))
+  }
+
+  @Keep
   private fun onNativePlaybackStateChanged(state: Int, positionMs: Double, durationMs: Double) {
     val mappedState = when (state) {
       0 -> "stopped"
@@ -422,6 +485,15 @@ class AudioEngine {
   private external fun nativeIsRecording(handle: Long): Boolean
   private external fun nativeGetInputLevel(handle: Long): Float
   private external fun nativeSetRecordingVolume(handle: Long, volume: Float)
+
+  // Input pitch monitor
+  private external fun nativeSetInputPitchListener(handle: Long, enabled: Boolean)
+  private external fun nativeStartInputMonitor(
+    handle: Long, minHz: Float, maxHz: Float, intervalMs: Int
+  ): Boolean
+  private external fun nativeStopInputMonitor(handle: Long)
+  private external fun nativeIsInputMonitoring(handle: Long): Boolean
+  private external fun nativeGetInputMonitorError(handle: Long): String
 
   private external fun nativeExtractTrack(
     handle: Long, trackId: String, outputPath: String,

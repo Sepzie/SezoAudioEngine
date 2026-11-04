@@ -29,6 +29,22 @@ struct JniPlaybackStateCallbackContext {
   jmethodID state_method = nullptr;
 };
 
+struct JniInputPitchCallbackContext {
+  JavaVM* jvm = nullptr;
+  jobject engine_object = nullptr;
+  jmethodID pitch_method = nullptr;
+};
+
+// Detaches a thread that this file attached, when that thread exits.
+struct ThreadAttachment {
+  JavaVM* jvm = nullptr;
+  ~ThreadAttachment() {
+    if (jvm) {
+      jvm->DetachCurrentThread();
+    }
+  }
+};
+
 JNIEnv* GetEnvForCallback(JavaVM* jvm, bool* did_attach) {
   if (did_attach) {
     *did_attach = false;
@@ -137,6 +153,66 @@ void CallCompletionCallback(
 
   if (did_attach) {
     context->jvm->DetachCurrentThread();
+  }
+}
+
+// For callbacks that fire many times a second from one native worker thread:
+// attach once and stay attached until the thread exits, instead of
+// attaching and detaching (and creating a java.lang.Thread) per call.
+JNIEnv* GetEnvAttachedForThread(JavaVM* jvm) {
+  if (!jvm) {
+    return nullptr;
+  }
+  JNIEnv* env = nullptr;
+  if (jvm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) == JNI_OK) {
+    return env;
+  }
+  static thread_local ThreadAttachment attachment;
+  if (jvm->AttachCurrentThread(&env, nullptr) != JNI_OK) {
+    return nullptr;
+  }
+  attachment.jvm = jvm;
+  return env;
+}
+
+void DeleteInputPitchContext(JniInputPitchCallbackContext* context) {
+  if (!context) {
+    return;
+  }
+  if (context->jvm && context->engine_object) {
+    bool did_attach = false;
+    JNIEnv* env = GetEnvForCallback(context->jvm, &did_attach);
+    if (env) {
+      env->DeleteGlobalRef(context->engine_object);
+      if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+      }
+    }
+    if (did_attach) {
+      context->jvm->DetachCurrentThread();
+    }
+  }
+  delete context;
+}
+
+void CallInputPitchCallback(
+    const std::shared_ptr<JniInputPitchCallbackContext>& context,
+    const sezo::analysis::InputPitchEvent& event) {
+  if (!context || !context->jvm || !context->engine_object || !context->pitch_method) {
+    return;
+  }
+  JNIEnv* env = GetEnvAttachedForThread(context->jvm);
+  if (!env) {
+    return;
+  }
+  env->CallVoidMethod(context->engine_object, context->pitch_method,
+                      static_cast<jfloat>(event.hz),
+                      static_cast<jfloat>(event.confidence),
+                      static_cast<jfloat>(event.level),
+                      static_cast<jdouble>(event.position_ms),
+                      static_cast<jlong>(event.timestamp_ms));
+  if (env->ExceptionCheck()) {
+    env->ExceptionClear();
   }
 }
 
@@ -706,6 +782,85 @@ Java_com_sezo_audioengine_AudioEngine_nativeSetRecordingVolume(
   if (engine) {
     engine->SetRecordingVolume(volume);
   }
+}
+
+// Input pitch monitor
+JNIEXPORT void JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeSetInputPitchListener(
+    JNIEnv* env, jobject thiz, jlong handle, jboolean enabled) {
+  auto* engine = reinterpret_cast<AudioEngine*>(handle);
+  if (!engine) {
+    return;
+  }
+  if (!enabled || !g_java_vm) {
+    engine->SetInputPitchCallback(nullptr);
+    return;
+  }
+
+  jclass engine_class = env->GetObjectClass(thiz);
+  jmethodID pitch_method = env->GetMethodID(engine_class, "onNativeInputPitch", "(FFFDJ)V");
+  if (!pitch_method) {
+    if (env->ExceptionCheck()) {
+      env->ExceptionClear();
+    }
+    LOGE("Failed to find onNativeInputPitch");
+    engine->SetInputPitchCallback(nullptr);
+    return;
+  }
+
+  auto context = std::shared_ptr<JniInputPitchCallbackContext>(
+      new JniInputPitchCallbackContext(), DeleteInputPitchContext);
+  context->jvm = g_java_vm;
+  context->engine_object = env->NewGlobalRef(thiz);
+  context->pitch_method = pitch_method;
+
+  engine->SetInputPitchCallback([context](const analysis::InputPitchEvent& event) {
+    CallInputPitchCallback(context, event);
+  });
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeStartInputMonitor(
+    JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]], jlong handle,
+    jfloat min_hz, jfloat max_hz, jint interval_ms) {
+  auto* engine = reinterpret_cast<AudioEngine*>(handle);
+  if (!engine) {
+    return JNI_FALSE;
+  }
+  analysis::InputMonitorConfig config;
+  config.min_hz = static_cast<float>(min_hz);
+  config.max_hz = static_cast<float>(max_hz);
+  config.interval_ms = static_cast<int32_t>(interval_ms);
+  return engine->StartInputMonitor(config) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeStopInputMonitor(
+    JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]], jlong handle) {
+  auto* engine = reinterpret_cast<AudioEngine*>(handle);
+  if (engine) {
+    engine->StopInputMonitor();
+  }
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeIsInputMonitoring(
+    JNIEnv* env [[maybe_unused]], jobject thiz [[maybe_unused]], jlong handle) {
+  auto* engine = reinterpret_cast<AudioEngine*>(handle);
+  if (engine) {
+    return engine->IsInputMonitoring() ? JNI_TRUE : JNI_FALSE;
+  }
+  return JNI_FALSE;
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeGetInputMonitorError(
+    JNIEnv* env, jobject thiz [[maybe_unused]], jlong handle) {
+  auto* engine = reinterpret_cast<AudioEngine*>(handle);
+  if (!engine) {
+    return JNIHelper::StringToJString(env, "audio engine not created");
+  }
+  return JNIHelper::StringToJString(env, engine->GetLastInputMonitorError());
 }
 
 // Phase 6: Extraction

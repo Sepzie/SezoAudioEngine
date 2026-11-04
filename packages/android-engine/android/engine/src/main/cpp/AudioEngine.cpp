@@ -95,6 +95,9 @@ void AudioEngine::Release() {
     return;
   }
 
+  // The monitor's worker reads the transport; stop it before tearing that down.
+  StopInputMonitor();
+
   CancelAllExtractions();
   StopExtractionWorker();
 
@@ -519,13 +522,33 @@ bool AudioEngine::StartRecording(
     };
   }
 
+  // Open the input stream, or reuse the one the input monitor opened.
+  std::lock_guard<std::mutex> input_lock(input_mutex_);
+  std::string input_error;
+  auto microphone = AcquireMicrophoneLocked(config.sample_rate, config.channels, &input_error);
+  if (!microphone) {
+    ReportError(core::ErrorCode::kRecordingFailed, "Failed to start recording: " + input_error);
+    recording_start_samples_.store(0, std::memory_order_release);
+    ReleaseMicrophoneIfUnusedLocked();
+    return false;
+  }
+  recording_uses_microphone_ = true;
+
   // Start recording
-  bool success = recording_pipeline_->StartRecording(output_path, config, wrapped_callback);
+  bool success = recording_pipeline_->StartRecording(
+      std::make_unique<recording::CaptureRecordingSource>(microphone),
+      output_path,
+      config,
+      wrapped_callback);
   if (!success) {
     ReportError(core::ErrorCode::kRecordingFailed, "Failed to start recording");
     recording_start_samples_.store(0, std::memory_order_release);
+    recording_uses_microphone_ = false;
+    ReleaseMicrophoneIfUnusedLocked();
   } else {
-    LOGD("Recording started: %s", output_path.c_str());
+    LOGD("Recording started: %s (input stream shared with monitor: %s)",
+         output_path.c_str(),
+         input_monitor_ ? "yes" : "no");
   }
 
   return success;
@@ -539,7 +562,13 @@ recording::RecordingResult AudioEngine::StopRecording() {
     return result;
   }
 
+  std::lock_guard<std::mutex> input_lock(input_mutex_);
+  // Switches the recording sink off and drains it; the stream keeps running
+  // when the input monitor still uses it.
   auto result = recording_pipeline_->StopRecording();
+  recording_uses_microphone_ = false;
+  ReleaseMicrophoneIfUnusedLocked();
+
   const int64_t start_samples = recording_start_samples_.load(std::memory_order_acquire);
   result.start_time_samples = start_samples;
   result.start_time_ms = timing_ ? timing_->SamplesToMs(start_samples) : 0.0;
@@ -555,6 +584,9 @@ bool AudioEngine::IsRecording() const {
 }
 
 float AudioEngine::GetInputLevel() const {
+  if (input_monitoring_.load(std::memory_order_acquire)) {
+    return input_monitor_level_.load(std::memory_order_relaxed);
+  }
   if (recording_pipeline_) {
     return recording_pipeline_->GetInputLevel();
   }
@@ -564,6 +596,157 @@ float AudioEngine::GetInputLevel() const {
 void AudioEngine::SetRecordingVolume(float volume) {
   if (recording_pipeline_) {
     recording_pipeline_->SetVolume(volume);
+  }
+}
+
+// Input pitch monitor
+void AudioEngine::SetInputPitchCallback(InputPitchCallback callback) {
+  std::lock_guard<std::mutex> lock(input_pitch_callback_mutex_);
+  input_pitch_callback_ = std::move(callback);
+}
+
+bool AudioEngine::StartInputMonitor(const analysis::InputMonitorConfig& requested) {
+  std::lock_guard<std::mutex> lock(input_mutex_);
+  input_monitor_error_.clear();
+
+  if (!initialized_.load(std::memory_order_acquire)) {
+    input_monitor_error_ = "audio engine not initialized";
+    return false;
+  }
+
+  analysis::InputMonitorConfig config = requested;
+  if (!analysis::NormalizeInputMonitorConfig(&config)) {
+    input_monitor_error_ = "invalid config: minHz and maxHz must be positive and minHz below maxHz";
+    return false;
+  }
+
+  // Already running: restart the analysis with the new config, keep the stream.
+  StopInputMonitorLocked();
+
+  std::string error;
+  auto microphone = AcquireMicrophoneLocked(sample_rate_, 1, &error);
+  if (!microphone) {
+    input_monitor_error_ = error;
+    ReleaseMicrophoneIfUnusedLocked();
+    return false;
+  }
+
+  input_monitor_ = std::make_unique<analysis::InputPitchMonitor>(
+      microphone->GetSampleRate(),
+      microphone->GetChannelCount(),
+      config,
+      [microphone](float* dst, size_t max_frames) {
+        return microphone->ReadMonitorData(dst, max_frames);
+      },
+      [this]() { return InputMonitorPositionMs(); },
+      [this](const analysis::InputPitchEvent& event) { DeliverInputPitch(event); });
+
+  input_monitor_level_.store(0.0f, std::memory_order_relaxed);
+  microphone->SetMonitorSinkEnabled(true);
+  input_monitor_->Start();
+  input_monitoring_.store(true, std::memory_order_release);
+  LOGD("Input monitor started: %d Hz, %d ch, %.0f-%.0f Hz, every %d ms (shared with recording: %s)",
+       microphone->GetSampleRate(),
+       microphone->GetChannelCount(),
+       static_cast<double>(config.min_hz),
+       static_cast<double>(config.max_hz),
+       config.interval_ms,
+       recording_uses_microphone_ ? "yes" : "no");
+  return true;
+}
+
+void AudioEngine::StopInputMonitor() {
+  std::lock_guard<std::mutex> lock(input_mutex_);
+  const bool was_running = input_monitor_ != nullptr;
+  StopInputMonitorLocked();
+  ReleaseMicrophoneIfUnusedLocked();
+  if (was_running) {
+    LOGD("Input monitor stopped");
+  }
+}
+
+bool AudioEngine::IsInputMonitoring() const {
+  return input_monitoring_.load(std::memory_order_acquire);
+}
+
+std::string AudioEngine::GetLastInputMonitorError() const {
+  std::lock_guard<std::mutex> lock(input_mutex_);
+  return input_monitor_error_;
+}
+
+void AudioEngine::StopInputMonitorLocked() {
+  input_monitoring_.store(false, std::memory_order_release);
+  if (input_monitor_) {
+    if (microphone_) {
+      microphone_->SetMonitorSinkEnabled(false);
+    }
+    // Joins the worker: no event is delivered after this.
+    input_monitor_->Stop();
+    input_monitor_.reset();
+  }
+  input_monitor_level_.store(0.0f, std::memory_order_relaxed);
+}
+
+std::shared_ptr<recording::MicrophoneCapture> AudioEngine::AcquireMicrophoneLocked(
+    int32_t sample_rate, int32_t channel_count, std::string* error) {
+  if (microphone_) {
+    // One input stream: whoever opened it first chose its format.
+    return microphone_;
+  }
+
+  auto microphone = std::make_shared<recording::MicrophoneCapture>(
+      sample_rate > 0 ? sample_rate : sample_rate_,
+      channel_count > 0 ? channel_count : 1);
+  if (!microphone->Initialize()) {
+    if (error) {
+      *error = "could not open the input stream (microphone permission or input device)";
+    }
+    return nullptr;
+  }
+  if (!microphone->StartStream()) {
+    microphone->Close();
+    if (error) {
+      *error = "could not start the input stream";
+    }
+    return nullptr;
+  }
+  microphone_ = microphone;
+  return microphone_;
+}
+
+void AudioEngine::ReleaseMicrophoneIfUnusedLocked() {
+  if (!microphone_ || input_monitor_ || recording_uses_microphone_) {
+    return;
+  }
+  microphone_->Close();
+  microphone_.reset();
+}
+
+double AudioEngine::InputMonitorPositionMs() const {
+  if (!initialized_.load(std::memory_order_acquire) || !transport_) {
+    return -1.0;
+  }
+  {
+    std::lock_guard<std::mutex> lock(tracks_mutex_);
+    if (tracks_.empty()) {
+      return -1.0;
+    }
+  }
+  if (transport_->GetState() == core::PlaybackState::kStopped) {
+    return -1.0;
+  }
+  return GetCurrentPosition();
+}
+
+void AudioEngine::DeliverInputPitch(const analysis::InputPitchEvent& event) {
+  input_monitor_level_.store(event.level, std::memory_order_relaxed);
+  InputPitchCallback callback;
+  {
+    std::lock_guard<std::mutex> lock(input_pitch_callback_mutex_);
+    callback = input_pitch_callback_;
+  }
+  if (callback) {
+    callback(event);
   }
 }
 
