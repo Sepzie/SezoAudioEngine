@@ -16,7 +16,7 @@
         <link rel="prev" href="../api/">
       
       
-        <link rel="next" href="../troubleshooting/">
+        <link rel="next" href="../input-monitor/">
       
       
         
@@ -1056,6 +1056,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#input-pitch-monitor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Input Pitch Monitor
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#error-payload" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1081,6 +1092,34 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../input-monitor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Input Pitch Monitor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -1170,6 +1209,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#input-pitch-monitor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Input Pitch Monitor
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#error-payload" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1225,6 +1275,7 @@
 <li><code>extractionProgress</code></li>
 <li><code>extractionComplete</code></li>
 <li><code>engineStateChanged</code></li>
+<li><code>inputPitch</code></li>
 <li><code>debugLog</code></li>
 <li><code>error</code></li>
 </ul>
@@ -1241,6 +1292,16 @@
     e.g. <code>['microphone']</code> or <code>['microphone', 'mediaPlayback']</code>)</li>
 <li><code>recordingStopped</code></li>
 <li><code>recordingInterrupted</code> (iOS; <code>uri</code> of the finalised take)</li>
+</ul>
+<h2 id="input-pitch-monitor">Input Pitch Monitor</h2>
+<ul>
+<li><code>inputPitch</code> carries <code>hz</code>, <code>confidence</code>, <code>level</code>, <code>positionMs</code> and
+  <code>timestampMs</code> for every analysed microphone window while the monitor runs
+  (see <a href="../input-monitor/">Input Pitch Monitor</a>).</li>
+<li><code>engineStateChanged</code> with <code>reason: 'inputMonitorStopped'</code> when the module
+  stopped the monitor itself: <code>cause: 'background'</code> (the app went to the
+  background without a recording) or <code>cause: 'interrupted'</code> (iOS audio session
+  interruption). Restart it with <code>startInputMonitor()</code>.</li>
 </ul>
 <h2 id="error-payload">Error Payload</h2>
 <p><code>error</code> events include:</p>

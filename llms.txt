@@ -19,4 +19,5 @@ Expo module (cross-platform API with iOS implementation and background playback)
 - https://sepzie.github.io/SezoAudioEngine/expo/usage/
 - https://sepzie.github.io/SezoAudioEngine/expo/api/
 - https://sepzie.github.io/SezoAudioEngine/expo/events/
+- https://sepzie.github.io/SezoAudioEngine/expo/input-monitor/
 - https://sepzie.github.io/SezoAudioEngine/expo/troubleshooting/

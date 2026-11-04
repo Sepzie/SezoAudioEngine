@@ -1061,6 +1061,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#input-pitch-monitor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Input Pitch Monitor
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#extraction" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1150,6 +1161,34 @@
     
   
     Events
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../input-monitor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Input Pitch Monitor
   
 
     
@@ -1273,6 +1312,17 @@
     <span class="md-ellipsis">
       
         Recording
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#input-pitch-monitor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Input Pitch Monitor
       
     </span>
   </a>
@@ -1415,6 +1465,13 @@
 <li><code>isRecording(): boolean</code></li>
 <li><code>setRecordingVolume(volume: number): void</code></li>
 </ul>
+<h2 id="input-pitch-monitor">Input Pitch Monitor</h2>
+<ul>
+<li><code>startInputMonitor(config?: InputMonitorConfig): Promise&lt;void&gt;</code> — reports the microphone's fundamental frequency as <code>inputPitch</code> events, independently of playback and recording. Rejects with <code>INPUT_MONITOR_PERMISSION_DENIED</code> or <code>INPUT_MONITOR_START_FAILED</code>.</li>
+<li><code>stopInputMonitor(): Promise&lt;void&gt;</code></li>
+<li><code>isInputMonitoring(): boolean</code></li>
+</ul>
+<p>See <a href="../input-monitor/">Input Pitch Monitor</a>.</p>
 <h2 id="extraction">Extraction</h2>
 <ul>
 <li><code>extractTrack(trackId: string, config?: ExtractionConfig): Promise&lt;ExtractionResult&gt;</code></li>
@@ -1423,7 +1480,7 @@
 </ul>
 <h2 id="meters">Meters</h2>
 <ul>
-<li><code>getInputLevel(): number</code></li>
+<li><code>getInputLevel(): number</code> — input RMS while the input monitor runs or while recording</li>
 <li><code>getOutputLevel(): number</code></li>
 <li><code>getTrackLevel(trackId: string): number</code></li>
 </ul>
@@ -1445,6 +1502,7 @@
 <li><code>extractionProgress</code></li>
 <li><code>extractionComplete</code></li>
 <li><code>engineStateChanged</code></li>
+<li><code>inputPitch</code></li>
 <li><code>debugLog</code></li>
 <li><code>error</code></li>
 </ul>
@@ -1569,6 +1627,20 @@
 <td><code>warning</code></td>
 <td><code>true</code></td>
 <td>Android: the take is recording but is not protected in the background (<code>details.reason</code>: <code>appNotInForeground</code>, <code>startRejected</code> or <code>promotionRejected</code>). Keep the app in the foreground until <code>stopRecording()</code>.</td>
+</tr>
+<tr>
+<td><code>INPUT_MONITOR_PERMISSION_DENIED</code></td>
+<td><code>recording</code></td>
+<td><code>warning</code></td>
+<td><code>true</code></td>
+<td><code>startInputMonitor()</code> rejects: the record permission is not granted. Request it and retry.</td>
+</tr>
+<tr>
+<td><code>INPUT_MONITOR_START_FAILED</code></td>
+<td><code>recording</code></td>
+<td><code>warning</code></td>
+<td><code>true</code></td>
+<td><code>startInputMonitor()</code> rejects: the input stream, session or engine could not start, or the config is invalid (message says why).</td>
 </tr>
 <tr>
 <td><code>EXTRACTION_FAILED</code></td>
