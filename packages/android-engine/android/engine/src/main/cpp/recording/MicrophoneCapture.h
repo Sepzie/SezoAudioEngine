@@ -13,7 +13,16 @@ namespace recording {
 
 /**
  * Captures audio from microphone using Oboe.
- * Implements a duplex stream callback for synchronized recording.
+ *
+ * One input stream feeds two independent sinks, each a single-producer /
+ * single-consumer ring buffer written on the Oboe callback:
+ * - the recording sink (gain applied), read through the AudioSource interface
+ *   or through CaptureRecordingSource;
+ * - the monitor sink (raw input), read by the input pitch monitor.
+ * The stream runs while either consumer needs it; each sink is switched on and
+ * off on its own, so a recording can start and stop while the monitor keeps
+ * running and the other way round. The callback only copies into the enabled
+ * rings and measures the peak level.
  */
 class MicrophoneCapture : public AudioSource, public oboe::AudioStreamDataCallback {
  public:
@@ -32,16 +41,40 @@ class MicrophoneCapture : public AudioSource, public oboe::AudioStreamDataCallba
   bool Initialize();
 
   /**
-   * Start capturing audio.
+   * AudioSource: start the stream and the recording sink.
    * @return true if successful
    */
   bool Start() override;
 
   /**
-   * Stop capturing audio.
+   * AudioSource: stop the recording sink and the stream.
    * @return true if successful
    */
   bool Stop() override;
+
+  /** Start the input stream without enabling any sink. */
+  bool StartStream();
+
+  /** Stop the input stream. Sinks keep their state. */
+  bool StopStream();
+
+  /**
+   * Switch the recording sink. Enabling clears its ring; disabling returns once
+   * the callback can no longer write to it, so the ring then only drains.
+   */
+  void SetRecordingSinkEnabled(bool enabled);
+
+  /** Same as SetRecordingSinkEnabled, for the monitor sink. */
+  void SetMonitorSinkEnabled(bool enabled);
+
+  bool IsRecordingSinkEnabled() const;
+  bool IsMonitorSinkEnabled() const;
+
+  /** Read raw interleaved frames from the monitor sink. */
+  size_t ReadMonitorData(float* data, size_t frame_count);
+
+  /** Frames buffered in the monitor sink. */
+  size_t GetMonitorAvailableFrames() const;
 
   /**
    * Close the stream and release resources.
@@ -103,12 +136,45 @@ class MicrophoneCapture : public AudioSource, public oboe::AudioStreamDataCallba
   int32_t channel_count_;
   std::shared_ptr<oboe::AudioStream> stream_;
 
-  // Circular buffer for captured audio (holds ~2 seconds of audio)
+  // Waits until the callback is outside its sink writes.
+  void WaitForCallbackOutsideSinks() const;
+
+  // Recording sink: ~2 seconds of audio, gain applied.
   std::unique_ptr<core::CircularBuffer> buffer_;
+  // Monitor sink: ~2 seconds of raw audio.
+  std::unique_ptr<core::CircularBuffer> monitor_buffer_;
 
   std::atomic<float> volume_{1.0f};
   std::atomic<float> input_level_{0.0f};
   std::atomic<bool> is_capturing_{false};
+  std::atomic<bool> recording_sink_enabled_{false};
+  std::atomic<bool> monitor_sink_enabled_{false};
+  // Set by the callback around its sink writes (see SetRecordingSinkEnabled).
+  std::atomic<bool> callback_in_sinks_{false};
+};
+
+/**
+ * AudioSource view of a shared MicrophoneCapture's recording sink, for
+ * RecordingPipeline. Start()/Stop() switch the sink only; the owner of the
+ * capture starts and stops the stream, so a running input monitor is not
+ * interrupted by a recording ending.
+ */
+class CaptureRecordingSource : public AudioSource {
+ public:
+  explicit CaptureRecordingSource(std::shared_ptr<MicrophoneCapture> capture);
+  ~CaptureRecordingSource() override;
+
+  bool Start() override;
+  bool Stop() override;
+  int32_t GetSampleRate() const override;
+  int32_t GetChannelCount() const override;
+  size_t GetAvailableFrames() const override;
+  size_t ReadData(float* data, size_t frame_count) override;
+  float GetInputLevel() const override;
+  void SetVolume(float volume) override;
+
+ private:
+  std::shared_ptr<MicrophoneCapture> capture_;
 };
 
 }  // namespace recording

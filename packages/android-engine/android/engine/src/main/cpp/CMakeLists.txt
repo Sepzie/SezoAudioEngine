@@ -35,6 +35,9 @@ add_library(sezo_audio_engine SHARED
   # Phase 3: Recording
   recording/MicrophoneCapture.cpp
   recording/RecordingPipeline.cpp
+  # Input pitch monitor
+  analysis/PitchDetector.cpp
+  analysis/InputPitchMonitor.cpp
   # Phase 6: Extraction
   extraction/ExtractionPipeline.cpp
   # JNI bridge

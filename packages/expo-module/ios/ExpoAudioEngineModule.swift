@@ -4,6 +4,14 @@ import Foundation
 public class ExpoAudioEngineModule: Module {
   private let engine = AudioEngineFacade()
 
+  // inputPitch events dispatched to the main queue and not yet sent. Bounded so
+  // a slow consumer drops windows instead of queueing them. The tap delivers
+  // input in blocks of up to ~100 ms, i.e. several windows at once, so the
+  // bound leaves room for one block.
+  private let pendingInputPitchLock = NSLock()
+  private var pendingInputPitchEvents = 0
+  private static let maxPendingInputPitchEvents = 8
+
   public func definition() -> ModuleDefinition {
     Name("ExpoAudioEngineModule")
     OnCreate {
@@ -43,6 +51,14 @@ public class ExpoAudioEngineModule: Module {
           self?.emitEngineError(code: code, message: message, details: details)
         }
       }
+      self.engine.onInputPitch = { [weak self] payload in
+        self?.dispatchInputPitch(payload)
+      }
+      self.engine.onInputMonitorStopped = { [weak self] cause in
+        DispatchQueue.main.async {
+          self?.emitEngineStateChanged(reason: "inputMonitorStopped", payload: ["cause": cause])
+        }
+      }
       self.engine.onRecordingInterrupted = { [weak self] result in
         DispatchQueue.main.async {
           var payload = result
@@ -60,7 +76,18 @@ public class ExpoAudioEngineModule: Module {
       engine.onPlaybackComplete = nil
       engine.onError = nil
       engine.onRecordingInterrupted = nil
+      engine.onInputPitch = nil
+      engine.onInputMonitorStopped = nil
+      engine.stopInputMonitor()
       emitDebugLog(level: "info", message: "ExpoAudioEngineModule destroyed")
+    }
+    OnAppEntersBackground {
+      // Without a recording the monitor does not run in the background; the
+      // consumer restarts it when the app comes back.
+      if engine.isInputMonitoring() && !engine.isRecording() {
+        engine.stopInputMonitor()
+        emitEngineStateChanged(reason: "inputMonitorStopped", payload: ["cause": "background"])
+      }
     }
 
     AsyncFunction("initialize") { (config: [String: Any]) in
@@ -279,6 +306,19 @@ public class ExpoAudioEngineModule: Module {
       return engine.cancelExtraction(jobId: jobId)
     }
 
+    AsyncFunction("startInputMonitor") { (config: [String: Any]?) throws in
+      if let failure = engine.startInputMonitor(config: config) {
+        emitEngineError(code: failure.code, message: failure.message, source: "recording")
+        throw AudioEngineError(failure.code, failure.message)
+      }
+    }
+    AsyncFunction("stopInputMonitor") {
+      engine.stopInputMonitor()
+    }
+    Function("isInputMonitoring") {
+      return engine.isInputMonitoring()
+    }
+
     Function("getInputLevel") {
       return engine.getInputLevel()
     }
@@ -312,9 +352,29 @@ public class ExpoAudioEngineModule: Module {
       "extractionProgress",
       "extractionComplete",
       "engineStateChanged",
+      "inputPitch",
       "error",
       "debugLog"
     )
+  }
+
+  /// Called on the engine's state queue for every analysed window.
+  private func dispatchInputPitch(_ payload: [String: Any]) {
+    pendingInputPitchLock.lock()
+    if pendingInputPitchEvents >= ExpoAudioEngineModule.maxPendingInputPitchEvents {
+      pendingInputPitchLock.unlock()
+      return
+    }
+    pendingInputPitchEvents += 1
+    pendingInputPitchLock.unlock()
+
+    DispatchQueue.main.async { [weak self] in
+      guard let self = self else { return }
+      self.pendingInputPitchLock.lock()
+      self.pendingInputPitchEvents -= 1
+      self.pendingInputPitchLock.unlock()
+      self.sendEvent("inputPitch", payload)
+    }
   }
 
   private func emitEngineStateChanged(reason: String, payload: [String: Any] = [:]) {
@@ -368,7 +428,7 @@ public class ExpoAudioEngineModule: Module {
     if code.hasPrefix("PLAYBACK_") || code == "NO_TRACKS_LOADED" {
       return "playback"
     }
-    if code.hasPrefix("RECORDING_") {
+    if code.hasPrefix("RECORDING_") || code.hasPrefix("INPUT_MONITOR_") {
       return "recording"
     }
     if code.hasPrefix("EXTRACTION_") {

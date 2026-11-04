@@ -1,5 +1,7 @@
 #pragma once
 
+#include "analysis/InputPitchMonitor.h"
+#include "analysis/PitchDetector.h"
 #include "core/ErrorCodes.h"
 #include "core/MasterClock.h"
 #include "core/TimingManager.h"
@@ -7,6 +9,7 @@
 #include "playback/MultiTrackMixer.h"
 #include "playback/OboePlayer.h"
 #include "playback/Track.h"
+#include "recording/MicrophoneCapture.h"
 #include "recording/RecordingPipeline.h"
 
 #include <atomic>
@@ -136,9 +139,36 @@ class AudioEngine {
 
   /**
    * Get current input level (for UI metering).
-   * @return Peak amplitude (0.0 to 1.0)
+   * While the input monitor runs: RMS of its latest analysed window.
+   * Otherwise, while recording: peak amplitude of the latest input block.
+   * @return Level (0.0 to 1.0)
    */
   float GetInputLevel() const;
+
+  // Input pitch monitor
+  using InputPitchCallback = std::function<void(const analysis::InputPitchEvent&)>;
+
+  /**
+   * Callback for analysed input windows. Called on the monitor's worker thread,
+   * about every config.interval_ms while the monitor runs.
+   */
+  void SetInputPitchCallback(InputPitchCallback callback);
+
+  /**
+   * Open the microphone (or reuse the stream a recording opened) and start
+   * reporting its fundamental frequency. Independent of playback and of
+   * recording; calling it while running restarts the analysis with `config`.
+   * @return false when the config is invalid or the input stream cannot start;
+   *         GetLastInputMonitorError() says why.
+   */
+  bool StartInputMonitor(const analysis::InputMonitorConfig& config);
+
+  /** Stop the monitor. Closes the input stream unless a recording uses it. */
+  void StopInputMonitor();
+
+  bool IsInputMonitoring() const;
+
+  std::string GetLastInputMonitorError() const;
 
   /**
    * Set recording volume/gain.
@@ -214,6 +244,14 @@ class AudioEngine {
 
  private:
   void RecalculateDuration();
+  // Input stream shared by the recording pipeline and the input monitor.
+  // Callers hold input_mutex_.
+  std::shared_ptr<recording::MicrophoneCapture> AcquireMicrophoneLocked(
+      int32_t sample_rate, int32_t channel_count, std::string* error);
+  void ReleaseMicrophoneIfUnusedLocked();
+  void StopInputMonitorLocked();
+  double InputMonitorPositionMs() const;
+  void DeliverInputPitch(const analysis::InputPitchEvent& event);
   void ReportError(core::ErrorCode code, const std::string& message);
   void NotifyPlaybackState(core::PlaybackState state);
   void StartExtractionWorker();
@@ -248,6 +286,18 @@ class AudioEngine {
   // Recording components
   std::unique_ptr<recording::RecordingPipeline> recording_pipeline_;
   std::atomic<int64_t> recording_start_samples_{0};
+
+  // Input stream and monitor. input_mutex_ serialises opening/closing the
+  // stream between StartRecording/StopRecording and the monitor.
+  mutable std::mutex input_mutex_;
+  std::shared_ptr<recording::MicrophoneCapture> microphone_;
+  bool recording_uses_microphone_ = false;
+  std::unique_ptr<analysis::InputPitchMonitor> input_monitor_;
+  std::atomic<bool> input_monitoring_{false};
+  std::atomic<float> input_monitor_level_{0.0f};
+  std::string input_monitor_error_;
+  mutable std::mutex input_pitch_callback_mutex_;
+  InputPitchCallback input_pitch_callback_;
 
   // Track management
   mutable std::mutex tracks_mutex_;

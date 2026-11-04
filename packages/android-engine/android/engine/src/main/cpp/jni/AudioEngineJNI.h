@@ -148,6 +148,27 @@ Java_com_sezo_audioengine_AudioEngine_nativeSetSpeed(
 JNIEXPORT jfloat JNICALL
 Java_com_sezo_audioengine_AudioEngine_nativeGetSpeed(JNIEnv* env, jobject thiz, jlong handle);
 
+// Input pitch monitor
+JNIEXPORT void JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeSetInputPitchListener(
+    JNIEnv* env, jobject thiz, jlong handle, jboolean enabled);
+
+JNIEXPORT jboolean JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeStartInputMonitor(
+    JNIEnv* env, jobject thiz, jlong handle, jfloat min_hz, jfloat max_hz, jint interval_ms);
+
+JNIEXPORT void JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeStopInputMonitor(
+    JNIEnv* env, jobject thiz, jlong handle);
+
+JNIEXPORT jboolean JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeIsInputMonitoring(
+    JNIEnv* env, jobject thiz, jlong handle);
+
+JNIEXPORT jstring JNICALL
+Java_com_sezo_audioengine_AudioEngine_nativeGetInputMonitorError(
+    JNIEnv* env, jobject thiz, jlong handle);
+
 // Phase 6: Extraction
 JNIEXPORT jobject JNICALL
 Java_com_sezo_audioengine_AudioEngine_nativeExtractTrack(

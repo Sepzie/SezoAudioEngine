@@ -51,6 +51,14 @@ Master and per-track pitch/speed compose: a track plays at `trackPitch + masterP
 - `isRecording(): boolean`
 - `setRecordingVolume(volume: number): void`
 
+## Input Pitch Monitor
+
+- `startInputMonitor(config?: InputMonitorConfig): Promise<void>` — reports the microphone's fundamental frequency as `inputPitch` events, independently of playback and recording. Rejects with `INPUT_MONITOR_PERMISSION_DENIED` or `INPUT_MONITOR_START_FAILED`.
+- `stopInputMonitor(): Promise<void>`
+- `isInputMonitoring(): boolean`
+
+See [Input Pitch Monitor](input-monitor.md).
+
 ## Extraction
 
 - `extractTrack(trackId: string, config?: ExtractionConfig): Promise<ExtractionResult>`
@@ -59,7 +67,7 @@ Master and per-track pitch/speed compose: a track plays at `trackPitch + masterP
 
 ## Meters
 
-- `getInputLevel(): number`
+- `getInputLevel(): number` — input RMS while the input monitor runs or while recording
 - `getOutputLevel(): number`
 - `getTrackLevel(trackId: string): number`
 
@@ -81,6 +89,7 @@ Master and per-track pitch/speed compose: a track plays at `trackPitch + masterP
 - `extractionProgress`
 - `extractionComplete`
 - `engineStateChanged`
+- `inputPitch`
 - `debugLog`
 - `error`
 
@@ -127,6 +136,8 @@ addListener<K extends keyof AudioEngineEventMap>(
 | `RECORDING_STOP_FAILED` | `recording` | `warning` | `true` | Show stop/save failure; keep session recoverable. |
 | `RECORDING_PERMISSION_DENIED` | `recording` | `warning` | `true` | Android: `RECORD_AUDIO` is not granted; `startRecording()` rejects. Request the permission and retry. |
 | `RECORDING_FOREGROUND_SERVICE_FAILED` | `recording` | `warning` | `true` | Android: the take is recording but is not protected in the background (`details.reason`: `appNotInForeground`, `startRejected` or `promotionRejected`). Keep the app in the foreground until `stopRecording()`. |
+| `INPUT_MONITOR_PERMISSION_DENIED` | `recording` | `warning` | `true` | `startInputMonitor()` rejects: the record permission is not granted. Request it and retry. |
+| `INPUT_MONITOR_START_FAILED` | `recording` | `warning` | `true` | `startInputMonitor()` rejects: the input stream, session or engine could not start, or the config is invalid (message says why). |
 | `EXTRACTION_FAILED` | `extraction` | `warning` | `true` | Show export failure state and allow retry. |
 | `EXTRACTION_CANCELLED` | `extraction` | `warning` | `true` | Log only or show non-blocking cancelled status. |
 | `UNSUPPORTED_URI` | `system` | `warning` | `true` | Show actionable validation message for URI format. |

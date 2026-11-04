@@ -14,6 +14,7 @@ The module emits events for playback, recording, and extraction.
 - `extractionProgress`
 - `extractionComplete`
 - `engineStateChanged`
+- `inputPitch`
 - `debugLog`
 - `error`
 
@@ -30,6 +31,16 @@ The module emits events for playback, recording, and extraction.
     e.g. `['microphone']` or `['microphone', 'mediaPlayback']`)
   - `recordingStopped`
   - `recordingInterrupted` (iOS; `uri` of the finalised take)
+
+## Input Pitch Monitor
+
+- `inputPitch` carries `hz`, `confidence`, `level`, `positionMs` and
+  `timestampMs` for every analysed microphone window while the monitor runs
+  (see [Input Pitch Monitor](input-monitor.md)).
+- `engineStateChanged` with `reason: 'inputMonitorStopped'` when the module
+  stopped the monitor itself: `cause: 'background'` (the app went to the
+  background without a recording) or `cause: 'interrupted'` (iOS audio session
+  interruption). Restart it with `startInputMonitor()`.
 
 ## Error Payload
 

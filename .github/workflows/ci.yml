@@ -52,7 +52,7 @@ jobs:
           match() { echo "$changed" | grep -Eq "$1|$shared" && echo true || echo false; }
           {
             echo "engine=$(match '^(packages/android-engine/|\.gitmodules$)')"
-            echo "ios=$(match '^packages/expo-module/(ios/|src/|example/|package\.json$|expo-module\.config\.json$|app\.plugin\.js$)')"
+            echo "ios=$(match '^packages/expo-module/(ios/|src/|example/|test/swift/|package\.json$|expo-module\.config\.json$|app\.plugin\.js$)')"
             echo "android=$(match '^packages/(expo-module/(android/|src/|example/|package\.json$|expo-module\.config\.json$|app\.plugin\.js$)|android-engine/)|^\.gitmodules$')"
           } | tee -a "$GITHUB_OUTPUT"
 
@@ -173,6 +173,8 @@ jobs:
           cache: yarn
       - run: yarn install --frozen-lockfile
       - run: yarn build:expo-module
+      - name: Swift pitch detector checks
+        run: yarn test:swift:pitch
       - uses: actions/cache@v6
         with:
           path: ~/Library/Caches/CocoaPods

@@ -8,6 +8,7 @@ import type {
   AudioEngineError,
   AudioEngineEvent,
   AudioEngineEventMap,
+  InputPitchEvent,
   PlaybackState,
   RecordingConfig,
 } from '../src';
@@ -35,6 +36,16 @@ describe('public types', () => {
       engine.addListener('recordingStopped', (p) => {
         assertType<Equals<typeof p.reason, 'requested' | 'interrupted' | undefined>>();
       });
+      engine.addListener('inputPitch', (p) => {
+        assertType<Equals<typeof p, InputPitchEvent>>();
+        assertType<Equals<typeof p.hz, number>>();
+        // @ts-expect-error inputPitch payloads have no durationMs
+        void p.durationMs;
+      });
+      const monitorStart: Promise<void> = engine.startInputMonitor({ minHz: 80, intervalMs: 20 });
+      // @ts-expect-error intervalMs is a number
+      void engine.startInputMonitor({ intervalMs: '25' });
+      void monitorStart;
       engine.addListener('trackLoaded', (p) => {
         // @ts-expect-error trackLoaded payloads have no positionMs
         void p.positionMs;

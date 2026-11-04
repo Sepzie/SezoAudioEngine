@@ -35,6 +35,25 @@ export interface RecordingResult {
     fileSize: number;
 }
 export type RecordingStopReason = 'requested' | 'interrupted';
+export interface InputMonitorConfig {
+    /** Lowest / highest fundamental reported, Hz. Default 50 / 1500. */
+    minHz?: number;
+    maxHz?: number;
+    /** Target interval between `inputPitch` events, ms. Default 25, minimum 10. */
+    intervalMs?: number;
+}
+export interface InputPitchEvent {
+    /** Fundamental frequency in Hz; 0 when no pitch was detected in the window. */
+    hz: number;
+    /** Detector confidence, 0..1 (0 when `hz` is 0). */
+    confidence: number;
+    /** RMS level of the analysed window, linear 0..1. */
+    level: number;
+    /** Transport position (ms) at the end of the analysed window; -1 when the transport has no position (nothing loaded or stopped). */
+    positionMs: number;
+    /** Wall clock, ms since epoch, when the window was analysed. */
+    timestampMs: number;
+}
 export interface ExtractionConfig {
     format?: 'aac' | 'm4a' | 'mp3' | 'wav';
     bitrate?: number;
@@ -65,7 +84,7 @@ export interface PlaybackCardOptions {
     showStop?: boolean;
     seekStepMs?: number;
 }
-export type AudioEngineEvent = 'playbackStateChange' | 'positionUpdate' | 'playbackComplete' | 'trackLoaded' | 'trackUnloaded' | 'recordingStarted' | 'recordingStopped' | 'extractionProgress' | 'extractionComplete' | 'engineStateChanged' | 'debugLog' | 'error';
+export type AudioEngineEvent = 'playbackStateChange' | 'positionUpdate' | 'playbackComplete' | 'trackLoaded' | 'trackUnloaded' | 'recordingStarted' | 'recordingStopped' | 'extractionProgress' | 'extractionComplete' | 'engineStateChanged' | 'inputPitch' | 'debugLog' | 'error';
 export type AudioEngineErrorSeverity = 'warning' | 'fatal';
 export type AudioEngineErrorSource = 'engine' | 'session' | 'playback' | 'recording' | 'extraction' | 'focus' | 'system';
 export interface AudioEngineError {
@@ -121,6 +140,8 @@ export interface AudioEngineEventMap {
         reason: string;
         [key: string]: unknown;
     };
+    /** One analysed microphone window while the input monitor runs (about every `intervalMs`). */
+    inputPitch: InputPitchEvent;
     debugLog: {
         level: 'debug' | 'info' | 'warn' | 'error';
         message: string;
@@ -186,6 +207,19 @@ export interface AudioEngine {
     extractTrack(trackId: string, config?: ExtractionConfig): Promise<ExtractionResult>;
     extractAllTracks(config?: ExtractionConfig): Promise<ExtractionResult[]>;
     cancelExtraction(jobId?: number): boolean;
+    /**
+     * Starts the input pitch monitor: the microphone's fundamental frequency is
+     * reported as `inputPitch` events, independently of playback and recording.
+     * The module never asks for the record permission; it rejects with
+     * `INPUT_MONITOR_PERMISSION_DENIED` when it is not granted, and with
+     * `INPUT_MONITOR_START_FAILED` when the input stream or the engine cannot
+     * start. Calling it while running applies the new config.
+     */
+    startInputMonitor(config?: InputMonitorConfig): Promise<void>;
+    /** Stops the input pitch monitor. Never stops a recording. */
+    stopInputMonitor(): Promise<void>;
+    isInputMonitoring(): boolean;
+    /** Input RMS while monitoring or recording, linear 0..1. */
     getInputLevel(): number;
     getOutputLevel(): number;
     getTrackLevel(trackId: string): number;

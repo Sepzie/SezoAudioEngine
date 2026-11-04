@@ -15,6 +15,7 @@ import {
   AudioEngineModule,
   type AudioEngineError,
   type AudioEngineEventMap,
+  type InputPitchEvent,
 } from 'sezo-audio-engine';
 import Slider from '@react-native-community/slider';
 import { Asset } from 'expo-asset';
@@ -216,6 +217,9 @@ export default function App() {
   const [recordingLevel, setRecordingLevel] = useState(0);
   const [recordingElapsed, setRecordingElapsed] = useState(0);
   const [lastRecording, setLastRecording] = useState<RecordingInfo | null>(null);
+  const [isMonitoring, setIsMonitoring] = useState(false);
+  const [inputPitch, setInputPitch] = useState<InputPitchEvent | null>(null);
+  const [monitorStatus, setMonitorStatus] = useState('Off');
   const [extractionProgress, setExtractionProgress] = useState(0);
   const [extractionStatus, setExtractionStatus] = useState('Idle');
   const [extractionFormat, setExtractionFormat] = useState<'wav' | 'aac' | 'm4a' | 'mp3'>(
@@ -774,6 +778,50 @@ export default function App() {
     pendingRecordingRef.current = null;
     void appendRecordingTrack(pending);
   }, [appendRecordingTrack, isPlaying]);
+
+  useEffect(() => {
+    const pitchSub = AudioEngineModule.addListener('inputPitch', (event) => {
+      setInputPitch(event);
+    });
+    const stoppedSub = AudioEngineModule.addListener('engineStateChanged', (event) => {
+      if (event.reason === 'inputMonitorStopped') {
+        setIsMonitoring(false);
+        setMonitorStatus(`Stopped (${String(event.cause ?? 'engine')})`);
+      }
+    });
+    return () => {
+      pitchSub.remove();
+      stoppedSub.remove();
+    };
+  }, []);
+
+  const handleToggleInputMonitor = useCallback(async () => {
+    if (isMonitoring) {
+      await AudioEngineModule.stopInputMonitor();
+      setIsMonitoring(false);
+      setMonitorStatus('Off');
+      return;
+    }
+    const granted = await requestRecordingPermission();
+    if (!granted) {
+      setMonitorStatus('Permission denied');
+      return;
+    }
+    try {
+      await AudioEngineModule.startInputMonitor({ minHz: 50, maxHz: 1500, intervalMs: 25 });
+      setIsMonitoring(true);
+      setMonitorStatus('On');
+    } catch (error: any) {
+      const code = error?.code ?? 'ERROR';
+      setMonitorStatus(code);
+      if (code === 'INPUT_MONITOR_PERMISSION_DENIED' && Platform.OS === 'ios') {
+        Alert.alert(
+          'Microphone permission',
+          'The monitor does not ask for the permission. Start a recording once to grant it, then retry.'
+        );
+      }
+    }
+  }, [isMonitoring, requestRecordingPermission]);
 
   const handleStartRecording = useCallback(async () => {
     if (!supportsRecording) {
@@ -1702,6 +1750,43 @@ export default function App() {
                 disabled={!canUseBackground}
                 options={BACKGROUND_OPTIONS}
               />
+            </CollapsibleSection>
+
+            <CollapsibleSection
+              title="Input Monitor"
+              right={
+                <View style={[styles.statusPill, isMonitoring && styles.recordingStatusPill]}>
+                  <Text style={styles.statusText}>{monitorStatus}</Text>
+                </View>
+              }
+              containerStyle={controlsStyle}
+            >
+              <TouchableOpacity
+                style={[
+                  styles.controlButton,
+                  isMonitoring ? styles.stopButton : styles.recordButton,
+                  recordingUnavailable && styles.controlButtonDisabled,
+                ]}
+                onPress={() => void handleToggleInputMonitor()}
+                disabled={recordingUnavailable}
+              >
+                <Text
+                  style={[
+                    styles.controlButtonText,
+                    isMonitoring ? styles.stopButtonText : styles.recordButtonText,
+                  ]}
+                >
+                  {isMonitoring ? 'Stop Monitor' : 'Start Monitor'}
+                </Text>
+              </TouchableOpacity>
+              <Text style={styles.sectionHint}>
+                {inputPitch
+                  ? `${inputPitch.hz > 0 ? `${inputPitch.hz.toFixed(1)} Hz` : 'no pitch'}  ` +
+                    `conf ${inputPitch.confidence.toFixed(2)}  ` +
+                    `level ${inputPitch.level.toFixed(3)}  ` +
+                    `pos ${inputPitch.positionMs < 0 ? '-' : Math.round(inputPitch.positionMs)}`
+                  : 'No input yet'}
+              </Text>
             </CollapsibleSection>
 
             <CollapsibleSection

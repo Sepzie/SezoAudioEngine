@@ -6,6 +6,8 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.sezo.audioengine.AudioEngine
@@ -14,6 +16,8 @@ import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.util.Collections
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.math.roundToInt
 
 class ExpoAudioEngineModule : Module() {
   private var audioEngine: AudioEngine? = null
@@ -30,6 +34,10 @@ class ExpoAudioEngineModule : Module() {
   private val nowPlayingMetadata = mutableMapOf<String, Any?>()
   @Volatile
   private var recordingServiceRunning: Boolean = false
+  private val mainHandler = Handler(Looper.getMainLooper())
+  // inputPitch events posted to the main thread and not yet sent. Bounded so a
+  // slow consumer drops windows instead of queueing them.
+  private val pendingInputPitchEvents = AtomicInteger(0)
 
   private val recordingServiceListener = object : RecordingForegroundService.StatusListener {
     override fun onStarted(foregroundServiceType: Int) {
@@ -111,6 +119,16 @@ class ExpoAudioEngineModule : Module() {
       Log.d(TAG, "Activity entering background")
       emitDebugLog("debug", "Activity entering background")
       val engine = audioEngine ?: return@OnActivityEntersBackground
+
+      // The input monitor never runs in the background on its own: without a
+      // recording there is no microphone foreground service to keep input alive.
+      if (engine.isInputMonitoring() && !engine.isRecording()) {
+        engine.stopInputMonitor()
+        emitEngineStateChanged(
+          reason = "inputMonitorStopped",
+          payload = mapOf("cause" to "background")
+        )
+      }
 
       if (backgroundPlaybackEnabled) {
         Log.d(TAG, "Background playback enabled, keeping engine running")
@@ -238,6 +256,7 @@ class ExpoAudioEngineModule : Module() {
         )
         handlePlaybackStateChange(state)
       }
+      audioEngine?.setInputPitchListener { pitch -> dispatchInputPitch(pitch) }
 
       Log.d(TAG, "Audio engine initialized successfully")
     }
@@ -686,6 +705,61 @@ class ExpoAudioEngineModule : Module() {
       }
     }
 
+    AsyncFunction("startInputMonitor") { config: Map<String, Any?>? ->
+      if (!hasRecordAudioPermission()) {
+        emitEngineError(
+          code = "INPUT_MONITOR_PERMISSION_DENIED",
+          message = "Microphone permission (RECORD_AUDIO) is not granted",
+          details = mapOf("permission" to Manifest.permission.RECORD_AUDIO),
+          source = "recording"
+        )
+        throw CodedException(
+          "INPUT_MONITOR_PERMISSION_DENIED",
+          "Microphone permission (RECORD_AUDIO) is not granted",
+          null
+        )
+      }
+
+      val engine = audioEngine
+      if (engine == null) {
+        val message = "Failed to start input monitor: audio engine not initialized"
+        emitEngineError(code = "INPUT_MONITOR_START_FAILED", message = message, source = "recording")
+        throw CodedException("INPUT_MONITOR_START_FAILED", message, null)
+      }
+
+      val minHz = (config?.get("minHz") as? Number)?.toFloat() ?: DEFAULT_MONITOR_MIN_HZ
+      val maxHz = (config?.get("maxHz") as? Number)?.toFloat() ?: DEFAULT_MONITOR_MAX_HZ
+      val intervalValue = (config?.get("intervalMs") as? Number)?.toDouble() ?: DEFAULT_MONITOR_INTERVAL_MS.toDouble()
+      if (!minHz.isFinite() || !maxHz.isFinite() || !intervalValue.isFinite()) {
+        val message = "Failed to start input monitor: minHz, maxHz and intervalMs must be finite numbers"
+        emitEngineError(code = "INPUT_MONITOR_START_FAILED", message = message, source = "recording")
+        throw CodedException("INPUT_MONITOR_START_FAILED", message, null)
+      }
+      val intervalMs = intervalValue.roundToInt().coerceAtLeast(MIN_MONITOR_INTERVAL_MS)
+
+      if (!engine.startInputMonitor(minHz, maxHz, intervalMs)) {
+        val detail = engine.getInputMonitorError().ifEmpty { "input stream could not start" }
+        val message = "Failed to start input monitor: $detail"
+        emitEngineError(
+          code = "INPUT_MONITOR_START_FAILED",
+          message = message,
+          details = mapOf("detail" to detail),
+          source = "recording"
+        )
+        throw CodedException("INPUT_MONITOR_START_FAILED", message, null)
+      }
+      Log.d(TAG, "Input monitor started ($minHz-$maxHz Hz, every $intervalMs ms)")
+    }
+
+    AsyncFunction("stopInputMonitor") {
+      audioEngine?.stopInputMonitor()
+      Log.d(TAG, "Input monitor stopped")
+    }
+
+    Function("isInputMonitoring") {
+      audioEngine?.isInputMonitoring() ?: false
+    }
+
     Function("getInputLevel") {
       audioEngine?.getInputLevel()?.toDouble() ?: 0.0
     }
@@ -734,9 +808,31 @@ class ExpoAudioEngineModule : Module() {
       "extractionProgress",
       "extractionComplete",
       "engineStateChanged",
+      "inputPitch",
       "debugLog",
       "error"
     )
+  }
+
+  /** Called on the monitor's worker thread; coalesces onto the main thread. */
+  private fun dispatchInputPitch(pitch: AudioEngine.InputPitch) {
+    if (pendingInputPitchEvents.incrementAndGet() > MAX_PENDING_INPUT_PITCH_EVENTS) {
+      pendingInputPitchEvents.decrementAndGet()
+      return
+    }
+    mainHandler.post {
+      pendingInputPitchEvents.decrementAndGet()
+      sendEvent(
+        "inputPitch",
+        mapOf(
+          "hz" to pitch.hz.toDouble(),
+          "confidence" to pitch.confidence.toDouble(),
+          "level" to pitch.level.toDouble(),
+          "positionMs" to pitch.positionMs,
+          "timestampMs" to pitch.timestampMs.toDouble()
+        )
+      )
+    }
   }
 
   private fun attachExtractionListeners(engine: AudioEngine) {
@@ -1174,7 +1270,7 @@ class ExpoAudioEngineModule : Module() {
       code == "AUDIO_SESSION_FAILED" -> "session"
       code == "AUDIO_FOCUS_DENIED" -> "focus"
       code.startsWith("PLAYBACK_") || code == "NO_TRACKS_LOADED" -> "playback"
-      code.startsWith("RECORDING_") -> "recording"
+      code.startsWith("RECORDING_") || code.startsWith("INPUT_MONITOR_") -> "recording"
       code.startsWith("EXTRACTION_") -> "extraction"
       code.startsWith("ENGINE_") || code.startsWith("TRACK_") || code == "STREAM_DISCONNECTED" -> "engine"
       else -> "system"
@@ -1273,5 +1369,11 @@ class ExpoAudioEngineModule : Module() {
 
   companion object {
     private const val TAG = "ExpoAudioEngine"
+    private const val DEFAULT_MONITOR_MIN_HZ = 50f
+    private const val DEFAULT_MONITOR_MAX_HZ = 1500f
+    private const val DEFAULT_MONITOR_INTERVAL_MS = 25
+    private const val MIN_MONITOR_INTERVAL_MS = 10
+    // About 100 ms of events at the default interval.
+    private const val MAX_PENDING_INPUT_PITCH_EVENTS = 4
   }
 }

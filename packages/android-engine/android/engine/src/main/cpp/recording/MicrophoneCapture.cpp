@@ -2,6 +2,8 @@
 #include <android/log.h>
 #include <algorithm>
 #include <cmath>
+#include <thread>
+#include <utility>
 
 #define LOG_TAG "MicrophoneCapture"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
@@ -50,6 +52,7 @@ bool MicrophoneCapture::Initialize() {
   const size_t buffer_size =
       static_cast<size_t>(sample_rate_) * static_cast<size_t>(channel_count_) * 2;
   buffer_ = std::make_unique<core::CircularBuffer>(buffer_size);
+  monitor_buffer_ = std::make_unique<core::CircularBuffer>(buffer_size);
 
   LOGD("Input stream opened: sample rate=%d, channels=%d, buffer size=%d",
        stream_->getSampleRate(),
@@ -60,11 +63,24 @@ bool MicrophoneCapture::Initialize() {
 }
 
 bool MicrophoneCapture::Start() {
+  if (!StartStream()) {
+    return false;
+  }
+  SetRecordingSinkEnabled(true);
+  return true;
+}
+
+bool MicrophoneCapture::Stop() {
+  SetRecordingSinkEnabled(false);
+  return StopStream();
+}
+
+bool MicrophoneCapture::StartStream() {
   if (!stream_) {
     LOGE("Cannot start: stream not initialized");
     return false;
   }
-  if (!buffer_) {
+  if (!buffer_ || !monitor_buffer_) {
     LOGE("Cannot start: buffer not initialized");
     return false;
   }
@@ -73,8 +89,6 @@ bool MicrophoneCapture::Start() {
     LOGD("Already capturing");
     return true;
   }
-
-  buffer_->Reset();
 
   oboe::Result result = stream_->start();
   if (result != oboe::Result::OK) {
@@ -87,7 +101,7 @@ bool MicrophoneCapture::Start() {
   return true;
 }
 
-bool MicrophoneCapture::Stop() {
+bool MicrophoneCapture::StopStream() {
   if (!stream_) {
     return false;
   }
@@ -104,11 +118,79 @@ bool MicrophoneCapture::Stop() {
   return true;
 }
 
+void MicrophoneCapture::WaitForCallbackOutsideSinks() const {
+  // Pairs with the sequentially consistent store/load in onAudioReady: after a
+  // sink flag is cleared, either the callback saw it cleared, or it had already
+  // raised callback_in_sinks_ and we wait for it to finish that write.
+  while (callback_in_sinks_.load(std::memory_order_seq_cst)) {
+    std::this_thread::yield();
+  }
+}
+
+void MicrophoneCapture::SetRecordingSinkEnabled(bool enabled) {
+  if (!buffer_) {
+    return;
+  }
+  if (enabled) {
+    if (recording_sink_enabled_.load(std::memory_order_seq_cst)) {
+      return;
+    }
+    // The callback does not touch a disabled sink and its reader has not
+    // started yet, so the ring can be cleared here.
+    buffer_->Reset();
+    recording_sink_enabled_.store(true, std::memory_order_seq_cst);
+  } else {
+    recording_sink_enabled_.store(false, std::memory_order_seq_cst);
+    WaitForCallbackOutsideSinks();
+  }
+}
+
+void MicrophoneCapture::SetMonitorSinkEnabled(bool enabled) {
+  if (!monitor_buffer_) {
+    return;
+  }
+  if (enabled) {
+    if (monitor_sink_enabled_.load(std::memory_order_seq_cst)) {
+      return;
+    }
+    monitor_buffer_->Reset();
+    monitor_sink_enabled_.store(true, std::memory_order_seq_cst);
+  } else {
+    monitor_sink_enabled_.store(false, std::memory_order_seq_cst);
+    WaitForCallbackOutsideSinks();
+  }
+}
+
+bool MicrophoneCapture::IsRecordingSinkEnabled() const {
+  return recording_sink_enabled_.load();
+}
+
+bool MicrophoneCapture::IsMonitorSinkEnabled() const {
+  return monitor_sink_enabled_.load();
+}
+
+size_t MicrophoneCapture::ReadMonitorData(float* data, size_t frame_count) {
+  if (!monitor_buffer_) {
+    return 0;
+  }
+  const size_t channels = static_cast<size_t>(channel_count_);
+  return monitor_buffer_->Read(data, frame_count * channels) / channels;
+}
+
+size_t MicrophoneCapture::GetMonitorAvailableFrames() const {
+  if (!monitor_buffer_) {
+    return 0;
+  }
+  return monitor_buffer_->Available() / static_cast<size_t>(channel_count_);
+}
+
 void MicrophoneCapture::Close() {
   if (!stream_) {
     return;
   }
 
+  recording_sink_enabled_.store(false, std::memory_order_seq_cst);
+  monitor_sink_enabled_.store(false, std::memory_order_seq_cst);
   is_capturing_.store(false);
 
   oboe::Result stop_result = stream_->stop();
@@ -171,7 +253,17 @@ oboe::DataCallbackResult MicrophoneCapture::onAudioReady(
   }
 
   auto* input_buffer = static_cast<float*>(audio_data);
-  size_t sample_count = num_frames * channel_count_;
+  const size_t sample_count = static_cast<size_t>(num_frames) * static_cast<size_t>(channel_count_);
+
+  callback_in_sinks_.store(true, std::memory_order_seq_cst);
+
+  // Monitor sink: raw input, before the recording gain.
+  if (monitor_sink_enabled_.load(std::memory_order_seq_cst)) {
+    const size_t written = monitor_buffer_->Write(input_buffer, sample_count);
+    if (written < sample_count) {
+      LOGD("Monitor buffer overrun: wrote %zu / %zu samples", written, sample_count);
+    }
+  }
 
   // Apply volume gain and calculate input level
   float volume = volume_.load();
@@ -190,13 +282,69 @@ oboe::DataCallbackResult MicrophoneCapture::onAudioReady(
 
   input_level_.store(peak);
 
-  // Write to circular buffer
-  size_t written = buffer_->Write(input_buffer, sample_count);
-  if (written < sample_count) {
-    LOGD("Buffer overrun: wrote %zu / %zu samples", written, sample_count);
+  // Recording sink
+  if (recording_sink_enabled_.load(std::memory_order_seq_cst)) {
+    size_t written = buffer_->Write(input_buffer, sample_count);
+    if (written < sample_count) {
+      LOGD("Buffer overrun: wrote %zu / %zu samples", written, sample_count);
+    }
   }
 
+  callback_in_sinks_.store(false, std::memory_order_seq_cst);
+
   return oboe::DataCallbackResult::Continue;
+}
+
+CaptureRecordingSource::CaptureRecordingSource(std::shared_ptr<MicrophoneCapture> capture)
+    : capture_(std::move(capture)) {}
+
+CaptureRecordingSource::~CaptureRecordingSource() {
+  if (capture_) {
+    capture_->SetRecordingSinkEnabled(false);
+  }
+}
+
+bool CaptureRecordingSource::Start() {
+  if (!capture_ || !capture_->IsCapturing()) {
+    LOGE("Cannot start recording sink: capture stream not running");
+    return false;
+  }
+  capture_->SetRecordingSinkEnabled(true);
+  return true;
+}
+
+bool CaptureRecordingSource::Stop() {
+  if (!capture_) {
+    return false;
+  }
+  capture_->SetRecordingSinkEnabled(false);
+  return true;
+}
+
+int32_t CaptureRecordingSource::GetSampleRate() const {
+  return capture_ ? capture_->GetSampleRate() : 0;
+}
+
+int32_t CaptureRecordingSource::GetChannelCount() const {
+  return capture_ ? capture_->GetChannelCount() : 0;
+}
+
+size_t CaptureRecordingSource::GetAvailableFrames() const {
+  return capture_ ? capture_->GetAvailableFrames() : 0;
+}
+
+size_t CaptureRecordingSource::ReadData(float* data, size_t frame_count) {
+  return capture_ ? capture_->ReadData(data, frame_count) : 0;
+}
+
+float CaptureRecordingSource::GetInputLevel() const {
+  return capture_ ? capture_->GetInputLevel() : 0.0f;
+}
+
+void CaptureRecordingSource::SetVolume(float volume) {
+  if (capture_) {
+    capture_->SetVolume(volume);
+  }
 }
 
 }  // namespace recording

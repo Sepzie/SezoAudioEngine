@@ -31,6 +31,8 @@ set(SEZO_ENGINE_SOURCES
   "${SEZO_ENGINE_ROOT}/playback/Track.cpp"
   "${SEZO_ENGINE_ROOT}/playback/MultiTrackMixer.cpp"
   "${SEZO_ENGINE_ROOT}/recording/RecordingPipeline.cpp"
+  "${SEZO_ENGINE_ROOT}/analysis/PitchDetector.cpp"
+  "${SEZO_ENGINE_ROOT}/analysis/InputPitchMonitor.cpp"
 )
 
 if (ANDROID)
